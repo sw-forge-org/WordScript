@@ -156,6 +156,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `native_insertion_status` no longer creates anything; it reports a session that
   actually exists.
 
+### Fixed — the permission row survived neither its own dialog nor a paste failure
+
+Four defects found reviewing the driver above, all in the seam between the
+session thread and what the screen is allowed to say about it.
+
+- **Pressing "Grant access" took the button off the screen.** The portal thread
+  serves one command at a time, and the grant command waits up to two minutes
+  for a person to answer the compositor's dialog. Every status read taken during
+  that wait timed out, and a timed-out read reported the phase `Unsupported` —
+  which the status command maps to "this desktop has no portal", which removes
+  the entire "Insert on Wayland" card. So the section containing the button
+  disappeared for exactly as long as the dialog that button opened was up, and
+  again for the first seconds after app start while the background restore held
+  the thread. A timeout now reports what is knowable without the thread: whether
+  the desktop has a portal at all, and what the last run wrote to disk.
+- **The row offered a button that could not act.** The status read gated on the
+  compositor alone, while the grant action also required the RemoteDesktop
+  interface to be reachable. On a KDE session without `xdg-desktop-portal`
+  installed the row therefore drew "Not granted" with a live-looking button, and
+  pressing it made the section vanish instead of doing anything. Both now ask the
+  same question.
+- **A failed paste reported "RemoteDesktop portal Start failed".** Every
+  `NotifyKeyboardKeysym` error, and the paste timeout, reused the error variant
+  that names the *permission* call — pointing the reader at the one control that
+  was already working. A paste failure now says so in its own words.
+- **Every dictation paid for a probe whose result was discarded.**
+  `detect_insert_platform_context()` called `detect_portal_capabilities()` and
+  dropped the value; the interface fix had just turned that from one subprocess
+  into three. The call is gone, and the capability gate behind the driver-chain
+  description is answered once per run instead of on every settings poll — none
+  of its three answers can change without the desktop session being replaced.
+
+### Changed — the restore measurement is logged as two numbers instead of one
+
+`Start` now logs its own elapsed time and whether a stored token was sent with
+it, rather than leaving both to be inferred from the enclosing call. That is what
+decides the one question this driver still rests on: a restore KDE honours
+returns in milliseconds, one it re-confirms cannot return until a human has read
+a dialog. "It prompted" means nothing without "and it had a token to avoid
+prompting with".
+
 ### Fixed — the two delivery switches could not be used
 
 - **Both switches from ADR 0231 shipped inoperable, and now work.** Clicking

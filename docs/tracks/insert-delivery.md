@@ -222,12 +222,58 @@ dialog:**
    dialog. **This is the measurement the whole driver rests on**, and it is the
    one thing here that is the compositor's behaviour rather than ours: if KWin
    re-prompts despite `ExplicitlyRevoked` and a stored token, the driver is worth
-   less than it looks and ADR 0228 needs revising rather than shipping. The
-   `Start` call's elapsed time is logged, so a dialog shows up as seconds where
-   milliseconds belong.
+   less than it looks and ADR 0228 needs revising rather than shipping.
+
+The line that answers step 4 is this one, and it carries both numbers the
+question needs:
+
+```
+[WordScript] Portal Start returned restore_token_sent=true elapsed_ms=<n>
+```
+
+`restore_token_sent=false` means the grant was never persisted and the prompt is
+ours, not KWin's -- a different bug with a different fix. `restore_token_sent=true`
+with `elapsed_ms` in the thousands is the finding that revises ADR 0228: a human
+read a dialog. In the low tens, KDE honoured the token and the driver is what it
+claims. `Portal session started` repeats both alongside
+`restore_token_rotated=`, which says whether the compositor handed back a
+different token than the one it was given.
 
 Read the log with `grep -i portal ~/.config/WordScript/logs/wordscript-runtime.log`,
 and `history.json` sorted by `created_at_ms` -- **the file is not in time order**.
+
+### The review pass over step 7, and the four defects it found
+
+Reviewed 2026-08-18, after the driver landed. All four sat in the seam between
+the session thread and what the Delivery screen is allowed to say about it, and
+three of them were only reachable by a person actually pressing the button --
+which is why the suite was green with them in.
+
+1. **The grant button removed itself while its own dialog was open.** The portal
+   thread serves one command at a time and the grant command waits up to two
+   minutes for a human. Status reads taken during that wait timed out, and the
+   timeout path answered `Unsupported` -- the phase that means "this desktop has
+   no portal", which `portal_grant_for_status()` maps to `null` and the screen
+   draws as nothing at all. The same window opened for the first seconds after
+   app start, while the background restore held the thread. The timeout now
+   answers from what is knowable without the thread: the capability gate and the
+   record on disk. It never claims a live session, because that is the one fact
+   only the thread holds.
+2. **The row and the action disagreed about what "possible" means.**
+   `status()` gated on the compositor alone; `request_grant()` also required the
+   interface to be reachable. A KDE box without `xdg-desktop-portal` therefore
+   drew a working-looking button that made the section disappear when pressed.
+3. **A failed paste reported a failed permission.** `NotifyKeyboardKeysym`
+   errors and the paste timeout both reused `StartFailed`, whose label names the
+   permission call. `PasteFailed` is its own variant now.
+4. **Every dictation paid for a probe whose result was thrown away.**
+   `detect_insert_platform_context()` called `detect_portal_capabilities()` into
+   `let _` -- pre-existing, but step 6 had just turned that call from one
+   subprocess into three. Removed, and `portal_is_possible()` is now answered
+   once per run rather than on every settings poll.
+
+`cargo test` 989, `npm test` and `npm run build` green. The four measurements
+above are unchanged by this pass and still owed.
 
 ### Step 8: considered, and deliberately not taken
 

@@ -121,16 +121,83 @@ impl PortalGrantStatus {
 pub fn grant_status() -> PortalGrantStatus {
     match ask(Command::Status, STATUS_TIMEOUT_MS) {
         Some(Reply::Status(status)) => status,
-        _ => PortalGrantStatus::unsupported(
-            "The portal session thread did not answer; treating insert on Wayland as unavailable.",
-        ),
+        _ => status_without_the_thread(),
+    }
+}
+
+/// What can still be said when the session thread does not answer in time.
+///
+/// THE THREAD BEING BUSY IS NORMAL, AND MUST NOT READ AS "NO PORTAL HERE". It
+/// serves one command at a time, and one of those commands waits up to
+/// [`GRANT_TIMEOUT_MS`] for a person to read the compositor's dialog. Every
+/// status read taken during that wait times out. The first version of this
+/// answered them with `Unsupported`, which `portal_grant_for_status()` maps to
+/// `None`, which removes the whole "Insert on Wayland" card -- so pressing
+/// "Grant access" and then letting the screen refresh took the grant button off
+/// the screen for as long as the dialog it opened was up. The same happened for
+/// the first 15 seconds after app start, while the background restore held the
+/// thread.
+///
+/// So the fallback reports what is knowable without the thread: whether this
+/// desktop has a portal at all, and what the last run wrote to disk. It never
+/// claims a live session, because that is the one fact only the thread holds.
+fn status_without_the_thread() -> PortalGrantStatus {
+    fallback_status(
+        portal_is_possible(),
+        &load_portal_grant_record(),
+        detect_compositor().label(),
+    )
+}
+
+/// The fallback itself, with the two facts it depends on passed in so it can be
+/// asserted about without a desktop session.
+fn fallback_status(possible: bool, record: &PortalGrantRecord, compositor: &str) -> PortalGrantStatus {
+    if !possible {
+        return PortalGrantStatus {
+            phase: PortalGrantPhase::Unsupported,
+            session_active: false,
+            can_request: false,
+            compositor: compositor.to_string(),
+            detail:
+                "This desktop has no RemoteDesktop portal, so insert at cursor stays on the clipboard."
+                    .to_string(),
+            refused_at_ms: None,
+        };
+    }
+    let (phase, detail) = if record.refused_at_ms.is_some() {
+        (PortalGrantPhase::Refused, PortalError::Refused.label())
+    } else {
+        (
+            PortalGrantPhase::NotGranted,
+            "The permission is being worked on right now. This is what is stored on disk until \
+             that finishes."
+                .to_string(),
+        )
+    };
+    PortalGrantStatus {
+        phase,
+        session_active: false,
+        // Never `false` on a machine that has a portal: this is the state a
+        // person is most likely looking at the screen in, because they just
+        // pressed the button that produced it.
+        can_request: true,
+        compositor: compositor.to_string(),
+        detail,
+        refused_at_ms: record.refused_at_ms,
     }
 }
 
 /// Whether a portal paste can be attempted right now. Cheap enough for the
 /// insert path, which asks once per run before it picks a driver.
+///
+/// Deliberately NOT `grant_status().session_active`: a timeout here is a
+/// dictation waiting, and the honest answer is "no session", which needs no
+/// disk read and no capability probe to say.
 pub fn session_is_live() -> bool {
-    grant_status().session_active
+    matches!(
+        ask(Command::Status, STATUS_TIMEOUT_MS),
+        Some(Reply::Status(status)) if status.session_active
+    )
 }
 
 /// Restores a grant from an earlier run, if there is one to restore.
@@ -196,7 +263,7 @@ pub fn request_grant() -> PortalGrantStatus {
 pub fn paste_ctrl_v() -> Result<(), PortalError> {
     match ask(Command::Paste, PASTE_TIMEOUT_MS) {
         Some(Reply::Paste(result)) => result,
-        _ => Err(PortalError::StartFailed(format!(
+        _ => Err(PortalError::PasteFailed(format!(
             "the portal session did not answer within {PASTE_TIMEOUT_MS}ms"
         ))),
     }
@@ -204,15 +271,29 @@ pub fn paste_ctrl_v() -> Result<(), PortalError> {
 
 /// Whether asking is worth anything on this machine at all.
 ///
-/// Deliberately cheap and env-only where it can be: it gates the Settings
-/// action and the startup restore, and both run before anybody is waiting.
+/// ASKED ONCE PER RUN, BECAUSE IT IS NOT CHEAP. `detect_portal_capabilities()`
+/// spawns `busctl get-property` twice and `plasmashell --version` once. This
+/// gate sits in the driver-chain description, which a settings poll re-reads
+/// several times a minute, and it used to pay all three spawns each time. None
+/// of the three answers can change without the desktop session being replaced,
+/// which takes the app with it.
 pub fn portal_is_possible() -> bool {
-    if !cfg!(target_os = "linux") {
-        return false;
-    }
-    let capabilities = detect_portal_capabilities();
-    capabilities.compositor.supports_remote_desktop_portal()
-        && capabilities.has_remote_desktop_portal
+    static POSSIBLE: OnceLock<bool> = OnceLock::new();
+    *POSSIBLE.get_or_init(|| {
+        if !cfg!(target_os = "linux") {
+            return false;
+        }
+        let capabilities = detect_portal_capabilities();
+        let possible = capabilities.compositor.supports_remote_desktop_portal()
+            && capabilities.has_remote_desktop_portal;
+        runtime_log::record(format!(
+            "[WordScript] Portal capability probed compositor={} interface_present={} possible={}",
+            capabilities.compositor.label(),
+            capabilities.has_remote_desktop_portal,
+            possible,
+        ));
+        possible
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -347,11 +428,24 @@ mod linux {
     impl ServiceState {
         fn status(&self) -> PortalGrantStatus {
             let compositor = detect_compositor();
+            // THE SAME GATE `request_grant()` USES, AND FOR THE SAME REASON.
+            // These two used to disagree: this one asked only whether the
+            // compositor has a persistent grant, while the action also required
+            // the interface to be reachable. On a KDE box with no
+            // xdg-desktop-portal installed, the row therefore drew "Not granted"
+            // with a working-looking button, and pressing it made the whole
+            // section disappear instead of doing anything. A control that is
+            // offered has to be a control that acts.
             if !compositor.supports_remote_desktop_portal() {
                 return PortalGrantStatus::unsupported(&format!(
                     "{} has no persistent RemoteDesktop grant, so insert at cursor stays on the clipboard.",
                     compositor.label()
                 ));
+            }
+            if !portal_is_possible() {
+                return PortalGrantStatus::unsupported(
+                    &PortalError::NoPortalInterface.label(),
+                );
             }
 
             let record = load_portal_grant_record();
@@ -361,12 +455,8 @@ mod linux {
                     "Insert at cursor can reach native Wayland windows on this desktop."
                         .to_string(),
                 )
-            } else if let Some(refused_at) = record.refused_at_ms {
-                let _ = refused_at;
-                (
-                    PortalGrantPhase::Refused,
-                    PortalError::Refused.label(),
-                )
+            } else if record.refused_at_ms.is_some() {
+                (PortalGrantPhase::Refused, PortalError::Refused.label())
             } else if let Some(error) = self.last_error.clone() {
                 (PortalGrantPhase::Failed, error)
             } else if record.has_token() {
@@ -425,7 +515,7 @@ mod linux {
             let proxy = match RemoteDesktop::new().await {
                 Ok(proxy) => proxy,
                 Err(error) => {
-                    self.fail(format!("{}", PortalError::NoPortalInterface.label()), error);
+                    self.fail(PortalError::NoPortalInterface.label(), error);
                     return;
                 }
             };
@@ -463,7 +553,17 @@ mod linux {
                 return;
             }
 
-            // The one call that can raise the dialog.
+            // The one call that can raise the dialog, and the one measurement
+            // this driver still rests on (ADR 0234, "what is still
+            // unverified"). Two numbers decide it, and both are logged here
+            // rather than inferred from the enclosing call: whether a stored
+            // token was sent at all, and how long `Start` took. A restore that
+            // KWin honours returns in milliseconds; one it re-confirms cannot
+            // return until a human has read a dialog, so it returns in seconds.
+            // The distinction matters because "it prompted" means nothing
+            // without "and it had a token to avoid prompting with".
+            let token_sent = record.restore_token.is_some();
+            let start_at = Instant::now();
             let response = match proxy.start(&session, None, Default::default()).await {
                 Ok(request) => request.response(),
                 Err(error) => {
@@ -472,6 +572,10 @@ mod linux {
                     return;
                 }
             };
+            let start_elapsed_ms = start_at.elapsed().as_millis();
+            runtime_log::record(format!(
+                "[WordScript] Portal Start returned restore_token_sent={token_sent} elapsed_ms={start_elapsed_ms}"
+            ));
 
             let devices = match response {
                 Ok(devices) => devices,
@@ -520,9 +624,12 @@ mod linux {
             }
 
             runtime_log::record(format!(
-                "[WordScript] Portal session started devices={:?} restore_token_stored={}",
+                "[WordScript] Portal session started devices={:?} restore_token_sent={} restore_token_stored={} restore_token_rotated={} start_elapsed_ms={}",
                 devices.devices(),
+                token_sent,
                 next.restore_token.is_some(),
+                next.restore_token != record.restore_token,
+                start_elapsed_ms,
             ));
             self.proxy = Some(proxy);
             self.session = Some(session);
@@ -598,7 +705,7 @@ mod linux {
         proxy
             .notify_keyboard_keysym(session, keysym, state, Default::default())
             .await
-            .map_err(|error| PortalError::StartFailed(error.to_string()))
+            .map_err(|error| PortalError::PasteFailed(error.to_string()))
     }
 
     fn is_cancelled(error: &ashpd::Error) -> bool {
@@ -646,6 +753,54 @@ mod tests {
             !paste_body.contains(".start("),
             "the paste path must never call Start: that is the call that prompts"
         );
+        // `open_session` is not the only way to reach `Start`. Both callers of
+        // it are named here so that routing the paste through either of them --
+        // "just restore first if the session is gone" is the tempting one --
+        // has to change this test.
+        for indirect in ["self.grant(", "self.restore(", "request_grant", "open_session"] {
+            assert!(
+                !paste_body.contains(indirect),
+                "the paste path must not reach a session start through {indirect}"
+            );
+        }
+    }
+
+    /// THE BUSY THREAD, WHICH IS THE STATE THE SCREEN IS MOST LIKELY READ IN.
+    ///
+    /// One command is served at a time and the grant command waits minutes for
+    /// a human, so status reads taken while the dialog is up time out. Answering
+    /// them with `Unsupported` removed the section the button lives in for
+    /// exactly as long as the dialog it opened was on screen.
+    #[test]
+    fn a_busy_session_thread_does_not_read_as_a_desktop_without_a_portal() {
+        let status = fallback_status(true, &PortalGrantRecord::default(), "KDE Plasma 6");
+        assert_eq!(status.phase, PortalGrantPhase::NotGranted);
+        assert!(status.can_request, "the button must survive its own dialog");
+        assert!(!status.session_active, "only the thread knows that, and it did not answer");
+    }
+
+    /// A refusal is on disk, so the fallback can still say so -- and must, or a
+    /// timed-out read would offer "Grant access" to somebody who already
+    /// declined and would be shown "Ask again" a second later.
+    #[test]
+    fn the_fallback_still_knows_about_a_refusal_because_it_is_on_disk() {
+        let record = PortalGrantRecord {
+            restore_token: None,
+            refused_at_ms: Some(1_787_000_000_000),
+        };
+        let status = fallback_status(true, &record, "KDE Plasma 6");
+        assert_eq!(status.phase, PortalGrantPhase::Refused);
+        assert_eq!(status.refused_at_ms, Some(1_787_000_000_000));
+        assert!(status.can_request, "pressing the button is how a refusal is taken back");
+    }
+
+    /// And where there is genuinely no portal, `Unsupported` is still the
+    /// answer: no phase, no button, no section.
+    #[test]
+    fn a_desktop_with_no_portal_still_gets_no_action() {
+        let status = fallback_status(false, &PortalGrantRecord::default(), "Hyprland");
+        assert_eq!(status.phase, PortalGrantPhase::Unsupported);
+        assert!(!status.can_request);
     }
 
     #[test]

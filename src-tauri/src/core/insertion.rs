@@ -1057,7 +1057,6 @@ fn detect_insert_platform_context(auto_paste: bool) -> NativeInsertPlatformConte
     let is_wl = is_wayland_session();
     let is_x11 = cfg!(target_os = "linux") && std::env::var_os("DISPLAY").is_some();
     let has_xd = cfg!(target_os = "linux") && command_in_path("xdotool");
-    let _ = detect_portal_capabilities();
     NativeInsertPlatformContext {
         auto_paste,
         is_wayland: is_wl,

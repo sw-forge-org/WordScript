@@ -338,6 +338,14 @@ pub enum PortalError {
     CreateSessionFailed(String),
     SelectDevicesFailed(String),
     StartFailed(String),
+    /// A `NotifyKeyboardKeysym` call on an already started session did not come
+    /// back `Ok`. Separate from [`Self::StartFailed`] because the two land in
+    /// front of different people: `Start` failing is a permission that could
+    /// not be obtained and points at the Settings button, while this is a
+    /// granted session that would not type and points at nothing the reader
+    /// can press. Reporting a failed paste as "Start failed" sent them to the
+    /// one control that was already fine.
+    PasteFailed(String),
     TokenStoreFailed(String),
 }
 
@@ -352,6 +360,7 @@ impl PortalError {
             Self::CreateSessionFailed(detail) => format!("RemoteDesktop portal CreateSession failed: {detail}"),
             Self::SelectDevicesFailed(detail) => format!("RemoteDesktop portal SelectDevices failed: {detail}"),
             Self::StartFailed(detail) => format!("RemoteDesktop portal Start failed: {detail}"),
+            Self::PasteFailed(detail) => format!("The desktop did not accept the paste keystroke: {detail}"),
             Self::TokenStoreFailed(detail) => format!("Could not persist the RemoteDesktop restore token: {detail}"),
         }
     }
@@ -564,6 +573,19 @@ mod tests {
             missing.contains("Grant it once"),
             "a missing grant names the action that fixes it: {missing}"
         );
+    }
+
+    /// A PASTE THAT FAILED IS NOT A PERMISSION THAT FAILED. Both used to be
+    /// `StartFailed`, so a granted session that would not type told the reader
+    /// "RemoteDesktop portal Start failed" and pointed them at the one control
+    /// that was already working.
+    #[test]
+    fn a_failed_paste_does_not_read_as_a_failed_permission() {
+        let paste = PortalError::PasteFailed("org.freedesktop.DBus.Error.NoReply".to_string());
+        let start = PortalError::StartFailed("org.freedesktop.DBus.Error.NoReply".to_string());
+        assert_ne!(paste.label(), start.label());
+        assert!(!paste.label().contains("Start"), "{}", paste.label());
+        assert!(paste.label().contains("paste"), "{}", paste.label());
     }
 
     /// Step 5 of the insert-delivery track, and not cosmetic: `$XDG_RUNTIME_DIR`
