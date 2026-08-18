@@ -17,7 +17,7 @@ does not run when the transcript is kept.**
 > stored, which is exactly the round trip the ADR guarantees. `Profiles.test`
 > stayed green because it asserts on the patch, where the write literal supplies
 > the field being toggled. Recorded in
-> [`../tracks/open-fixes-leg1-part2.md`](../tracks/open-fixes-leg1-part2.md); held
+> [`../archive/open-fixes-leg1-part2.md`](../archive/open-fixes-leg1-part2.md); held
 > by the resolver case in `textProfiles.test.ts`, which reads the field list out
 > of `core/config.rs` instead of restating it.
 

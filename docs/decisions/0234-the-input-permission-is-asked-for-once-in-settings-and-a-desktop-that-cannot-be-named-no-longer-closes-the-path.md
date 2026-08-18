@@ -139,6 +139,6 @@ reports a session that actually exists.
   the driver, its sequencing, and the two questions this answers
 - [ADR 0229](0229-an-unconfirmable-paste-is-still-attempted-and-what-it-costs-is-the-clipboard-restore.md):
   why `Unknown` stays on `xdotool` instead of reaching for the portal
-- [`../tracks/insert-delivery.md`](../tracks/insert-delivery.md): the measurements
+- [`../archive/insert-delivery.md`](../archive/insert-delivery.md): the measurements
   this rests on and the driver landscape
 - [`../PLATFORMS.md`](../PLATFORMS.md), [`../known-issues/auto-paste-reports-success-without-inserting.md`](../known-issues/auto-paste-reports-success-without-inserting.md)

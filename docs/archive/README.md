@@ -81,6 +81,54 @@ here, in three files that split by *kind of document* rather than by leg:
 
 ## Closed tracks and spent plans
 
+### Insert delivery, closed 2026-08-18
+
+Opened and closed the same day, out of one owner report that insert at cursor
+does nothing on this machine. **Its finding is the reason the track existed**:
+the last step of a dictation was the only one with no way to tell whether it
+worked. XTEST exits 0 whether or not a keystroke was delivered, so nine
+consecutive runs recorded `pasted: true` while inserting nothing.
+
+- [`insert-delivery.md`](insert-delivery.md) — the sequence and the record. Steps
+  1-7 done, 8 (`ConnectToEIS`/libei) deliberately deferred with its reason. Carries
+  the driver landscape and why most of it is closed (`wtype`/`ydotool` rejected on
+  prompt grounds by the owner, `kdotool` cannot inject, AT-SPI is off on this
+  desktop), both review passes, and every measurement the ADRs rest on. **The two
+  findings that travel are not the driver**: a Plasma 6 desktop was classified
+  `Other` because the detector searched for `"plasma"` in variables that read
+  `KDE`, and the portal interface probe grepped a list of bus *names* for an
+  *interface* name — 6539 runtime-log lines carried not one portal line, because
+  the early return that closed the path said nothing. Both are the same shape, *a
+  probe answering "no" for a reason unrelated to the question*.
+- [`open-fixes-leg1.md`](open-fixes-leg1.md) — **Leg 1's record**. Four items and
+  one the measurement opened. Its finding travels: the click that ended a
+  dictation was not a synthetic key release but WebKitGTK's context menu holding
+  the keyboard over a hidden overlay, so the native menu is gone from every
+  window (ADR 0230). Also carries what was deliberately not done, including two
+  owner requests declined against the code.
+- [`open-fixes-leg1-part2.md`](open-fixes-leg1-part2.md) — **Leg 1 part 2's
+  record**. Its lesson is the shape of the items rather than any one of them: six
+  were *a thing written to hold a fact that could not hold it* — a `cfg` gate on
+  an undeclared feature, a test with no `#[test]`, an attribute counted twice, a
+  command whose only field has no reader, a resolver that dropped the fields it
+  was read for, and an event loop that spun silently on a dead X connection.
+  **Two findings travel**: the ADR 0231 delivery switches shipped inoperable
+  while their tests stayed green, because the tests asserted on the write and the
+  defect was on the read; and the overlay's one-field reveal instrument refuted
+  the hypothesis Leg 1 wrote it for on the first app start.
+- [`insert-delivery-kickoff.md`](insert-delivery-kickoff.md) — Leg 2's spent
+  brief, described in the kick-off list above.
+
+**Two items this track left open belong to their own records rather than here**:
+the two owner reproductions in
+[`../known-issues/capture-shortcut-recording.md`](../known-issues/capture-shortcut-recording.md)
+(a hold that turns into a toggle, a dictation carried past three minutes), and
+the overlay double reveal in
+[`../known-issues/overlay-ghosting.md`](../known-issues/overlay-ghosting.md).
+Both have their instruments in place and neither is guessed at.
+
+### Spent plans and earlier passes
+
 - [`plans/settings-rework.md`](plans/settings-rework.md) — the settings surface
   rework plan. **Spent as an instruction, kept as derivation:** §2 through §11
   are why the surface is shaped the way it is, which nothing else carries. The

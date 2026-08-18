@@ -580,7 +580,7 @@ delivers Ctrl+V through `NotifyKeyboardKeysym` on a persistent `ashpd`
 connection; the driver, its sequencing and the grant flow are
 [ADR 0228](decisions/0228-the-second-paste-driver-is-the-remotedesktop-portal-and-the-focus-probe-is-what-sequences-it.md)
 and [ADR 0234](decisions/0234-the-input-permission-is-asked-for-once-in-settings-and-a-desktop-that-cannot-be-named-no-longer-closes-the-path.md),
-and the work is in [tracks/insert-delivery.md](tracks/insert-delivery.md).
+and the work is in [archive/insert-delivery.md](archive/insert-delivery.md).
 `ConnectToEIS`/libei was considered as the injection call and deferred: it needs
 `reis` and an ei event loop against a keysym call that is two D-Bus messages and
 already works.

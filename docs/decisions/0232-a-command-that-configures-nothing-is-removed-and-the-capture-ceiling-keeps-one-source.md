@@ -2,7 +2,7 @@
 
 Date: 2026-08-18
 Status: Accepted. Settles the item
-[Leg 1 part 2](../tracks/open-fixes-leg1-part2.md) left as the owner's call.
+[Leg 1 part 2](../archive/open-fixes-leg1-part2.md) left as the owner's call.
 
 ## Context
 
@@ -57,6 +57,6 @@ precedence — not by reviving a write nothing consults.
 
 ## References
 
-- [`tracks/open-fixes-leg1-part2.md`](../tracks/open-fixes-leg1-part2.md) — item 6, where the measurement is
+- [`archive/open-fixes-leg1-part2.md`](../archive/open-fixes-leg1-part2.md) — item 6, where the measurement is
 - [`known-issues/capture-shortcut-recording.md`](../known-issues/capture-shortcut-recording.md)
 - [ADR 0123](0123-a-fact-has-one-list-and-a-track-is-a-directory-not-a-naming-convention.md) — one list per fact

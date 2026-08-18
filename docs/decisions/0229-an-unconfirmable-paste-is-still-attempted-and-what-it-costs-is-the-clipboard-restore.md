@@ -84,4 +84,4 @@ outranked a theory that could not accommodate it.**
 
 - [ADR 0227](0227-every-route-into-a-native-reveal-goes-through-the-coalescer-and-a-driver-that-cannot-reach-its-target-says-so.md)
 - [auto-paste-reports-success-without-inserting.md](../known-issues/auto-paste-reports-success-without-inserting.md)
-- [tracks/insert-delivery.md](../tracks/insert-delivery.md)
+- [archive/insert-delivery.md](../archive/insert-delivery.md)

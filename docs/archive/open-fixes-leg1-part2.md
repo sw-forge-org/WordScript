@@ -203,7 +203,7 @@ decision and not this pass's to take.
   instruments are in. Neither is guessed at.
 - **Leg 2.** Untouched at the time. It has since been built, measured and closed;
   its brief is spent and archived as
-  [`../archive/insert-delivery-kickoff.md`](../archive/insert-delivery-kickoff.md),
+  [`insert-delivery-kickoff.md`](insert-delivery-kickoff.md),
   and the track itself is [`insert-delivery.md`](insert-delivery.md).
 
 ## Left for whoever picks this up

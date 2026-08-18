@@ -181,7 +181,7 @@ dialog somebody had to read would have been seconds. The other lane is measured 
 dictation ending in an **XWayland** window chose `xdotool` (31 ms) with a grant
 in place, and its clipboard restore ran -- which only a confirmable delivery
 allows. So both halves of the sequencing are recorded rather than reasoned; see
-[`../tracks/insert-delivery.md`](../tracks/insert-delivery.md).
+[`../archive/insert-delivery.md`](../archive/insert-delivery.md).
 
 ## Related
 

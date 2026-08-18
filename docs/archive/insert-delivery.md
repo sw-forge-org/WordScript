@@ -1,5 +1,13 @@
 # Track — Insert delivery
 
+**Closed 2026-08-18, and frozen.** Steps 1-7 done, 8 deliberately deferred. Both
+paste lanes are measured from real dictations -- the RemoteDesktop portal into
+native Wayland windows (9 ms, 2 ms) and `xdotool` into an XWayland window
+(31 ms) -- and twelve app restarts restored the grant with no dialog, which is
+the measurement ADR 0228 rested on. Read for derivation, not as current truth:
+what the product does today is [`../STATUS.md`](../STATUS.md) and
+[`../PLATFORMS.md`](../PLATFORMS.md), and the rules are the ADRs it names.
+
 Opened 2026-08-18, out of one owner report: *"insert at cursor does not work on
 this machine — nothing lands at the cursor, and it is unreliable."* This file is
 both the sequence and the kick-off; paste it to the next agent.
