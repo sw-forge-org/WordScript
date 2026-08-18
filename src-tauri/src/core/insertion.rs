@@ -11,7 +11,7 @@ use enigo::{
     Enigo, Key, Keyboard, Settings,
 };
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager, Runtime, State};
+use tauri::{AppHandle, Manager, Runtime};
 
 use super::config::AppConfig;
 use super::paths::{config_file_path, scratchpad_file_path};
@@ -498,13 +498,24 @@ impl NativeInsertionState {
         // a session that died with the `busctl` process before the panel had
         // finished rendering it. The live session now belongs to
         // `portal_session`, and this only reports what is already true.
+        //
+        // THE PORTAL THREAD IS ASKED ONCE PER STATUS READ, NOT TWICE. The grant
+        // status and `session_is_live()` answer the same question from the same
+        // thread, and that thread serves one command at a time: while the
+        // permission dialog is up, every request to it waits out its full
+        // timeout. Two of them in one status read is 1.5 s of waiting for one
+        // fact. `session_active` is that fact, so it is read here and handed
+        // down rather than asked for again.
         let portal_grant = portal_grant_for_status();
+        let portal_session_live = portal_grant
+            .as_ref()
+            .map_or(false, |grant| grant.session_active);
         NativeInsertionStatus {
             config: self.config.clone(),
             last_transcript: self.last_transcript.clone(),
             scratchpad_entries: self.entries.clone(),
             scratchpad_path: scratchpad_file_path().to_string_lossy().to_string(),
-            platform: platform_status(self.config.auto_paste),
+            platform: platform_status(self.config.auto_paste, portal_session_live),
             last_portal_prompt: self.last_portal_prompt.clone(),
             portal_grant,
         }
@@ -579,63 +590,78 @@ fn portal_grant_for_status() -> Option<PortalGrantStatus> {
     Some(status)
 }
 
+/// A status read is bounded by the portal thread, so it does not run on the
+/// main thread.
+///
+/// It waits on a thread that serves one command at a time, and one of that
+/// thread's commands waits up to two minutes for a person to answer the
+/// compositor's dialog. A sync command runs on Tauri's main thread (State 09,
+/// and the same reason `insert_text_native` is async), so this one would freeze
+/// the webview for the full [`portal_session`] status timeout on every read
+/// taken while the portal is busy -- and the workspace palette issues one every
+/// time it opens.
 #[tauri::command]
-pub fn native_insertion_status(
-    state: State<'_, Mutex<NativeInsertionState>>,
-) -> Result<NativeInsertionStatus, String> {
-    let mut state = state.lock().map_err(|error| error.to_string())?;
-    Ok(state.status())
+pub async fn native_insertion_status(app: AppHandle) -> Result<NativeInsertionStatus, String> {
+    with_insertion_state_off_the_main_thread(app, |state| Ok(state.status())).await
 }
 
+/// Runs `body` against the insertion state on a blocking worker.
+///
+/// Every command in this file reaches [`NativeInsertionState::status()`], which
+/// can wait on the portal session thread, and two of them also do clipboard IO
+/// that has been measured at hundreds of milliseconds. None of that may sit on
+/// the main thread.
+async fn with_insertion_state_off_the_main_thread<T, F>(
+    app: AppHandle,
+    body: F,
+) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&mut NativeInsertionState) -> Result<T, String> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app
+            .try_state::<Mutex<NativeInsertionState>>()
+            .ok_or_else(|| "Native insertion state is not available.".to_string())?;
+        let mut state = state.lock().map_err(|error| error.to_string())?;
+        body(&mut state)
+    })
+    .await
+    .map_err(|error| format!("Native insertion task panicked: {error}"))?
+}
+
+/// MUST be async: the clipboard write (wl-copy + verify) can block for up to
+/// 800ms. A sync command runs on Tauri's main thread and blocks the webview's
+/// JS event loop — frontend safety timeouts cannot fire, the spinner stays
+/// forever (State 09). Running the blocking work on a background thread keeps
+/// the main thread free so JS timers and IPC events flow normally.
 #[tauri::command]
 pub async fn insert_text_native(
     app: AppHandle,
     request: NativeInsertRequest,
-    state: State<'_, Mutex<NativeInsertionState>>,
 ) -> Result<NativeInsertResult, String> {
-    // MUST be async: the clipboard write (wl-copy + verify) can block for up to
-    // 800ms. A sync command runs on Tauri's main thread and blocks the webview's
-    // JS event loop — frontend safety timeouts cannot fire, the spinner stays
-    // forever (State 09). Running the blocking work on a background thread keeps
-    // the main thread free so JS timers and IPC events flow normally.
-    let app_for_blocking = app.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let state = app_for_blocking
-            .try_state::<Mutex<NativeInsertionState>>()
-            .ok_or_else(|| "Native insertion state is not available.".to_string())?;
-        let mut state = state.lock().map_err(|error| error.to_string())?;
-        let result = state.insert(request.clone());
-        drop(state);
-        Ok(result)
-    })
-    .await
-    .map_err(|e| format!("Insert task panicked: {e}"))?;
-
-    let _ = state; // state param is unused (we re-fetch via try_state on the blocking thread)
-    result
+    with_insertion_state_off_the_main_thread(app, move |state| Ok(state.insert(request))).await
 }
 
+/// The recovery button, and a full insert: clipboard write, paste driver and
+/// all. Same reason to be off the main thread as `insert_text_native`, which it
+/// otherwise only differs from in where the text comes from.
 #[tauri::command]
-pub fn restore_last_transcript(
-    state: State<'_, Mutex<NativeInsertionState>>,
-) -> Result<NativeInsertResult, String> {
-    let last = {
-        let state = state.lock().map_err(|error| error.to_string())?;
-        state
+pub async fn restore_last_transcript(app: AppHandle) -> Result<NativeInsertResult, String> {
+    with_insertion_state_off_the_main_thread(app, |state| {
+        let last = state
             .last_transcript
             .as_ref()
             .map(|entry| entry.text.clone())
-            .ok_or_else(|| "No last transcript available.".to_string())?
-    };
-
-    let mut state = state.lock().map_err(|error| error.to_string())?;
-    let result = state.insert(NativeInsertRequest {
-        text: last,
-        source: Some("last_transcript_restore".to_string()),
-        corrected: Some(false),
-        auto_paste: None,
-    });
-    Ok(result)
+            .ok_or_else(|| "No last transcript available.".to_string())?;
+        Ok(state.insert(NativeInsertRequest {
+            text: last,
+            source: Some("last_transcript_restore".to_string()),
+            corrected: Some(false),
+            auto_paste: None,
+        }))
+    })
+    .await
 }
 
 /// The one place in the product that may raise the compositor's input
@@ -659,19 +685,12 @@ pub async fn request_portal_input_grant(app: AppHandle) -> Result<NativeInsertio
         granted.phase, granted.session_active,
     ));
 
-    let state = app
-        .try_state::<Mutex<NativeInsertionState>>()
-        .ok_or_else(|| "Native insertion state is not available.".to_string())?;
-    let mut state = state.lock().map_err(|error| error.to_string())?;
-    Ok(state.status())
+    with_insertion_state_off_the_main_thread(app, |state| Ok(state.status())).await
 }
 
 #[tauri::command]
-pub fn clear_native_scratchpad(
-    state: State<'_, Mutex<NativeInsertionState>>,
-) -> Result<NativeInsertionStatus, String> {
-    let mut state = state.lock().map_err(|error| error.to_string())?;
-    Ok(state.clear())
+pub async fn clear_native_scratchpad(app: AppHandle) -> Result<NativeInsertionStatus, String> {
+    with_insertion_state_off_the_main_thread(app, |state| Ok(state.clear())).await
 }
 
 pub fn insert_transcription_from_legacy<R: Runtime>(
@@ -1651,20 +1670,24 @@ fn is_wayland_session() -> bool {
             || std::env::var_os("WORDSCRIPT_WAS_WAYLAND").is_some())
 }
 
-fn platform_status(auto_paste: bool) -> NativeInsertionPlatformStatus {
-    platform_status_from_context(detect_insert_platform_context(auto_paste))
+fn platform_status(auto_paste: bool, portal_session_live: bool) -> NativeInsertionPlatformStatus {
+    platform_status_from_context(
+        detect_insert_platform_context(auto_paste),
+        portal_session_live,
+    )
 }
 
 fn platform_status_from_context(
     platform: NativeInsertPlatformContext,
+    portal_session_live: bool,
 ) -> NativeInsertionPlatformStatus {
     // A status read describes the machine; it does not deliver anything. So it
-    // asks the portal whether a session is live -- a fact that holds until
-    // somebody revokes it -- and does NOT run the focus probe, whose answer is
-    // about a moment that has not happened yet. `Unknown` here is the truth:
+    // takes the portal's answer -- a fact that holds until somebody revokes it,
+    // read once by the caller -- and does NOT run the focus probe, whose answer
+    // is about a moment that has not happened yet. `Unknown` here is the truth:
     // where the next dictation will land is not knowable while a settings
     // screen is open, and the probe costs two process spawns per poll.
-    let lane = PasteLane::described(portal_session::session_is_live());
+    let lane = PasteLane::described(portal_session_live);
     let active_driver = preferred_active_driver(&platform, lane);
     let driver_chain = build_driver_chain(&platform, active_driver, lane);
     let (readiness, readiness_message) = platform_readiness(&platform, lane);
@@ -3013,7 +3036,7 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn wayland_platform_status_names_missing_helpers_in_driver_chain() {
-        let status = platform_status_from_context(NativeInsertPlatformContext {
+        let context = NativeInsertPlatformContext {
             auto_paste: true,
             is_wayland: true,
             has_x11_display: false,
@@ -3022,7 +3045,8 @@ mod tests {
             has_wtype: false,
             has_ydotool: false,
             try_xdotool_type_first: false,
-        });
+        };
+        let status = platform_status_from_context(context, false);
 
         assert_eq!(status.platform_label, "Linux Wayland");
         assert_eq!(status.active_driver, NativeInsertDriver::Arboard);
@@ -3047,7 +3071,7 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn x11_platform_status_marks_missing_xdotool_as_recovery_only() {
-        let status = platform_status_from_context(NativeInsertPlatformContext {
+        let context = NativeInsertPlatformContext {
             auto_paste: true,
             is_wayland: false,
             has_x11_display: true,
@@ -3056,7 +3080,8 @@ mod tests {
             has_wtype: false,
             has_ydotool: false,
             try_xdotool_type_first: false,
-        });
+        };
+        let status = platform_status_from_context(context, false);
 
         assert_eq!(status.platform_label, "Linux X11");
         assert_eq!(status.readiness, NativeInsertReadiness::RecoveryOnly);
@@ -3069,7 +3094,7 @@ mod tests {
             return;
         }
 
-        let status = platform_status(true);
+        let status = platform_status(true, false);
 
         assert_eq!(status.platform_label, "macOS");
         assert_eq!(status.readiness, NativeInsertReadiness::Ready);
@@ -3313,5 +3338,36 @@ mod tests {
         assert_eq!(result.insert_mode, NativeInsertMode::ClipboardOnly);
         assert_eq!(result.clipboard_written, true);
         assert_eq!(io.type_drivers.len(), 0);
+    }
+
+    /// NO COMMAND IN THIS FILE RUNS ON THE MAIN THREAD.
+    ///
+    /// Every one of them reaches `NativeInsertionState::status()`, which waits
+    /// on the portal session thread -- a thread that serves one command at a
+    /// time and whose grant command waits up to two minutes for a person to
+    /// answer the compositor's dialog. A sync Tauri command runs on the main
+    /// thread and blocks the webview's JS event loop with it (State 09), so a
+    /// synchronous status read freezes the app for the whole portal timeout,
+    /// once per read, and the workspace palette takes one every time it opens.
+    ///
+    /// This is asserted from the source rather than trusted to review, because
+    /// the failure is invisible in every test: a sync command is correct in
+    /// isolation and only wrong about where it runs.
+    #[test]
+    fn no_command_in_this_file_runs_on_the_main_thread() {
+        let source = include_str!("insertion.rs");
+        // Assembled rather than written out, so this test does not find its own
+        // needle in the file it is reading.
+        let attribute = concat!("#[tauri", "::command]");
+        let sync_commands: Vec<&str> = source
+            .split(attribute)
+            .skip(1)
+            .filter_map(|body| body.trim_start().lines().next())
+            .filter(|signature| !signature.starts_with("pub async fn"))
+            .collect();
+        assert!(
+            sync_commands.is_empty(),
+            "these commands would run on the main thread: {sync_commands:?}"
+        );
     }
 }

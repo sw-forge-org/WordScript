@@ -205,19 +205,30 @@ pub fn session_is_live() -> bool {
 /// Called once at app start, off the main thread. This is where the restore
 /// happens rather than in the insert path, so that the one call which can in
 /// principle raise a dialog is never inside a dictation.
+///
+/// THE CAPABILITY GATE IS INSIDE THE THREAD, NOT IN FRONT OF IT. Its only
+/// caller is Tauri's `setup`, which runs on the main thread before the window
+/// exists, and `portal_is_possible()` spawns three processes to answer:
+/// `xdg-desktop-portal --version`, two `busctl get-property` calls, and --
+/// through `detect_compositor()` on its first call -- `plasmashell --version`.
+/// Measured on the reporting machine 2026-08-18: 98-175 ms for plasmashell
+/// alone, 16-27 ms for the rest, so ~120-215 ms of subprocess spawning stood
+/// between app start and the first frame, to decide something no dictation was
+/// waiting for.
 pub fn restore_grant_in_background() {
-    if !portal_is_possible() {
-        // Said out loud, because the version of this that returned in silence is
-        // why nobody noticed the portal path was closed: `ensure_portal_session`
-        // bailed on an unsupported compositor without a word, and 6539 log lines
-        // carried no portal line at all. A path that is not taken says so.
-        runtime_log::record(
-            "[WordScript] Portal grant not restored: no RemoteDesktop portal on this desktop"
-                .to_string(),
-        );
-        return;
-    }
     std::thread::spawn(|| {
+        if !portal_is_possible() {
+            // Said out loud, because the version of this that returned in
+            // silence is why nobody noticed the portal path was closed:
+            // `ensure_portal_session` bailed on an unsupported compositor
+            // without a word, and 6539 log lines carried no portal line at all.
+            // A path that is not taken says so.
+            runtime_log::record(
+                "[WordScript] Portal grant not restored: no RemoteDesktop portal on this desktop"
+                    .to_string(),
+            );
+            return;
+        }
         let started_at = Instant::now();
         let status = match ask(Command::Restore, RESTORE_TIMEOUT_MS) {
             Some(Reply::Status(status)) => status,

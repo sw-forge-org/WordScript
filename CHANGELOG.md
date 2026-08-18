@@ -208,6 +208,30 @@ returns in milliseconds, one it re-confirms cannot return until a human has read
 a dialog. "It prompted" means nothing without "and it had a token to avoid
 prompting with".
 
+### Fixed — the portal's waiting was being paid by the main thread
+
+- **Reading the insert status could freeze the app for one and a half seconds.**
+  `native_insertion_status` was a synchronous Tauri command, and a synchronous
+  command runs on the main thread with the webview's JS event loop behind it. It
+  asks the portal session thread twice — once for the Delivery permission row,
+  once for `session_is_live()` — and that thread serves one command at a time, so
+  while the "Control input devices" dialog is up both requests wait out their
+  full timeout. The workspace palette takes one status read every time it opens.
+  Every command in the file is now async and works on a blocking worker, and the
+  status read asks the portal once and hands the answer down instead of asking
+  again. A test fails on any synchronous command in that file: a command that
+  blocks is correct in isolation and only wrong about where it runs.
+- **"Restore last transcript" ran a whole insert on the main thread** — clipboard
+  write, focus probe, paste driver and portal call. It is the button somebody
+  presses when an insert has already failed, and it froze the window while it
+  worked.
+- **App start spent 120–215 ms spawning processes before the first frame.** The
+  background grant restore answered its capability gate on the main thread and
+  only then spawned its thread — `plasmashell --version` (98–175 ms),
+  `xdg-desktop-portal --version` (27 ms) and two `busctl get-property` calls
+  (13–16 ms), to decide something no dictation was waiting for. The gate moved
+  inside the thread.
+
 ### Fixed — the two delivery switches could not be used
 
 - **Both switches from ADR 0231 shipped inoperable, and now work.** Clicking

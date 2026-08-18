@@ -1212,8 +1212,13 @@ Additional rules:
   for XWayland windows, the portal for native Wayland ones -- and never tries
   both. Without the grant every lane behaves as it did before: `xdotool` where it
   applies, clipboard-only otherwise. A refusal is remembered rather than
-  re-asked. **Not yet measured:** whether the restored grant suppresses the
-  dialog across an app restart on KDE Plasma 6
+  re-asked. **Measured 2026-08-18 on KDE Plasma 6:** three app starts with the
+  stored token and nothing pressed, `Start` returning in 18/13/10 ms and no
+  dialog -- KWin honours `ExplicitlyRevoked`, so the grant is one grant and not
+  one per run. Still owed: a dictation ending while an **XWayland** window holds
+  the focus, to see `active_driver=xdotool` in `history.json` after the grant;
+  the probe and the driver command are measured for that lane, the dictation is
+  not
 - Linux Wayland overlay click-through to apps beneath the overlay is not
   solvable with current tooling (needs Tauri layer-shell support or a
   compositor-specific protocol path); drag, button-click and clipping are

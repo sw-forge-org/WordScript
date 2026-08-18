@@ -231,32 +231,63 @@ Six `Native insert delivery unconfirmed: no foreign X window held the focus`
 lines precede the grant. After it, zero: the same machine, the same windows, and
 a paste whose delivery is now a D-Bus call that returned `Ok`.
 
-**What is still owed, both needing the owner:**
-
-3. Dictate into an **XWayland window** and expect `active_driver=xdotool` --
-   the probe must still choose the old lane where the old lane works. Every
-   portal paste so far went to a native window, so this direction is untested.
-4. **Restart the app** and press nothing. Expect
-   `Portal grant restore phase=Granted session_active=true` in the log, and no
-   dialog. **This is the measurement the whole driver rests on**, and it is the
-   one thing here that is the compositor's behaviour rather than ours: if KWin
-   re-prompts despite `ExplicitlyRevoked` and a stored token, the driver is worth
-   less than it looks and ADR 0228 needs revising rather than shipping.
-
-The line that answers step 4 is this one, and it carries both numbers the
-question needs:
+**Step 4 is measured, three times, and it is the good answer:**
 
 ```
-[WordScript] Portal Start returned restore_token_sent=true elapsed_ms=<n>
+[WordScript] Portal Start returned restore_token_sent=true elapsed_ms=18
+[WordScript] Portal session started devices=Keyboard restore_token_sent=true
+    restore_token_stored=true restore_token_rotated=false start_elapsed_ms=18
+[WordScript] Portal grant restore phase=Granted session_active=true elapsed_ms=70
 ```
 
-`restore_token_sent=false` means the grant was never persisted and the prompt is
-ours, not KWin's -- a different bug with a different fix. `restore_token_sent=true`
-with `elapsed_ms` in the thousands is the finding that revises ADR 0228: a human
-read a dialog. In the low tens, KDE honoured the token and the driver is what it
-claims. `Portal session started` repeats both alongside
+Three app starts on 2026-08-18, each of them the dev host restarting the process
+after a rebuild, nothing pressed and no dialog on screen: `Start` returned in
+**18 ms, 13 ms and 10 ms** with the stored token sent, and the whole restore
+including the D-Bus connection took 70, 45 and 38 ms. `rotated=false` each time,
+so KWin handed back the token it was given. A rebuild restart is the same
+measurement as a manual one -- a new process reading the token off disk -- and it
+is a stronger one for "press nothing", because nobody was at the keyboard.
+
+**KWin honours `ExplicitlyRevoked`, and ADR 0228 stands as written.** The
+alternative reading was `elapsed_ms` in the thousands, which is a human reading a
+dialog and would have made the driver worth less than it looks. The reading key,
+because these numbers are the whole measurement:
+
+```
+[WordScript] Portal Start returned restore_token_sent=<bool> elapsed_ms=<n>
+```
+
+`restore_token_sent=false` would mean the grant was never persisted and the
+prompt is ours, not KWin's -- a different bug with a different fix.
+`restore_token_sent=true` with `elapsed_ms` in the thousands is the finding that
+revises ADR 0228. In the low tens, KDE honoured the token and the driver is what
+it claims. `Portal session started` repeats both alongside
 `restore_token_rotated=`, which says whether the compositor handed back a
 different token than the one it was given.
+
+**Step 3 is measured up to the dictation, and that last part still needs the
+owner.** Both halves of the XWayland lane were exercised on this machine on
+2026-08-18 with a scratch KWrite window forced onto XWayland
+(`QT_QPA_PLATFORM=xcb`), using the exact commands the runtime uses:
+
+| Focused window | `getactivewindow getwindowname` | `getwindowpid` | Probe |
+| --- | --- | --- | --- |
+| KWrite (XWayland) | `step3-target.txt — KWrite` | `3614190`, not ours | `Reachable` |
+| WordScript – Settings | `WordScript – Settings` | `3587753`, ours | `Unreachable` |
+
+`Reachable` maps to `[Xdotool]` in `paste_driver_execution_chain`, which is unit
+tested, and `xdotool key --clearmodifiers ctrl+v` -- the driver command itself --
+put the clipboard into that XWayland window, read back out of its buffer. So the
+probe answers correctly for a foreign X window, correctly refuses our own, and
+the driver delivers where it says it does.
+
+What is NOT measured is a **dictation** ending while an XWayland window holds the
+focus, which is the only way `active_driver=xdotool` gets written into
+`history.json` after the grant. It needs the owner and it is one sentence: focus
+an XWayland window, dictate, read the newest `history.json` row. An agent must
+not do this half unattended -- the hotkey can be injected, but the microphone
+would then record whatever is in the room and send it to a provider, which is
+not a measurement anybody asked for.
 
 Read the log with `grep -i portal ~/.config/WordScript/logs/wordscript-runtime.log`,
 and `history.json` sorted by `created_at_ms` -- **the file is not in time order**.
@@ -303,6 +334,44 @@ several hundred times in one `cargo test`.
 
 `cargo test` 990, `npm test` and `npm run build` green. Steps 3 and 4 above are
 unchanged by this pass and still owed.
+
+### The second review pass, and where the portal's waiting was being paid
+
+Reviewed 2026-08-18 with steps 3 and 4 measured. Nothing in the driver itself was
+wrong; all three findings are about **which thread pays for the portal's
+timeouts**, and none of them could fail a test, because a command that blocks is
+correct in isolation and only wrong about where it runs.
+
+1. **A status read blocked the main thread, twice, for up to 1.5 s.**
+   `native_insertion_status` was a synchronous Tauri command, and a synchronous
+   command runs on the main thread with the webview's JS event loop behind it
+   -- the rule this file already states on `insert_text_native`, from State 09.
+   Since the driver landed, that command asks the portal session thread twice:
+   once through `portal_grant_for_status()` for the Delivery row, once through
+   `platform_status()` for `session_is_live()`. That thread serves one command at
+   a time, so while the permission dialog is up **both requests are guaranteed to
+   wait out their full 750 ms timeout**, and the workspace palette issues one
+   status read every time it opens. Now: every command in `insertion.rs` is
+   `async` and does its work on a blocking worker through one shared helper, and
+   the status read asks the portal once and hands `session_active` down to the
+   platform description instead of asking again.
+2. **`restore_last_transcript` ran a whole insert on the main thread** --
+   clipboard write (measured at up to 800 ms), focus probe, paste driver, portal
+   status and portal paste. It is the recovery button, so it is what somebody
+   presses when an insert has *already* failed, and it froze the window while it
+   ran. Same fix.
+3. **App start paid 120-215 ms of subprocess probing before the first frame.**
+   `restore_grant_in_background()` answered `portal_is_possible()` in Tauri's
+   `setup`, on the main thread, and only then spawned the thread it names itself
+   after. Measured here: `plasmashell --version` 98-175 ms,
+   `xdg-desktop-portal --version` 27 ms, two `busctl get-property` calls 13-16 ms.
+   The gate moved inside the thread; the log line it produces is unchanged.
+
+A test now fails on any synchronous `#[tauri::command]` in `insertion.rs`. The
+invariant is worth asserting rather than reviewing: every command in that file
+reaches `status()`, and `status()` can wait on the portal thread.
+
+`cargo test` 991, `npm test` 937 and `npm run build` green.
 
 ### Step 8: considered, and deliberately not taken
 

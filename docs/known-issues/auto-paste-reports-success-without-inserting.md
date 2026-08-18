@@ -173,11 +173,15 @@ machine: `org.freedesktop.portal.RemoteDesktop` **v2**, offering
 `wtype`/`ydotool`: one grant, then a restored session injects without a prompt
 per paste.
 
-**Still to be measured:** that the restored grant really does suppress the dialog
-across an app restart on KDE Plasma 6. WordScript asks for
-`PersistMode::ExplicitlyRevoked` and stores what the portal returns; honouring it
-is KWin's behaviour, not ours. The `Start` call's elapsed time is in the runtime
-log, so a dialog that appears anyway reads as seconds where milliseconds belong.
+**Measured 2026-08-18:** the restored grant does suppress the dialog across an
+app restart on KDE Plasma 6. Three starts with the stored token and nothing
+pressed, `Start` returning in 18, 13 and 10 ms and the token coming back
+unrotated -- milliseconds is a compositor honouring `ExplicitlyRevoked`, where a
+dialog somebody had to read would have been seconds. The remaining gap is the
+other lane: no dictation has ended in an **XWayland** window since the grant, so
+`active_driver=xdotool` after a grant exists is reasoned rather than recorded.
+The probe and the driver command are measured for it; see
+[`../tracks/insert-delivery.md`](../tracks/insert-delivery.md).
 
 ## Related
 
