@@ -103,6 +103,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when* — except where it would land beside its neighbour, which printed
   `10 Aug17 Aug` as a single run of characters.
 
+### Changed — turnaround is read by band, and by what caused it
+
+- **Five bands instead of a 25 ms histogram.** On a real record of 346 runs the
+  fine chart drew twenty-four columns of which eleven were empty, and each hint
+  read *this many dictations came back between 4.5 and 4.9 seconds* — a sentence
+  with no question behind it. The bands carry a share instead: *under a second,
+  seven times in ten*. Which edges are used is picked from the record's own p90,
+  so a fast machine is not four empty columns and a slow one is not one full
+  column (ADR 0236).
+- **And under them, a list of what the wait belongs to.** Model, vendor, runs and
+  that group's own median. The lifetime histogram carries no model, so this list
+  reads the records still on the machine and says so — history is pruned by age
+  and count while the ledger is not, so it covers fewer runs than the spread
+  above it.
+- **The vendor is written out and labelled `via`.** The same recogniser is served
+  by more than one vendor at more than one speed, which is the comparison the
+  list exists for; an unlabelled second word beside a model name was read as
+  possibly the model's author and possibly the profile.
+- **The note says what the clock covers.** The wait runs from you stopping to the
+  text being ready, so where a mode rewrote the text there is a second model
+  inside it that the record does not name.
+
+### Fixed — a language that was named and never written down
+
+- **`Too short to name · 91 runs` was describing the wrong cause.** The naming
+  call had answered for almost every one of those dictations — on the reporting
+  machine, 74 of 75 calls came back with a language — but nothing stored the
+  answer, so a ledger rebuilt from history re-measured with the offline detector
+  alone and dropped every record under its eight-word floor. The record now
+  carries the language it was counted as (`spoken_language`, additive, read by
+  both the live write and the rebuild), and the label reads **`Not named`**,
+  which is true of both causes (ADR 0236).
+- **This repairs nothing already lost.** An answer that was never written down
+  cannot be recovered; the field stops the next rebuild from losing the next one.
+- **The decimal point no longer touches the digit before it.** Seven of the ten
+  matrix glyphs light their last column in the two rows the point occupies, so
+  `3.5` merged into one shape while `1.0` was clean — same component, same code,
+  different digits. The gap is now clear on both sides of the mark, which is the
+  only arrangement that does not depend on what is being displayed.
+- **The view dots leave the screen while a metric is open.** Disabling them left
+  a lit dot beside an unlit one, which reads as a choice however inert it is.
+  Their space is held, so nothing above them moves.
+
 ### Added — a paste that can say whether it arrived
 
 - **Insert at cursor reaches native Wayland windows for the first time.**

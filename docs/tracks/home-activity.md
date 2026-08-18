@@ -807,6 +807,100 @@ rule already says grep before you number, and the grep was done — at the start
 **Grep again immediately before writing the file**, or cite nothing until it
 exists.
 
+## The record — Stage E, 2026-08-18
+
+Sixth session, same day as Stage D. The owner read the four new views against
+**447 real dictations** and reported four things; a fifth followed from what the
+fourth produced. Durable form is
+[ADR 0236](../decisions/0236-a-turnaround-is-read-by-band-and-by-cause-the-language-is-stored-on-the-record-and-a-control-that-will-not-act-is-not-shown.md).
+
+**Suite: 935 → 942 frontend cases over 56 files, and 992 Rust cases** (the last
+measured Rust figure was Stage C's 917; E3 is the first Rust in this track since
+B3). `npx tsc --noEmit` and `npm run build` clean. A dev host **was** running —
+PID 3413540 — so every `src-tauri/` edit was batched into one pass and the app
+restarted once rather than five times. The runtime log went 8259 → 9450 lines
+over the session; no capture measurement was in flight.
+
+### The number under `Too short to name` was right and the sentence was ours
+
+This is the finding worth carrying out of the session. The owner asked how 91
+runs could be unnamed when both a deterministic detector and a model naming call
+are in the tree. Both are, and both work — the runtime log for the same period
+holds **75 naming lines of which 74 returned a language** (67 `de`, 6 `en`, 1
+`nl`). The ledger says 447 dictations, 356 named, 91 unnamed, and the ratio
+matches the log's own gap almost exactly.
+
+**Nothing stored the answer.** `contributed_language` ran inside the ledger write
+and was discarded with it, so `seed_from_history` — the rebuild that runs
+whenever the ledger file is missing or has been reset — had nothing to read and
+re-measured with the offline detector alone. Its floor is eight words or twenty
+characters; **54 of the 389 records still on disk are under it against 17 under
+the naming floor**. So the label was describing the smaller of the two causes
+and hiding the larger one, which was a defect in this tree rather than a
+property of short dictations.
+
+The fix is one additive field and it repairs nothing retroactively. That is
+worth saying plainly to whoever reads the tile next year: those 91 stay unnamed
+forever.
+
+### The chart was legible and asked nothing, which the suite cannot see
+
+346 timed runs, 25 ms buckets, a span of 379 buckets — drawn as 24 columns of
+400 ms with **11 of them empty**, held open across their whole width by a single
+9.975 s run. Every hint read *N dictations came back between 4.5 and 4.9
+seconds*, and the column beside it said the same with a nought. Nothing is wrong
+in that picture; there is simply no question it answers. **A band carries a
+share, and a share is what a wait is read for.**
+
+The same reading is why the cause list exists at all: the owner's own framing
+was *das ist ja der Sinn vom Turnaround* — finding out what causes it. The
+ledger cannot answer that (its histogram is counts per 25 ms and carries no
+model), so the list reads the records, and it is now **the only reading on Home
+that is not all-time**. It says so, because history is pruned and the ledger is
+not.
+
+### One recogniser, two vendors, an eightfold difference — and no word saying so
+
+The list's first build printed `whisper-large-v3-turbo openai` and the owner
+asked whether that was the model's author, the profile, or the vendor. It is the
+vendor, and on this machine the ambiguity hides the whole point: the same
+recogniser reads **1.0 s over 261 runs through one vendor and 5.8 s over one run
+through another**. One word — `via` — plus the catalogue's written name, and an
+unknown id printing raw rather than throwing, because these ids come off records
+an older build may have written differently.
+
+**Grouping by profile was considered and dropped.** One delivery mode is in use
+per profile here, so a profile split would have compared delivery modes while
+claiming to compare profiles. `effective_mode` is on every record, so a mode
+split is available whenever it is wanted.
+
+### The decimal point was a glyph fact, not a scaling one
+
+`3.5` merged and `1.0` did not, on one component and one code path. Seven of the
+ten glyphs — `0`, `2`, `3`, `5`, `6`, `8`, `9` — light their last column in the
+two rows the mark occupies; `1`, `4` and `7` do not. ADR 0191's reasoning was
+about printed type, which has side bearings these do not. A gap the glyphs
+cannot reach into on **either** side is the only arrangement that does not depend
+on which digits happen to be showing.
+
+### Disabling a control is not removing it
+
+The dots were disabled under an open metric and the owner reported them again:
+*mechanisch ist es ausgeschaltet, aber visuell ist es noch da*. A lit dot with an
+unlit twin reads as a choice however inert it is. They are hidden now, with their
+space held — the row is the last thing on the block, so unmounting it would lift
+the chart being read.
+
+### The browser page found all of it again, and this time it was the product
+
+Stage D rendered synthetic ledgers in a throwaway Vite page. This session
+rendered the **real** workspace over the dev server with `__TAURI_INTERNALS__`
+stubbed and this machine's own `config.json`, `activity.json` and `history.json`
+behind it, then clicked the tile and read the DOM back. That is how the vendor
+labels, the parked dots and the five band names were confirmed rather than
+assumed. The harness is fifty lines and it is the third session in a row where
+looking at the page was the only thing that could have found the defect.
+
 ## The sequence
 
 **Stage A — the surface, on what already reads.** Nothing here is blocked.
@@ -885,6 +979,20 @@ one is opened from a tile rather than from a third dot.
 | **D2 · done** | **The unit ladder**, owner's thresholds: minutes under 180, hours to 72 h, days above, one decimal drawn in the matrix (ADR 0191) | `4820 minutes` is impossible; the tile reads `4.6 hours` and the detail view spells its facts through the same function |
 | **D3 · done** | **A metric opens its own view of the block** — [ADR 0235](../decisions/0235-a-metric-opens-its-own-view-of-the-home-block-and-it-draws-only-what-its-record-can-carry.md). The tile is a button and its click stops propagating; the background and the dots keep the counters/calendar swap; while a detail is open the hit layer is not rendered at all. Day/week/month/year, a grain offered only once the record reaches three buckets of it | Each of the four metrics opens a view that draws what its own record can carry — a series for the two that have one, a spread and a share table for the two that do not, each saying which it is |
 | **D4 · done** | **The week starts on Monday**, in the calendar grid and in the week buckets, patched in the vendored heat map as well as in both callers | One dictation cannot land in two different weeks on one screen |
+
+**Stage E — the owner brief of 2026-08-18, evening.** Stage D's views read
+against 447 real dictations. Four items came back, then a fifth on what the
+fourth produced. Durable form is
+[ADR 0236](../decisions/0236-a-turnaround-is-read-by-band-and-by-cause-the-language-is-stored-on-the-record-and-a-control-that-will-not-act-is-not-shown.md).
+**E3 is the only Rust in this track since B3.**
+
+| Step | What | Done means |
+|---|---|---|
+| **E1 · done** | **Turnaround is read in bands, not in a 25 ms histogram.** 346 runs over 379 buckets drew 24 columns of 400 ms with 11 empty, and the hint under each was *this many dictations between two nearly identical times*. Five bands, edge set picked from the record's own p90 out of three; interior empties kept, trailing ones dropped; each hint carries the band's **share** | No column of the turnaround view can be hovered without producing a sentence somebody would say out loud |
+| **E2 · done** | **And under the bands, what caused it.** The ledger's histogram carries no model, so the list reads the history records: vendor and model, runs, median, top five. The vendor is written out from the catalogue and prefixed `via` — the same recogniser runs at 1.0 s through one and 5.8 s through another on this machine, and the first build's unlabelled second word was read as possibly the model's author and possibly the profile | A reader can name which model and which vendor the wait belongs to, and the note says the clock also covers a transform model the record does not name |
+| **E3 · done** | **The record stores the language it was counted as.** `TranscriptionHistoryEntry.spoken_language`, additive and `#[serde(default)]`, decided once in `record_entry_with_work_mode` and read by both the ledger write and `seed_from_history`. The label becomes `Not named`, because *too short* was one of two reasons and the other one was a rebuild losing the model's answer | A ledger rebuilt from history keeps the naming call's verdict for every record written after this, and the two reasons are no longer spelled as one |
+| **E4 · done** | **The decimal gap is four columns with the mark in the middle two.** Seven of the ten glyphs reach their last column in the mark's rows, so the three-column build was clean behind `1` and one shape behind `3` | The mark cannot touch a glyph whichever digits stand either side of it, asserted over all 100 pairs |
+| **E5 · done** | **The view dots leave the screen inside a metric.** Disabling them was the first answer and the owner read the pair still sitting there as an offer; `visibility` holds the row's space so the chart above does not lift | Nothing on an open metric view offers a switch it will not perform, and the block does not move when one opens |
 
 ## Traps
 
@@ -989,19 +1097,20 @@ absence — a streak, a gap, a "you haven't dictated since" — has to pass thro
 
 ## The prompt for the next session
 
-**Stage A, Stage C and Stage D are all closed** — A1 to A11, C1 to C11 and D1 to
-D4 are landed, C12 stays withdrawn. Read the record sections above before
-anything else, in particular the A3/A4/A5 one, *What the readings actually
-measure*, the Stage C one and the Stage D one: all four carry findings that are
-not in the tree's own comments.
+**Stage A, Stage C, Stage D and Stage E are all closed** — A1 to A11, C1 to C11,
+D1 to D4 and E1 to E5 are landed, C12 stays withdrawn. Read the record sections
+above before anything else, in particular the A3/A4/A5 one, *What the readings
+actually measure*, the Stage C one, the Stage D one and the Stage E one: all five
+carry findings that are not in the tree's own comments.
 
 Work in the repo root on `main`. Do not create a branch. **Seven other tracks
 work in the same tree** — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so
 run `git status` and `git log --oneline -5` before you start, and stage your own
-paths. Never `git add -A`. **0236 is the next free ADR number unless the tree
+paths. Never `git add -A`. **0237 is the next free ADR number unless the tree
 says otherwise — grep, and grep again immediately before you write the file.**
 Stage D cited 0234 twelve times in source and lost the number to another track
-while the session was running.
+while the session was running; Stage E wrote 0236's file first and scattered the
+citations after, which is what that trap actually asks for.
 
 ### There is no open stage. What is left is Stage B, and it is not yours to start
 
@@ -1017,8 +1126,9 @@ the thing this track spent Stage A making impossible.
 | **B4** | Meetings and uploads as calendar origins — [`context-objects.md`](context-objects.md). The tooltip already holds their line, unwired and tagged |
 
 **So a session opening this page should probably not be a home-activity
-session.** If the owner brings new readings, they open a Stage E and this page is
-where it goes. If they do not, the four live questions below are what this track
+session.** If the owner brings new readings, they open a Stage F and this page is
+where it goes — that is what Stage D and Stage E both were, each opened by one
+evening's use of what the session before it landed. If they do not, the four live questions below are what this track
 still has to say, and every one of them is a PROPOSAL rather than a task.
 
 ### Four things to raise, and none of them is a row yet
@@ -1043,6 +1153,17 @@ still has to say, and every one of them is a PROPOSAL rather than a task.
    row field, which means the ledger's shape, `raise_to`, the backup merge and a
    migration — **a Stage B-sized decision that belongs to whoever owns the
    ledger, not to a chart.** Do not add the field to make a tab appear.
+5. **The turnaround the list charges to a model is not all that model's.** The
+   clock stops when the TEXT exists (ADR 0181), so a mode that rewrites what was
+   said has a second model inside the same interval and the record names only
+   the recogniser. Splitting the clock would mean a second timestamp on the
+   record — cheap in isolation, and a change to what every existing record can
+   be compared against. **`effective_mode` is already there**, so a per-mode cut
+   of the same list is the free version of this and is the one to offer first.
+6. **`Not named` will hold 91 runs forever.** ADR 0236 stops the next rebuild
+   from losing an answer; it recovers nothing. If the tile ever needs to
+   distinguish *refused* from *lost*, the field that would say so is on records
+   written from 2026-08-18 onwards and on no others.
 
 ### Rules that still have teeth here
 
@@ -1059,10 +1180,14 @@ still has to say, and every one of them is a PROPOSAL rather than a task.
    `wc -l ~/.config/WordScript/logs/wordscript-runtime.log` before and after and
    report both; no heavy builds, `cargo test` included, during one.
 5. **Measure geometry in a browser, do not read `shell.css` and believe it.**
-   Stage A's corrected trap is three separate ways that goes wrong, and **Stage D
-   is the same rule one step up: render the chart and look at it.** Five defects
-   were green in Vitest and wrong on the screen, including a line drawn at 16 px
-   by `.ws-win svg` — the trap the calendar's own file documents.
+   Stage A's corrected trap is three separate ways that goes wrong, **Stage D is
+   the same rule one step up — render the chart and look at it** (five defects
+   green in Vitest and wrong on the screen, including a line drawn at 16 px by
+   `.ws-win svg`, the trap the calendar's own file documents), **and Stage E is
+   one step up again: render the REAL workspace over the dev server with
+   `__TAURI_INTERNALS__` stubbed and this machine's own `config.json`,
+   `activity.json` and `history.json` behind it.** Synthetic data cannot show you
+   that one recogniser appears under two vendors.
 6. **A matrix glyph is graded by looking at it at its real size.** Stage C's own
    trap, and it cost two rounds: the arithmetic was right both times.
 7. **The owner does not want every change tested.** Said in as many words on
@@ -1071,10 +1196,9 @@ still has to say, and every one of them is a PROPOSAL rather than a task.
 
 **Validation:** `npm test`, `npm run build`, and `cd src-tauri && cargo test` if
 Rust moved. Quote the counts as a delta against the baselines you measure at the
-start. Baselines at the close of this session: **935 frontend cases over 56
-files**; the Rust suite was not run because nothing under `src-tauri/` moved, so
-its last measured figure is Stage C's 917. Run `npm audit` if anything lands in
-`package.json`; the intent is that nothing does.
+start. Baselines at the close of Stage E: **942 frontend cases over 56 files**
+and **992 Rust cases**. Run `npm audit` if anything lands in `package.json`; the
+intent is that nothing does.
 
 **Before you stop**, write your record into this page above the sequence, update
 the rows you closed, write the next ADR in the track's range, and write the next

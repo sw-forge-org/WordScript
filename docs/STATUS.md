@@ -145,10 +145,17 @@ Status: 2026-08-18
   `config.typing_baseline_wpm` (default 40, set in Privacy & Data) — it swings the
   figure threefold across the range a real writer types at, so it may not be a
   constant. **Turnaround** starts when the capture stops rather than when the
-  audio file already exists, so the encode is inside the wait. **Languages** is
-  read off the delivered text by `core::language_detect` — offline, seventy
-  languages, refusing anything too short or too ambiguous — because Groq treats
-  the language as a request hint and never names one in its answer.
+  audio file already exists, so the encode is inside the wait, and it stops when
+  the TEXT exists — so a mode that rewrites what was said has a second model
+  inside the same interval. **Languages** is measured on the text that was
+  SPOKEN, by the naming call where it answered and by `core::language_detect`
+  otherwise (ADR 0188) — offline, seventy languages, refusing anything too short
+  or too ambiguous — because Groq treats the language as a request hint and never
+  names one in its answer. **That verdict is stored on the record**
+  (`spoken_language`, ADR 0236, 2026-08-18), so a ledger rebuilt from history
+  keeps the naming call's answer instead of re-measuring without it; records
+  written before that date carry none and stay unnamed, which is why the tile
+  reads `Not named` rather than `Too short to name`.
 - **The lifetime figures cannot fall, and one button clears them** (ADR 0176,
   ADR 0179, 2026-08-16). A day row that ages out of the 800-day file is retired
   INTO the totals rather than dropped; `activity.json` travels in the full backup
@@ -167,8 +174,13 @@ Status: 2026-08-18
   offered only once the ledger reaches three buckets of it. Time saved and words
   per minute have a real series there; turnaround and languages exist only as
   all-time figures, so they draw their spread and their shares and say so rather
-  than inventing a history. That view is not persisted: the block opens on the
-  remembered one of the two. **The display only spans days the history file can
+  than inventing a history. **Turnaround's spread is five bands rather than a
+  25 ms histogram, and under it a list of which model and vendor the wait belongs
+  to** (ADR 0236, 2026-08-18) — the only reading on Home that is not all-time,
+  because it comes off the records rather than the ledger and history is pruned.
+  While a metric is open the view dots are hidden rather than merely inert, and
+  their space is held so nothing above them moves. That view is not persisted:
+  the block opens on the remembered one of the two. **The display only spans days the history file can
   vouch for** — pruning by age and by count both narrow it, a saturated file
   cannot speak for any day before its own oldest record, and the line under the
   grid names which bound bit. Days outside it are blank rather than unlit,

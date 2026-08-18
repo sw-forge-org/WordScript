@@ -1550,6 +1550,8 @@ that is what a record is for (ADR 0123: one list per fact).
   The input permission is asked for once, in Settings, and a desktop that cannot be named no longer closes the path.
 - [0235](0235-a-metric-opens-its-own-view-of-the-home-block-and-it-draws-only-what-its-record-can-carry.md):
   A metric opens its own view of the home block, and it draws only what its record can carry.
+- [0236](0236-a-turnaround-is-read-by-band-and-by-cause-the-language-is-stored-on-the-record-and-a-control-that-will-not-act-is-not-shown.md):
+  A turnaround is read by band and by cause, the language is stored on the record, and a control that will not act is not shown.
 
 ## Resolved: the number 0011 was used twice
 
