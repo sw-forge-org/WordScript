@@ -520,6 +520,12 @@ pub struct ExportTranscriptionHistoryResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct TranscriptionHistoryStorageStatus {
     pub path: String,
+    /// What the index costs on disk, and the two numbers it is read against
+    /// (ADR 0241). **THE FIGURE IS THE SURFACE AND THE THRESHOLD IS NOT**: 5 GB
+    /// will not arrive this decade, so a row wired only to the threshold would
+    /// be a row that never says anything.
+    #[serde(flatten)]
+    pub budget: super::storage_budget::StorageBudget,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -955,6 +961,68 @@ fn compact_journal(entries: &VecDeque<TranscriptionHistoryEntry>) -> Result<(), 
     })
 }
 
+/// The bytes the index costs on disk right now (ADR 0241).
+///
+/// One `metadata()`, which is what makes a byte budget affordable to check at
+/// all: the answer does not depend on how many records are in the file. It is
+/// the journal INCLUDING its dead weight, because that is what is actually on
+/// the reader's disk and is what a figure on Privacy & Data has to mean.
+pub fn journal_bytes() -> u64 {
+    super::storage_budget::file_bytes(&resolved_history_file_path())
+}
+
+/// Bring the index back under `ceiling` by dropping its oldest records, and
+/// answer with how many went (ADR 0241).
+///
+/// **A COMPACTION IS TRIED FIRST AND OFTEN ENDS IT.** The file holds tombstones,
+/// superseded puts and everything retention pruned out of memory; none of that
+/// is a record the reader would lose, and a store that is over its ceiling on
+/// dead weight alone must not answer by deleting live history.
+///
+/// Only when the rewritten file is STILL over does anything get evicted, oldest
+/// first, and then down to `target` rather than to the ceiling — see `EVICT_TO`.
+/// The transcript FILES of evicted records are left alone, which is ADR 0237's
+/// rule and is not weakened here: this is the index's budget, the archive has
+/// its own, and a record leaving the list has never taken its text with it.
+pub fn enforce_journal_ceiling(ceiling: u64, target: u64) -> usize {
+    if journal_bytes() <= ceiling {
+        return 0;
+    }
+
+    let Ok(mut store) = history_store().lock() else {
+        return 0;
+    };
+    ensure_loaded(&mut store);
+
+    if compact_journal(&store.entries).is_ok() {
+        store.ops = store.entries.len();
+    }
+    if journal_bytes() <= ceiling {
+        return 0;
+    }
+
+    /* THE OLDEST FIRST, AND MEASURED RATHER THAN GUESSED. Each candidate is
+       serialised to learn what dropping it buys, which costs one pass over the
+       records actually being removed and nothing over the ones that stay. */
+    let mut bytes = journal_bytes();
+    let mut evicted = 0usize;
+    while bytes > target {
+        let Some(oldest) = store.entries.pop_back() else {
+            break;
+        };
+        let freed = serde_json::to_string(&JournalWrite::Put(&oldest))
+            .map(|line| line.len() as u64 + 1)
+            .unwrap_or(0);
+        bytes = bytes.saturating_sub(freed);
+        evicted += 1;
+    }
+
+    if evicted > 0 && compact_journal(&store.entries).is_ok() {
+        store.ops = store.entries.len();
+    }
+    evicted
+}
+
 /// Compact when at least half the file is dead weight, above a floor.
 ///
 /// A FAILED REWRITE IS NOT AN ERROR ANYBODY CAN ACT ON. The records are already
@@ -1302,6 +1370,7 @@ pub fn transcription_history_record(
 pub fn transcription_history_storage_status() -> Result<TranscriptionHistoryStorageStatus, String> {
     Ok(TranscriptionHistoryStorageStatus {
         path: resolved_history_file_path().to_string_lossy().to_string(),
+        budget: super::storage_budget::StorageBudget::of(journal_bytes()),
     })
 }
 
@@ -3321,6 +3390,87 @@ mod tests {
             let _ = std::fs::remove_file(&path);
         }
         println!();
+    }
+
+    /// ADR 0241. A store over its ceiling on DEAD WEIGHT must not answer by
+    /// deleting live history.
+    #[test]
+    fn a_journal_over_its_ceiling_on_slack_alone_is_compacted_and_loses_nothing() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = prepare_test_history_path("budget-slack");
+
+        let kept = record_entry(completed_request("Bleibt.")).expect("history entry");
+        for index in 0..40 {
+            let entry =
+                record_entry(completed_request(&format!("Geht wieder {index}."))).expect("entry");
+            delete_transcription_history_entry(DeleteTranscriptionHistoryEntryRequest {
+                id: entry.id,
+            })
+            .expect("the delete lands");
+        }
+
+        let fat = std::fs::metadata(&path).expect("the journal").len();
+        let evicted = enforce_journal_ceiling(fat / 2, fat / 4);
+
+        assert_eq!(evicted, 0, "live records were evicted to shed dead weight");
+        let (entries, _ops) = load_history_entries();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries.front().map(|entry| entry.id.clone()), Some(kept.id));
+    }
+
+    /// And when the rewrite is not enough, the oldest go — never the newest.
+    #[test]
+    fn a_journal_still_over_its_ceiling_evicts_its_oldest_records() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = prepare_test_history_path("budget-evict");
+
+        let oldest = record_entry(completed_request("Der aelteste Satz.")).expect("entry");
+        for index in 0..19 {
+            record_entry(completed_request(&format!("Satz Nummer {index}."))).expect("entry");
+        }
+        let newest = record_entry(completed_request("Der neueste Satz.")).expect("entry");
+
+        let full = std::fs::metadata(&path).expect("the journal").len();
+        let evicted = enforce_journal_ceiling(full / 2, full / 2);
+
+        assert!(evicted > 0, "nothing was evicted from a store over its ceiling");
+        assert!(
+            std::fs::metadata(&path).expect("the journal").len() <= full / 2,
+            "the journal is still over the target it was told to reach",
+        );
+
+        let (entries, _ops) = load_history_entries();
+        assert!(
+            entries.iter().any(|entry| entry.id == newest.id),
+            "the newest record was evicted",
+        );
+        assert!(
+            !entries.iter().any(|entry| entry.id == oldest.id),
+            "the oldest record survived an eviction that took newer ones",
+        );
+    }
+
+    /// The case every install is in, and stays in for about fifty years.
+    #[test]
+    fn a_journal_under_its_ceiling_loses_nothing() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("budget-under");
+
+        record_entry(completed_request("Eins.")).expect("history entry");
+        record_entry(completed_request("Zwei.")).expect("history entry");
+
+        assert_eq!(
+            enforce_journal_ceiling(super::super::storage_budget::STORAGE_CEILING_BYTES, 1),
+            0,
+        );
+        let (entries, _ops) = load_history_entries();
+        assert_eq!(entries.len(), 2);
     }
 
     /// ADR 0241. The dictation path appends and does not rewrite, which is what

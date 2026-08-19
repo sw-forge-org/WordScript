@@ -21,7 +21,11 @@ import {
   textProfileFromRulesDocument,
   textRulesDocumentFromProfile,
 } from "@/lib/textProfiles";
-import type { RetainedCaptureStatus, TranscriptStoreStatus } from "@/types/history";
+import type {
+  RetainedCaptureStatus,
+  TranscriptionHistoryStorageStatus,
+  TranscriptStoreStatus,
+} from "@/types/history";
 import type { TextRulesAnalysis, TextRulesDocument } from "@/types/textRules";
 import type { WiredScreenProps } from "./props";
 
@@ -260,6 +264,11 @@ const RETENTIONS: { value: number; label: string }[] = [
  *  The `Math.max(1, …)` floor is why nothing calls this with a zero: a
  *  collection with nothing in it gets a sentence, not `1 KB`. */
 function formatStoredSize(bytes: number): string {
+  /* GB IS NOT DECORATION HERE, it is the unit the two thresholds are stated in
+     (ADR 0241). A store that reaches its ceiling reads `10.0 GB` beside a
+     sentence about ten gigabytes, and a reading that said `10240.0 MB` instead
+     would be the same number failing to answer the question the row asks. */
+  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
   if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1000))} KB`;
 }
@@ -342,6 +351,12 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
      no reading. */
   const [archive, setArchive] = useState<TranscriptStoreStatus | null>(null);
   const [archiveNote, setArchiveNote] = useState<string | null>(null);
+  /* THE INDEX GETS THE READING THE ARCHIVE ALREADY HAD (ADR 0241). Both
+     collections are bounded in bytes now, and a threshold that never fires — 5
+     GB is decades away at any real rate — is not a feature. The figure is, and
+     it is the same figure the ceiling is measured against, so the row cannot
+     drift from the rule the way a second copy of a number would. */
+  const [index, setIndex] = useState<TranscriptionHistoryStorageStatus | null>(null);
 
   const readArchive = useCallback(async () => {
     try {
@@ -352,10 +367,22 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
     }
   }, []);
 
+  const readIndex = useCallback(async () => {
+    try {
+      const answer = await invoke<TranscriptionHistoryStorageStatus>(
+        "transcription_history_storage_status",
+      );
+      setIndex(typeof answer?.bytes === "number" ? answer : null);
+    } catch {
+      setIndex(null);
+    }
+  }, []);
+
   useEffect(() => {
     if (!runtime.active) return;
     void readArchive();
-  }, [runtime.active, readArchive]);
+    void readIndex();
+  }, [runtime.active, readArchive, readIndex]);
 
   /* WHICH PROFILE THE EXPORT MEANS. It opens on the active one because that is
      the profile the reader is currently being written by, and it is a local
@@ -634,6 +661,32 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                   </Select>
               }
             />
+            {/* THE FIGURE, WHICH IS THE INSTRUMENT — AND NOT THE THRESHOLD,
+                WHICH IS THE BACKSTOP'S VOICE (ADR 0241). The index is bounded
+                in bytes now rather than in records: 10 GB is about 4.1 million
+                dictations and roughly fifty years at this machine's rate, so
+                the ceiling is a promise that the application cannot fill a disk
+                without saying so, and the number beside it is the only part a
+                reader will ever see move. */}
+            <Row
+              label="On this machine now"
+              hint={
+                index === null
+                  ? "Read from the file the records are written to."
+                  : index.bytes >= index.warning_bytes
+                    ? `In ${index.path}. Past ${formatStoredSize(index.warning_bytes)}; at ${formatStoredSize(index.ceiling_bytes)} the oldest records start dropping out whatever the rule above says.`
+                    : `In ${index.path}. The rule above is what governs it — the ${formatStoredSize(index.ceiling_bytes)} ceiling is a backstop against a runaway and nothing you will reach.`
+              }
+              control={
+                index === null ? (
+                  <StatusBadge tone="neutral">Not read</StatusBadge>
+                ) : (
+                  <StatusBadge tone={index.bytes >= index.warning_bytes ? "warning" : "plan"}>
+                    {formatStoredSize(index.bytes)}
+                  </StatusBadge>
+                )
+              }
+            />
           </CardRows>
         </Card>
 
@@ -652,9 +705,15 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
               label="Kept for"
               /* No picker, and deliberately not a second one: two durations
                  over two stores would rebuild the two-controls defect ADR 0185
-                 removed, one store further out. The folder is the reader's and
-                 the only rule is the door below. */
-              hint="Nothing prunes them. Deleting a record in History still takes its file; the age rule above no longer does."
+                 removed, one store further out. The folder is the reader's.
+
+                 IT NO LONGER SAYS *NOTHING PRUNES THEM* (ADR 0241). That was
+                 true and was the gap that record closed: ADR 0237 gave the
+                 files their own lifetime and then left it infinite, so the
+                 honest answer to *when do these go* was *never*. They now have
+                 a backstop of their own, on the same two numbers as the index
+                 and out of the same budget as nothing else. */
+              hint={`Nothing prunes them by age. Deleting a record in History still takes its file, and past ${formatStoredSize(archive?.ceiling_bytes ?? 10_000_000_000)} the oldest go — a backstop, not a rule you will meet.`}
               control={<StatusBadge tone="plan">Until you delete them</StatusBadge>}
             />
             {/* THE READING IS NOT OPTIONAL HERE, unlike on the card below where
@@ -679,7 +738,9 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                   ) : archive.files === 0 ? (
                     <StatusBadge tone="success">Nothing stored</StatusBadge>
                   ) : (
-                    <StatusBadge tone="plan">
+                    <StatusBadge
+                      tone={archive.bytes >= archive.warning_bytes ? "warning" : "plan"}
+                    >
                       {archive.files} file{archive.files === 1 ? "" : "s"} ·{" "}
                       {formatStoredSize(archive.bytes)}
                     </StatusBadge>

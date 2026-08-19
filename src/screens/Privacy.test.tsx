@@ -233,6 +233,59 @@ describe("Privacy & Data, wired", () => {
   });
 
   /**
+   * ADR 0241. Both collections are bounded in bytes now, and both state what
+   * they weigh. **THE FIGURE IS THE INSTRUMENT AND THE THRESHOLD IS NOT**: at
+   * the reporting machine's 217 dictations a day, 5 GB of index is decades
+   * away, so a row wired only to the threshold would be a row that never says
+   * anything in the life of an install.
+   */
+  it("states what the index weighs, against a ceiling it is nowhere near", async () => {
+    invoked.mockImplementation(async (command) => {
+      if (command === "transcription_history_storage_status") {
+        return {
+          path: "/home/me/.config/WordScript/history.jsonl",
+          bytes: 1_208_861,
+          warning_bytes: 5_368_709_120,
+          ceiling_bytes: 10_737_418_240,
+        };
+      }
+      return undefined;
+    });
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const row = () => inCardRow("Dictation history", "On this machine now");
+    await waitFor(() => {
+      expect(row().getByText("1.2 MB")).toBeTruthy();
+    });
+    expect(row().getByText(/backstop against a runaway and nothing you will reach/))
+      .toBeTruthy();
+    /* And it must not read as a warning at a thousandth of the threshold. */
+    expect(row().queryByText(/the oldest records start dropping out/)).toBeNull();
+  });
+
+  /** And when it does arrive, the row is the one that says so. */
+  it("warns on the index once it is past five gigabytes", async () => {
+    invoked.mockImplementation(async (command) => {
+      if (command === "transcription_history_storage_status") {
+        return {
+          path: "/home/me/.config/WordScript/history.jsonl",
+          bytes: 6_000_000_000,
+          warning_bytes: 5_368_709_120,
+          ceiling_bytes: 10_737_418_240,
+        };
+      }
+      return undefined;
+    });
+    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    const row = () => inCardRow("Dictation history", "On this machine now");
+    await waitFor(() => {
+      expect(row().getByText("6.0 GB")).toBeTruthy();
+    });
+    expect(row().getByText(/the oldest records start dropping out/)).toBeTruthy();
+  });
+
+  /**
    * ADR 0237. The archive stopped sharing the index's rule, so it needs the
    * same two things the card above has — and the reading matters more here,
    * because a file whose entry the retention already dropped has no row in
@@ -241,10 +294,24 @@ describe("Privacy & Data, wired", () => {
   it("counts the transcript archive apart from the index and purges it on request", async () => {
     invoked.mockImplementation(async (command) => {
       if (command === "transcript_store_status") {
-        return { root: "/home/me/WordScript/transcripts", exists: true, files: 394, bytes: 812_000 };
+        return {
+          root: "/home/me/WordScript/transcripts",
+          exists: true,
+          files: 394,
+          bytes: 812_000,
+          warning_bytes: 5_368_709_120,
+          ceiling_bytes: 10_737_418_240,
+        };
       }
       if (command === "purge_transcript_archive") {
-        return { root: "/home/me/WordScript/transcripts", exists: true, files: 0, bytes: 0 };
+        return {
+          root: "/home/me/WordScript/transcripts",
+          exists: true,
+          files: 0,
+          bytes: 0,
+          warning_bytes: 5_368_709_120,
+          ceiling_bytes: 10_737_418_240,
+        };
       }
       return undefined;
     });
@@ -253,10 +320,10 @@ describe("Privacy & Data, wired", () => {
     await waitFor(() => {
       expect(archiveRow().getByText("394 files · 812 KB")).toBeTruthy();
     });
-    /* The rule the card states is the one that changed: the age picker above no
-       longer reaches these. */
+    /* The rule the card states is the one that changed: the age picker above
+       does not reach these, and since ADR 0241 a byte ceiling does. */
     expect(
-      inCard("Transcript files").getByText(/the age rule above no longer does/),
+      inCard("Transcript files").getByText(/Nothing prunes them by age/),
     ).toBeTruthy();
 
     await userEvent.click(archiveRow().getByRole("button", { name: "Delete now" }));

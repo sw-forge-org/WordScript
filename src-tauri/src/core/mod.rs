@@ -26,6 +26,7 @@ pub mod runtime_log;
 pub mod sessions;
 pub mod shortcut;
 pub mod sound;
+pub mod storage_budget;
 pub mod text_rules;
 pub mod theme;
 pub mod transcript_store;

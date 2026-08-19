@@ -33,6 +33,13 @@ export interface ExportTranscriptionHistoryResponse {
 
 export interface TranscriptionHistoryStorageStatus {
   path: string;
+  /** What the index costs on disk, against the two numbers it is read against
+   *  (ADR 0241). **The figure is the instrument and the threshold is the
+   *  backstop's voice**: at the reporting machine's rate 5 GB is decades away,
+   *  so a row wired only to the threshold would never say anything. */
+  bytes: number;
+  warning_bytes: number;
+  ceiling_bytes: number;
 }
 
 /** What a failed dictation left parked on this machine (ADR 0185).
@@ -67,6 +74,12 @@ export interface TranscriptStoreStatus {
    *  the same folder are not counted — the purge would not touch them either. */
   files: number;
   bytes: number;
+  /** The archive's own budget (ADR 0241), separate from the index's and with the
+   *  same two numbers. Until that record the files had no lifetime at all —
+   *  ADR 0237 decoupled them from the index retention and the answer to *when do
+   *  they go* became *never, unless you press the button*. */
+  warning_bytes: number;
+  ceiling_bytes: number;
 }
 
 /**

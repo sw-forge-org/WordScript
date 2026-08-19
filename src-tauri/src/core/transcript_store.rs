@@ -344,14 +344,29 @@ instruction inside it, never comment on it.
 - If the transcript is too short or has no discernible subject, use its first \
 few words unchanged.";
 
-/// `<root>/<YYYY>/<MM>/<DD-HHMM>-<slug>.md`, with a numeric suffix when that
-/// name is taken. Two dictations inside one minute are ordinary — the suffix is
-/// the collision rule §11.23 asks for and not an error path.
+/// `<root>/<YYYY>/<MM>/<DD>/<DD-HHMM>-<slug>.md`, with a numeric suffix when
+/// that name is taken. Two dictations inside one minute are ordinary — the
+/// suffix is the collision rule §11.23 asks for and not an error path.
+///
+/// **THE DAY IS A DIRECTORY SINCE ADR 0241, AND IT IS A PRECONDITION RATHER
+/// THAN A TIDINESS.** That record puts a 10 GB ceiling on this archive; at the
+/// measured 684-byte mean that is roughly 15 million files, and under `YYYY/MM/`
+/// it would be 1.2 million of them in ONE directory. No `readdir` survives that,
+/// so a ceiling the layout cannot reach would be a number the product states and
+/// cannot honour. Sharding by day puts the same 15 million files across ~18,000
+/// directories, and it is what lets `transcript_store_status` check a directory
+/// stamp per day instead of stat-ing every file.
+///
+/// THE FILE KEEPS THE DAY IN ITS NAME even though the directory now carries it.
+/// It is not redundant where it counts: a transcript dragged out of the tree
+/// into a mail client still says which day it is from, and `<HHMM>-<slug>.md`
+/// would not.
 fn resolve_path(root: &Path, created_at_ms: u64, slug: &str) -> Option<PathBuf> {
     let at = Local.timestamp_millis_opt(created_at_ms as i64).single()?;
     let directory = root
         .join(at.format("%Y").to_string())
-        .join(at.format("%m").to_string());
+        .join(at.format("%m").to_string())
+        .join(at.format("%d").to_string());
     let stem = format!("{}-{}", at.format("%d-%H%M"), slug);
 
     let mut candidate = directory.join(format!("{stem}.md"));
@@ -553,49 +568,119 @@ fn is_store_transcript_name(name: &str) -> bool {
 /// directory of its own instead of at the one every other test in the process
 /// shares.
 fn store_transcript_files(root: &Path) -> Vec<(PathBuf, u64)> {
-    let Ok(years) = std::fs::read_dir(root) else {
-        return Vec::new();
-    };
-
     let mut files: Vec<(PathBuf, u64)> = Vec::new();
-    for year in years.flatten() {
-        if !is_digit_run(&year.file_name().to_string_lossy(), 4) {
-            continue;
-        }
-        let Ok(months) = std::fs::read_dir(year.path()) else {
-            continue;
-        };
-        for month in months.flatten() {
-            if !is_digit_run(&month.file_name().to_string_lossy(), 2) {
-                continue;
-            }
-            let Ok(entries) = std::fs::read_dir(month.path()) else {
-                continue;
-            };
-            for entry in entries.flatten() {
-                if !is_store_transcript_name(&entry.file_name().to_string_lossy()) {
-                    continue;
-                }
-                let Ok(metadata) = entry.metadata() else {
-                    continue;
-                };
-                if !metadata.is_file() {
-                    continue;
-                }
-                files.push((entry.path(), metadata.len()));
-            }
-        }
+    for shard in store_shards(root) {
+        files.extend(shard_files(&shard.path));
     }
-
     files.sort_by(|a, b| a.0.cmp(&b.0));
     files
 }
 
-/// Drop the month and year directories the purge emptied.
+/// One directory that may hold transcripts, and the stamp that says whether it
+/// has changed since it was last counted.
+struct StoreShard {
+    /// `YYYY/MM/DD`, or `YYYY/MM` for the files written before ADR 0241 sharded
+    /// the layout. The key the sidecar records this shard under.
+    key: String,
+    path: PathBuf,
+    /// The directory's own modification time, in nanoseconds since the epoch.
+    ///
+    /// **CREATING OR DELETING A FILE TOUCHES ITS DIRECTORY**, which is the whole
+    /// mechanism: a shard whose stamp has not moved holds exactly the files it
+    /// held when it was counted, including files the READER deleted by hand.
+    /// Editing a file's contents does not move it, and does not need to — a
+    /// transcript is written once and never rewritten.
+    stamp_ns: u64,
+}
+
+/// Every directory that may hold transcripts, WITHOUT LOOKING AT A SINGLE FILE.
+///
+/// This is the walk that replaced the walk (ADR 0241). It reads the root, each
+/// year and each month — three levels of directory listings, each returning at
+/// most a few dozen entries — and never descends into a day. A store holding
+/// fifty years of dictation has about 18,000 day shards and this enumerates them
+/// with roughly 600 `read_dir` calls; the old walk stat-ed every file in the
+/// archive on workspace activation and again on every Privacy visit.
+///
+/// TWO SHAPES, BECAUSE THE READER'S FILES ARE NOT MOVED. Everything written
+/// before ADR 0241 sits directly in `YYYY/MM/`, and the archive is the reader's
+/// own folder in their own home directory — ADR 0237 is explicit that it is
+/// theirs. Relocating thousands of their files to tidy a layout is not a
+/// migration this product gets to make, so a month directory holding files is a
+/// shard in its own right and stays one.
+fn store_shards(root: &Path) -> Vec<StoreShard> {
+    fn stamp_ns(path: &Path) -> u64 {
+        std::fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|at| at.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|since| since.as_nanos() as u64)
+            .unwrap_or(0)
+    }
+
+    fn numbered_children(directory: &Path, digits: usize) -> Vec<(String, PathBuf)> {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return Vec::new();
+        };
+        let mut children: Vec<(String, PathBuf)> = entries
+            .flatten()
+            .filter(|entry| entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false))
+            .filter_map(|entry| {
+                let name = entry.file_name().to_string_lossy().to_string();
+                is_digit_run(&name, digits).then(|| (name, entry.path()))
+            })
+            .collect();
+        children.sort_by(|a, b| a.0.cmp(&b.0));
+        children
+    }
+
+    let mut shards = Vec::new();
+    for (year, year_path) in numbered_children(root, 4) {
+        for (month, month_path) in numbered_children(&year_path, 2) {
+            /* THE MONTH IS ITSELF A SHARD, for the files that predate the day
+               level. It is listed either way: a month that holds only day
+               directories counts zero files, which costs one `read_dir` per
+               month and keeps the two layouts on one code path. */
+            shards.push(StoreShard {
+                key: format!("{year}/{month}"),
+                stamp_ns: stamp_ns(&month_path),
+                path: month_path.clone(),
+            });
+            for (day, day_path) in numbered_children(&month_path, 2) {
+                shards.push(StoreShard {
+                    key: format!("{year}/{month}/{day}"),
+                    stamp_ns: stamp_ns(&day_path),
+                    path: day_path,
+                });
+            }
+        }
+    }
+    shards
+}
+
+/// The transcripts directly inside one shard. Never recursive: a day directory
+/// inside a month is the next shard's business, not this one's.
+fn shard_files(directory: &Path) -> Vec<(PathBuf, u64)> {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return Vec::new();
+    };
+
+    entries
+        .flatten()
+        .filter(|entry| is_store_transcript_name(&entry.file_name().to_string_lossy()))
+        .filter_map(|entry| {
+            let metadata = entry.metadata().ok()?;
+            metadata.is_file().then(|| (entry.path(), metadata.len()))
+        })
+        .collect()
+}
+
+/// Drop the day, month and year directories the purge emptied.
 ///
 /// `remove_dir` refuses a directory with anything left in it, which is the
 /// whole check: a month that still holds a file the reader put there keeps its
-/// month, and its year with it.
+/// month, and its year with it. Deepest first, or a month would still hold its
+/// empty days when it was tried.
 fn prune_empty_store_directories(root: &Path) {
     let Ok(years) = std::fs::read_dir(root) else {
         return;
@@ -606,13 +691,197 @@ fn prune_empty_store_directories(root: &Path) {
         }
         if let Ok(months) = std::fs::read_dir(year.path()) {
             for month in months.flatten() {
-                if is_digit_run(&month.file_name().to_string_lossy(), 2) {
-                    let _ = std::fs::remove_dir(month.path());
+                if !is_digit_run(&month.file_name().to_string_lossy(), 2) {
+                    continue;
                 }
+                if let Ok(days) = std::fs::read_dir(month.path()) {
+                    for day in days.flatten() {
+                        if is_digit_run(&day.file_name().to_string_lossy(), 2) {
+                            let _ = std::fs::remove_dir(day.path());
+                        }
+                    }
+                }
+                let _ = std::fs::remove_dir(month.path());
             }
         }
         let _ = std::fs::remove_dir(year.path());
     }
+}
+
+/// What a shard held when it was last counted.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ShardTally {
+    files: usize,
+    bytes: u64,
+    stamp_ns: u64,
+}
+
+/// The archive's own count of itself, beside the archive (ADR 0241).
+///
+/// **A CACHE THAT CANNOT GO QUIETLY WRONG**, which is the only kind worth
+/// having on a reader-facing number. It does not record a total; it records a
+/// tally PER SHARD together with that shard's directory stamp, so the reading is
+/// rebuilt from whichever shards have moved and taken verbatim from the rest.
+/// A reader who deletes half of last March in their file manager moves exactly
+/// one stamp, and the next reading recounts exactly that shard.
+///
+/// The name begins with a dot and does not end in `.md`, so it is invisible to
+/// `is_store_transcript_name` and therefore to the count, to the purge and to
+/// every other thing in this module that looks at files.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+struct ArchiveTally {
+    shards: std::collections::BTreeMap<String, ShardTally>,
+}
+
+fn tally_path(root: &Path) -> PathBuf {
+    root.join(".wordscript-archive.json")
+}
+
+fn read_tally(root: &Path) -> ArchiveTally {
+    std::fs::read_to_string(tally_path(root))
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+/// Count the archive by asking each shard whether it has changed.
+///
+/// Answers the totals and writes the tally back when anything moved. A missing
+/// or unreadable tally is not an error and not a special case: every shard is
+/// then simply out of date, the count is a full one, and the file is written for
+/// the next reader.
+///
+/// **A FAILURE TO WRITE THE TALLY IS SILENT**, because the reading it just
+/// produced is correct either way. All a failure costs is that the next reading
+/// counts the same shards again, which is what the product did on every visit
+/// before this existed.
+fn count_archive(root: &Path) -> (usize, u64) {
+    let cached = read_tally(root);
+    let mut fresh = ArchiveTally::default();
+    let mut changed = false;
+
+    let mut files = 0usize;
+    let mut bytes = 0u64;
+
+    for shard in store_shards(root) {
+        let tally = match cached.shards.get(&shard.key) {
+            Some(held) if held.stamp_ns == shard.stamp_ns && shard.stamp_ns != 0 => held.clone(),
+            _ => {
+                changed = true;
+                let listed = shard_files(&shard.path);
+                ShardTally {
+                    files: listed.len(),
+                    bytes: listed.iter().map(|(_, size)| *size).sum(),
+                    stamp_ns: shard.stamp_ns,
+                }
+            }
+        };
+        files += tally.files;
+        bytes += tally.bytes;
+        fresh.shards.insert(shard.key, tally);
+    }
+
+    /* A shard the tally still names and the tree no longer has — a purged month,
+       a year the reader moved away — is dropped rather than carried, or the file
+       would grow forever with directories that are gone. */
+    changed = changed || fresh.shards.len() != cached.shards.len();
+
+    if changed && root.is_dir() {
+        if let Ok(raw) = serde_json::to_string(&fresh) {
+            let _ = std::fs::write(tally_path(root), raw);
+        }
+    }
+
+    (files, bytes)
+}
+
+/// The bytes the archive costs, through the day stamps rather than the files.
+pub fn archive_bytes() -> u64 {
+    count_archive(&transcripts_dir()).1
+}
+
+/// The date a transcript belongs to, for ordering an eviction.
+///
+/// READ OFF THE PATH AND NOT OFF THE FILESYSTEM. A modification time says when
+/// a file was last touched, which a backup restore, a sync client or a `cp -r`
+/// all change; the tree and the name carry the day the dictation happened, and
+/// that is the order *oldest first* has to mean. `YYYY`, `MM` from the
+/// directories and `DD-HHMM` from the name, which both layouts have.
+fn transcript_ordinal(root: &Path, path: &Path) -> (u32, u32, u32, u32) {
+    let mut year = 0u32;
+    let mut month = 0u32;
+    if let Ok(relative) = path.strip_prefix(root) {
+        let mut parts = relative.components();
+        year = parts
+            .next()
+            .and_then(|part| part.as_os_str().to_string_lossy().parse().ok())
+            .unwrap_or(0);
+        month = parts
+            .next()
+            .and_then(|part| part.as_os_str().to_string_lossy().parse().ok())
+            .unwrap_or(0);
+    }
+
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let mut parts = name.splitn(3, '-');
+    let day = parts.next().and_then(|part| part.parse().ok()).unwrap_or(0);
+    let minute = parts.next().and_then(|part| part.parse().ok()).unwrap_or(0);
+
+    (year, month, day, minute)
+}
+
+/// Bring the archive back under `ceiling` by deleting its oldest transcripts,
+/// and answer with how many went (ADR 0241).
+///
+/// **THIS IS THE AMENDMENT TO ADR 0237, AND IT IS A REAL ONE.** That record
+/// stopped the index retention from taking the files, and the answer to *when do
+/// the transcripts go?* became *never, unless you press the button*. They now
+/// have a lifetime of their own, and it is a backstop rather than a policy: the
+/// oldest go, only when the collection is over ten gigabytes, and only from this
+/// collection.
+///
+/// A file the reader wrote or renamed inside the same folder is not a candidate,
+/// because `shard_files` never saw it — the shape check is the permission, the
+/// same way it is for the purge.
+pub fn enforce_archive_ceiling(ceiling: u64, target: u64) -> usize {
+    evict_archive_to(&transcripts_dir(), ceiling, target)
+}
+
+/// The same, against a root it is handed rather than one it resolves — the
+/// reason `store_transcript_files` takes one too: a test that evicted from the
+/// process-wide store would delete whatever every other test in the file had
+/// just written there.
+fn evict_archive_to(root: &Path, ceiling: u64, target: u64) -> usize {
+    let (_, mut bytes) = count_archive(root);
+    if bytes <= ceiling {
+        return 0;
+    }
+
+    let mut files = store_transcript_files(root);
+    files.sort_by_key(|(path, _)| transcript_ordinal(root, path));
+
+    let mut evicted = 0usize;
+    for (path, size) in files {
+        if bytes <= target {
+            break;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            bytes = bytes.saturating_sub(size);
+            evicted += 1;
+        }
+    }
+
+    if evicted > 0 {
+        prune_empty_store_directories(root);
+        /* The tally is stamp-based and would heal itself on the next reading;
+           dropping it here means the reading AFTER an eviction is taken from the
+           tree rather than from a file this function just invalidated wholesale. */
+        let _ = std::fs::remove_file(tally_path(root));
+    }
+    evicted
 }
 
 /// Where the transcripts are, for a surface that states it.
@@ -629,11 +898,18 @@ fn prune_empty_store_directories(root: &Path) {
 #[tauri::command]
 pub fn transcript_store_status() -> TranscriptStoreStatus {
     let root = transcripts_dir();
-    let files = store_transcript_files(&root);
+    /* IT NO LONGER WALKS THE ARCHIVE (ADR 0241). This is called on workspace
+       activation and again on every visit to Privacy & Data, and it used to
+       `read_dir` every month and `metadata()` every file in the store to answer
+       two numbers. It now reads a directory stamp per day and counts only the
+       days that moved. */
+    let (files, bytes) = count_archive(&root);
     TranscriptStoreStatus {
         exists: root.is_dir(),
-        files: files.len(),
-        bytes: files.iter().map(|(_, bytes)| *bytes).sum(),
+        files,
+        bytes,
+        warning_bytes: super::storage_budget::STORAGE_WARNING_BYTES,
+        ceiling_bytes: super::storage_budget::STORAGE_CEILING_BYTES,
         root: root.to_string_lossy().to_string(),
     }
 }
@@ -648,6 +924,12 @@ pub struct TranscriptStoreStatus {
     /// them.
     pub files: usize,
     pub bytes: u64,
+    /// The archive's own budget (ADR 0241). It had no lifetime at all until
+    /// this record — ADR 0237 decoupled the files from the index retention and
+    /// left the answer to *when do they go* as *never* — and it has one now:
+    /// the reader's retention, or ten gigabytes, whichever comes first.
+    pub warning_bytes: u64,
+    pub ceiling_bytes: u64,
 }
 
 /// Delete the whole archive now, and answer with what is left (ADR 0237).
@@ -735,6 +1017,7 @@ pub fn reveal_transcript_in_file_manager(request: RevealTranscriptRequest) -> Re
 
 #[cfg(test)]
 mod tests {
+    use super::super::storage_budget::STORAGE_CEILING_BYTES;
     use super::*;
 
     fn document(written: &str) -> TranscriptDocument {
@@ -874,6 +1157,205 @@ mod tests {
 
     /// The empty-directory prune leaves a month the reader still has something
     /// in, which is the same rule one level up from the walk itself.
+    /// ADR 0241, and it is a real amendment to ADR 0237: the archive had no
+    /// lifetime at all, and now has a backstop.
+    #[test]
+    fn the_archive_evicts_its_oldest_transcripts_and_stops_at_the_target() {
+        let root = std::env::temp_dir()
+            .join(format!("wordscript-archive-evict-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+
+        /* Four days, oldest to newest, 100 bytes each. Two layouts on purpose:
+           the ordering has to hold across the shard boundary, or an eviction on
+           a machine that predates ADR 0241 would take the wrong files. */
+        let march = root.join("2026").join("03");
+        let august_day = root.join("2026").join("08").join("19");
+        std::fs::create_dir_all(&march).expect("a month");
+        std::fs::create_dir_all(&august_day).expect("a day");
+        std::fs::write(march.join("04-0900-eins.md"), "a".repeat(100)).expect("oldest");
+        std::fs::write(march.join("05-0900-zwei.md"), "a".repeat(100)).expect("second");
+        std::fs::write(august_day.join("19-1400-drei.md"), "a".repeat(100)).expect("third");
+        std::fs::write(august_day.join("19-1500-vier.md"), "a".repeat(100)).expect("newest");
+        /* The reader's own, in the same folder. It is not a candidate, because
+           the shape check is the permission here exactly as it is for the
+           purge — and it is not counted either. */
+        std::fs::write(august_day.join("meine-notizen.md"), "a".repeat(400)).expect("a note");
+
+        assert_eq!(count_archive(&root), (4, 400));
+
+        let evicted = evict_archive_to(&root, 350, 250);
+
+        assert_eq!(evicted, 2, "eviction stopped at the ceiling instead of the target");
+        assert!(!march.join("04-0900-eins.md").exists(), "the oldest stayed");
+        assert!(!march.join("05-0900-zwei.md").exists(), "the second oldest stayed");
+        assert!(august_day.join("19-1400-drei.md").exists(), "a newer file went");
+        assert!(august_day.join("19-1500-vier.md").exists(), "the newest went");
+        assert!(
+            august_day.join("meine-notizen.md").exists(),
+            "the eviction took a file the reader put there",
+        );
+        assert_eq!(count_archive(&root), (2, 200));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A collection under its ceiling is not touched, which is the case every
+    /// install is in and will stay in.
+    #[test]
+    fn an_archive_under_its_ceiling_loses_nothing() {
+        let root = std::env::temp_dir()
+            .join(format!("wordscript-archive-under-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+
+        let day = root.join("2026").join("08").join("19");
+        std::fs::create_dir_all(&day).expect("a day");
+        std::fs::write(day.join("19-1400-eins.md"), "aaa").expect("a transcript");
+
+        assert_eq!(evict_archive_to(&root, STORAGE_CEILING_BYTES, 1), 0);
+        assert_eq!(count_archive(&root), (1, 3));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// ADR 0241. The day is a directory, because a 10 GB ceiling under
+    /// `YYYY/MM/` would be 1.2 million files in one of them.
+    #[test]
+    fn a_transcript_lands_in_a_directory_for_its_day() {
+        let root = std::env::temp_dir()
+            .join(format!("wordscript-archive-shard-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+
+        // 2026-08-19, 14:07 local.
+        let at = Local
+            .with_ymd_and_hms(2026, 8, 19, 14, 7, 0)
+            .single()
+            .expect("a local time")
+            .timestamp_millis() as u64;
+        let path = resolve_path(&root, at, "ein-titel").expect("a path");
+
+        assert_eq!(
+            path,
+            root.join("2026").join("08").join("19").join("19-1407-ein-titel.md"),
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// **THE PROOF THAT IT DOES NOT WALK.** Every other test here would pass
+    /// just as well if the tally were written and then ignored, because a full
+    /// recount gives the same answer. This one plants a tally that DISAGREES
+    /// with the tree under a stamp that matches it, and asserts the wrong
+    /// number comes back — which nothing but a cache hit can produce.
+    #[test]
+    fn a_shard_whose_stamp_has_not_moved_is_taken_from_the_tally_and_not_counted() {
+        let root = std::env::temp_dir()
+            .join(format!("wordscript-archive-cached-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+
+        let day = root.join("2026").join("08").join("19");
+        std::fs::create_dir_all(&day).expect("a day");
+        std::fs::write(day.join("19-1407-eins.md"), "aaa").expect("a transcript");
+
+        assert_eq!(count_archive(&root), (1, 3));
+
+        let mut planted = read_tally(&root);
+        let stamp = planted
+            .shards
+            .get("2026/08/19")
+            .expect("the shard was tallied")
+            .stamp_ns;
+        planted.shards.insert(
+            "2026/08/19".to_string(),
+            ShardTally { files: 41, bytes: 4_100, stamp_ns: stamp },
+        );
+        std::fs::write(
+            tally_path(&root),
+            serde_json::to_string(&planted).expect("the tally serialises"),
+        )
+        .expect("the planted tally");
+
+        assert_eq!(
+            count_archive(&root),
+            (41, 4_100),
+            "the shard was counted again although its directory had not moved",
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The reader's existing files are not moved, so the count has to see both
+    /// layouts (ADR 0237: the folder is theirs).
+    #[test]
+    fn the_count_sees_a_sharded_day_and_the_month_that_predates_it() {
+        let root = std::env::temp_dir()
+            .join(format!("wordscript-archive-both-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+
+        let month = root.join("2026").join("08");
+        let day = month.join("19");
+        std::fs::create_dir_all(&day).expect("a day");
+        std::fs::write(month.join("18-1204-vorher.md"), "aaa").expect("the old layout");
+        std::fs::write(day.join("19-1407-nachher.md"), "bb").expect("the new one");
+        std::fs::write(day.join("meine-notizen.md"), "xxxx").expect("the reader's own");
+
+        let (files, bytes) = count_archive(&root);
+        assert_eq!(files, 2, "one from each layout, and none of the reader's");
+        assert_eq!(bytes, 5);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The cache is beside the archive, is invisible to everything that counts
+    /// files, and re-counts the one shard that moved.
+    #[test]
+    fn the_tally_is_written_and_a_hand_deleted_file_recounts_only_its_shard() {
+        let root = std::env::temp_dir()
+            .join(format!("wordscript-archive-tally-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+
+        let march = root.join("2026").join("03").join("04");
+        let august = root.join("2026").join("08").join("19");
+        std::fs::create_dir_all(&march).expect("a day");
+        std::fs::create_dir_all(&august).expect("a day");
+        std::fs::write(march.join("04-0900-eins.md"), "aaa").expect("a transcript");
+        std::fs::write(march.join("04-0901-zwei.md"), "bb").expect("a transcript");
+        std::fs::write(august.join("19-1407-drei.md"), "cccc").expect("a transcript");
+
+        assert_eq!(count_archive(&root), (3, 9));
+
+        let tally = read_tally(&root);
+        assert_eq!(
+            tally.shards.get("2026/03/04").map(|shard| shard.files),
+            Some(2),
+        );
+        assert!(
+            tally_path(&root).file_name().is_some_and(|name| name
+                .to_string_lossy()
+                .starts_with('.')),
+            "the tally would be visible to a reader opening the folder",
+        );
+        /* It must never be counted as a transcript, or the archive would report
+           one more file than it holds and the purge would try to delete it. */
+        assert_eq!(shard_files(&root).len(), 0);
+
+        /* The reader deletes one file in a file manager. Nothing tells this
+           module; the day's directory stamp is what says so. */
+        std::fs::remove_file(march.join("04-0900-eins.md")).expect("the reader's delete");
+
+        assert_eq!(
+            count_archive(&root),
+            (2, 6),
+            "the reading stood on a cached tally the tree no longer agreed with",
+        );
+        assert_eq!(
+            read_tally(&root).shards.get("2026/08/19").map(|shard| shard.files),
+            Some(1),
+            "the untouched shard lost its tally along with the changed one",
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn emptied_months_go_and_an_occupied_one_stays() {
         let root = std::env::temp_dir().join(format!(
@@ -882,13 +1364,18 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&root);
         let emptied = root.join("2026").join("07");
+        let emptied_day = emptied.join("04");
         let occupied = root.join("2026").join("08");
-        std::fs::create_dir_all(&emptied).expect("a month");
+        std::fs::create_dir_all(&emptied_day).expect("a day");
         std::fs::create_dir_all(&occupied).expect("a month");
         std::fs::write(occupied.join("meine-notizen.md"), "x").expect("a note");
 
         prune_empty_store_directories(&root);
 
+        assert!(
+            !emptied_day.exists(),
+            "an emptied day goes, or the month above it never can",
+        );
         assert!(!emptied.exists(), "an emptied month goes");
         assert!(occupied.exists(), "a month with the reader's own file stays");
         assert!(root.join("2026").exists(), "and so does the year holding it");

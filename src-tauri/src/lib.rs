@@ -2629,6 +2629,13 @@ fn handle_audio_ready<R: Runtime + 'static>(
             // Sweep here rather than only at startup: a run that keeps failing
             // would otherwise fill the directory for a whole session.
             core::capture::prune_retained_captures();
+
+            // The two local collections against their byte ceilings (ADR 0241).
+            // Here rather than on the dictation path: the thresholds are a
+            // backstop against a runaway, not a retention rule, and checking
+            // them once when the application opens cannot miss by more than a
+            // session.
+            core::storage_budget::enforce_at_startup();
         } else {
             let _ = tokio::fs::remove_file(cleanup_path).await;
         }
