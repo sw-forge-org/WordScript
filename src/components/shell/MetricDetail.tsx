@@ -1,6 +1,5 @@
 import { useMemo, useState } from "react";
 import {
-  dayLanguageUnasked,
   durationFigure,
   languageLabel,
   ledgerLanguages,
@@ -441,7 +440,13 @@ function TurnaroundDetail({
         ]}
       />
       <Causes ledger={ledger} />
-      <Modes ledger={ledger} />
+      {/* THE MODEL LIST'S TOTAL, COMPUTED HERE RATHER THAN REPORTED UP. A child
+          that tells its parent what it drew is a render-time write to a
+          sibling's state; the sum is pure and cheap, so the parent takes it. */}
+      <Modes
+        ledger={ledger}
+        against={turnaroundCauses(ledger).reduce((sum, row) => sum + row.runs, 0)}
+      />
       {/* THE ONE THING THE LISTS ABOVE CANNOT SAY FOR THEMSELVES (ADR 0182),
           and it is now a smaller claim than it was: the clock stops when the
           TEXT exists, so a mode that rewrites what you said has a second model
@@ -456,7 +461,7 @@ function TurnaroundDetail({
       <p className="ws-metric-note">
         The wait runs from you stopping to the text being ready. Where a mode
         rewrote the text, a second model is inside it that the model list does
-        not name — the mode list is the same runs cut the other way.
+        not name — which is what the mode list beside it is for.
       </p>
     </>
   );
@@ -470,7 +475,7 @@ function TurnaroundDetail({
  * model list answers *which recogniser is slow*, which is one they can only
  * change by switching lanes.
  */
-function Modes({ ledger }: { ledger: ActivityLedger | null }) {
+function Modes({ ledger, against }: { ledger: ActivityLedger | null; against: number }) {
   const rows = useMemo(() => modeCauses(ledger), [ledger]);
   const timed = rows.reduce((sum, row) => sum + row.runs, 0);
   /* ONE ROW IS NOT A COMPARISON. A reader who has only ever run one mode learns
@@ -480,10 +485,22 @@ function Modes({ ledger }: { ledger: ActivityLedger | null }) {
 
   return (
     <div className="ws-metric-causes">
+      {/* THE ONE THING THE READER ASKED FOR (ADR 0244). Two blocks with the
+          same shape, each ending in a total, read as components of one — the
+          owner asked outright whether these add up or are already split. They
+          are the SAME runs cut a second way, and the heading is where that
+          belongs; a sentence under the second list arrives after the question
+          has already been answered wrongly.
+
+          A RUN WITH NO NAMED MODE IS COUNTED IN THE HISTOGRAM AND IN NO ROW
+          HERE, so this cut can be short of the other one. That used to be
+          disclosed only in a source comment claiming the surface stated it. */}
       <p className="ws-metric-causes-head">
         <span>What the mode cost</span>
         <span>
-          {timed} {timed === 1 ? "run" : "runs"} all time
+          {timed === against
+            ? `the same ${timed} ${timed === 1 ? "run" : "runs"}`
+            : `${timed} of the same ${against} ${against === 1 ? "run" : "runs"}`}
         </span>
       </p>
       <ul>
@@ -520,16 +537,20 @@ function LanguagesDetail({
   const languages = ledgerLanguages(ledger);
   const measured = languages.reduce((sum, language) => sum + language.count, 0);
   const totals = ledgerTotals(ledger);
-  const dictations = totals.dictations;
-  /* THE TWO POPULATIONS UNDER *NOT NAMED*, AND THEY HAVE DIFFERENT FUTURES
-     (ADR 0243). `refused` is asked-and-too-short: it grows with every short
-     dictation and it is the one a better detector could move. `unasked` is the
-     runs whose text the index no longer holds — frozen, and nothing will ever
-     improve it. One counter over both said a true number that answered no
-     question, and the entry that raised this said it would *hold 91 runs
-     forever*: it was 91 that day and 104 the next. */
+  /* ONE SOURCE FOR EVERY FIGURE ON THIS SCREEN (ADR 0244), and the reason it is
+     spelled out: it used to be two. The chart read a lifetime map, the rows
+     under it read the tiers, and the three numbers summed to 653 against 586
+     dictations — a plausible wrong number produced by the record written to
+     prevent them.
+
+     `asked` IS THE DENOMINATOR AND NOT THE DICTATION COUNT. The runtime
+     increments exactly one of these two on every counted run, so their sum is
+     the population a language was asked of and the two rows always account for
+     it. Same shape as the speaking rate's `Measured over: n of m` — a metric
+     states the population it was measured over, and the lifetime dictation
+     count belongs to the tiles, where it answers a different question. */
   const refused = totals.language_refused ?? 0;
-  const unasked = dayLanguageUnasked(totals);
+  const asked = measured + refused;
   const points = useMemo(() => languageSeries(ledger, period, now), [ledger, period, now]);
   const seriesBars: ChartBar[] = points.map((point) => ({
     key: point.key,
@@ -574,27 +595,20 @@ function LanguagesDetail({
             label: "Mostly",
             value: languages.length > 0 ? languageLabel(languages[0].code) : "nothing yet",
           },
-          { label: "Named", value: `${measured} of ${dictations}` },
-          /* TWO ROWS WHERE THERE WAS ONE, AND ONLY WHERE BOTH ARE REAL. The
-             split is meaningless on a record whose runs were all asked about, so
-             a machine with no unasked backlog sees one row and not a zero — the
-             same rule the marker legend follows. */
+          { label: "Named", value: `${measured} of ${asked}` },
           { label: "Too short to name", value: String(refused) },
-          ...(unasked > 0 ? [{ label: "Never asked", value: String(unasked) }] : []),
         ]}
       />
+      {/* A THIRD ROW STOOD HERE AND IT IS GONE (ADR 0244). *Never asked* was
+          sold as the runs from before the record kept an answer; it actually
+          measured how far back the SEED could reach, was non-zero on exactly
+          one machine in the world, and is structurally zero on every
+          installation from here on — every counted run increments one of the
+          two rows above. */}
       <p className="ws-metric-note">
         Measured on the text you spoke, never on your language setting.{" "}
         <em>Too short to name</em> was asked and came back empty, and it moves
-        with every brief dictation.{" "}
-        {unasked > 0 ? (
-          <>
-            <em>Never asked</em> is the runs from before the record kept an
-            answer — that number is fixed, and nothing goes back over them.
-          </>
-        ) : (
-          "Every run this record counted was asked about."
-        )}
+        with every brief dictation.
       </p>
     </>
   );

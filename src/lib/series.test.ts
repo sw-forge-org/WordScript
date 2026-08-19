@@ -95,13 +95,16 @@ describe("what the series may draw at all", () => {
     expect(days[days.length - 1].label).toBe("12");
   });
 
-  it("starts after a retirement rather than over it", () => {
+  /* IT USED TO SAY *starts after a retirement*, and the stamp it started after
+     is deleted (ADR 0244). The claim underneath is unchanged: a DAY series may
+     not reach past the day rows, however far back the record as a whole goes. */
+  it("starts at the oldest day row however old the record is", () => {
     const source = ledger({ [iso(2)]: row() }, {
       started_on: iso(400),
-      retired_through: iso(4),
+      months: { "2025-06": row() },
     });
-    /* Four days back is retired, so the first drawable day is three back. */
-    expect(savedSeries(source, "day", 40, NOW)).toHaveLength(4);
+    /* The record is over a year old and the day tier holds three days. */
+    expect(savedSeries(source, "day", 40, NOW)).toHaveLength(3);
   });
 
   /* THE GRAIN IS OFFERED WHERE THE RECORD CAN FILL IT (ADR 0183's rule again). A
@@ -139,9 +142,9 @@ describe("a bucket with nothing in it", () => {
 });
 
 describe("the all-time figures the tile deliberately does not carry", () => {
-  it("counts the retired days into the lifetime total", () => {
+  it("counts the aged-out days into the lifetime total", () => {
     const source = ledger({ [iso(0)]: row({ saved_words: 400, saved_seconds: 120 }) }, {
-      retired: row({ saved_words: 4000, saved_seconds: 1200 }),
+      months: { "2024-03": row({ saved_words: 4000, saved_seconds: 1200 }) },
     });
     /* 4,400 words at 40 wpm is 110 minutes, less the 22 spent saying them. */
     expect(savedAllTime(source, 40)).toBeCloseTo(88, 6);
@@ -225,13 +228,13 @@ describe("how far back a grain can reach", () => {
       const at = new Date(start.getFullYear(), start.getMonth() - back, 1);
       months[`${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}`] = row();
     }
-    return ledger({ [iso(0)]: row() }, { months, retired_through: iso(400) });
+    return ledger({ [iso(0)]: row() }, { months });
   }
 
   it("offers years on a record whose days have all aged out", () => {
     const eight = aged(8);
-    /* THE ASSERTION THAT WOULD HAVE FAILED BEFORE THE MONTH TIER. `retired_through`
-       is 400 days back, so the day tier speaks for one day — and the year grain
+    /* THE ASSERTION THAT WOULD HAVE FAILED BEFORE THE MONTH TIER. The day tier
+       holds one day — everything older was folded away — and the year grain
        reads the month tier instead, which reaches eight years. */
     expect(offeredPeriods(eight, NOW)).toContain("year");
     expect(offeredPeriods(eight, NOW)).toContain("month");

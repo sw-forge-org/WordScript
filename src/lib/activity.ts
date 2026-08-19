@@ -257,14 +257,18 @@ export interface LedgerDay {
   /** The period's wait distribution on the quarter-octave axis —
    *  `TURNAROUND_LOG_BASE_MS × 2^(i/4)`, forty buckets and an overflow. */
   turnaround_log?: number[];
-  /** How many of the period's dictations came back in each language. The
-   *  all-time map answers WHICH; this answers WHEN. */
+  /** How many of the period's dictations came back in each language.
+   *
+   *  THE ONLY LANGUAGE COUNTER THERE IS, since ADR 0244 deleted the lifetime
+   *  map beside it. Two counters over one fact drifted by 67 runs and put an
+   *  arithmetic on the screen that did not add up. */
   languages?: Record<string, number>;
   /** Dictations whose language was asked for and came back empty.
    *
-   *  THE OTHER HALF OF *NOT NAMED* IS DERIVED — see `dayLanguageUnasked`. It is
-   *  not stored anywhere, on either side of the bridge, because a row that
-   *  carries both a whole and its parts can disagree with itself. */
+   *  TOGETHER WITH `languages` THIS ACCOUNTS FOR EVERY DICTATION THE PERIOD
+   *  COUNTED (ADR 0244): the runtime increments exactly one of the two on every
+   *  counted run, so their sum is the population a language was asked of, which
+   *  is what the screen states its share against. */
   language_refused?: number;
 }
 
@@ -279,24 +283,6 @@ export function turnaroundLogEdge(index: number): number {
   return TURNAROUND_LOG_BASE_MS * Math.pow(2, index / TURNAROUND_LOG_PER_OCTAVE);
 }
 
-/**
- * HOW MANY OF A PERIOD'S DICTATIONS NOTHING EVER ASKED A LANGUAGE OF
- * (ADR 0243).
- *
- * The frozen half of what the screen calls *Not named*, and the half no future
- * release can improve: these are runs whose text the index no longer holds, so
- * there is nothing left to measure. The growing half is `language_refused` —
- * asked, and too short to answer — and separating them is the whole point,
- * because one of them is worth acting on and the other never will be.
- *
- * Clamped at zero for the same reason the runtime's version is: a merge takes a
- * field-wise maximum and can raise a whole and its parts out of step.
- */
-export function dayLanguageUnasked(day: LedgerDay | null | undefined): number {
-  if (!day) return 0;
-  const named = Object.values(day.languages ?? {}).reduce((sum, count) => sum + count, 0);
-  return Math.max(0, (day.dictations ?? 0) - named - (day.language_refused ?? 0));
-}
 
 /** One recogniser's own turnaround distribution (ADR 0240).
  *
@@ -322,18 +308,6 @@ export interface ActivityLedger {
    *  claim the reader can check and find wrong. A missing marker costs nothing;
    *  a wrong one costs the display its credibility. */
   installed_on?: string | null;
-  /** Every day that aged out BEFORE the month tier existed, summed. Why a total
-   *  can promise never to fall: the row leaves the file and its figures do not.
-   *
-   *  A CLOSED SET SINCE ADR 0243 — nothing is added to it again. */
-  retired?: LedgerDay;
-  /** The last day that is no longer in `days`. Moves with the prune; the
-   *  calendar reads it. */
-  retired_through?: string | null;
-  /** The last day the opaque `retired` blob speaks for, fixed at the migration
-   *  that introduced the month tier (ADR 0243). The month a MONTH series starts
-   *  after, because that one month is split between the blob and the tier. */
-  prehistory_through?: string | null;
   /** Keyed `YYYY-MM-DD`. */
   days: Record<string, LedgerDay>;
   /** One row per month, keyed `YYYY-MM`, and never pruned (ADR 0243).
@@ -760,21 +734,34 @@ export function ledgerFirstDay(ledger: ActivityLedger | null): number | null {
 }
 
 /**
- * THE FIRST DAY THE ROWS THEMSELVES CAN SPEAK FOR, which is later than
- * `ledgerFirstDay` on a file old enough to have retired something.
+ * THE FIRST DAY THE ROWS THEMSELVES CAN SPEAK FOR.
  *
- * A retired day leaves the file and its figures go into `retired` (ADR 0176), so
- * everything before `retired_through` is a total and no longer a day. Anything
- * that draws a day, a week or a month has to start here, or it draws an empty
- * bucket over a period the record simply no longer holds — the same false claim
- * ADR 0172 keeps the calendar's unlit cells away from.
+ * A day past the horizon is folded into its month, so the DAY tier reaches back
+ * exactly as far as its oldest row and no further. Anything that draws a day or
+ * a week has to start here, or it draws an empty bucket over a period the day
+ * rows no longer hold — the same false claim ADR 0172 keeps the calendar's
+ * unlit cells away from. A month or a year asks `ledgerMonthsSpeakFrom`, which
+ * reaches further.
+ *
+ * IT USED TO CONSULT A SECOND STAMP. `retired_through` marked the edge of an
+ * opaque blob that no longer exists (ADR 0244), and with the blob gone the
+ * oldest row is the whole answer.
  */
 export function ledgerSpeaksFrom(ledger: ActivityLedger | null): number | null {
-  const first = ledgerFirstDay(ledger);
-  const retired = ledgerDayMs(ledger?.retired_through);
-  if (retired === null) return first;
-  const after = retired + DAY_MS;
-  return first === null ? after : Math.max(first, after);
+  /* THE OLDEST DAY ROW, AND EXPLICITLY NOT `ledgerFirstDay`. That one prefers
+     `started_on`, which is where the RECORD begins — on a record whose old days
+     have been folded into months it sits a year before the day tier, and a day
+     series built on it would draw a year of empty buckets over periods the day
+     rows cannot speak for. The first version of this after ADR 0244 did exactly
+     that, and the suite caught it. */
+  let earliest: number | null = null;
+  for (const [key, row] of Object.entries(ledger?.days ?? {})) {
+    if (!row || row.dictations <= 0) continue;
+    const at = ledgerDayMs(key);
+    if (at === null) continue;
+    if (earliest === null || at < earliest) earliest = at;
+  }
+  return earliest;
 }
 
 /**
@@ -788,9 +775,10 @@ export function ledgerSpeaksFrom(ledger: ActivityLedger | null): number | null {
  * buckets and the *Years* tab could never hold more than three.
  *
  * A month row keeps its place in time and is never pruned, so a month grain
- * starts at the oldest row of either tier — and stops short of exactly one
- * month, the one the opaque `retired` blob is split across. See
- * `prehistory_through`, which is that split's only record.
+ * starts at the oldest row of either tier, with no exception to state. There
+ * used to be one — the single month split between the opaque blob and the tier
+ * — and ADR 0244 deleted the blob, so nothing in this ledger is partial any
+ * more.
  */
 export function ledgerMonthsSpeakFrom(ledger: ActivityLedger | null): number | null {
   let earliest: number | null = null;
@@ -807,17 +795,7 @@ export function ledgerMonthsSpeakFrom(ledger: ActivityLedger | null): number | n
     if (row && row.dictations > 0) consider(key.slice(0, 7));
   }
 
-  /* THE SPLIT MONTH IS NOT DRAWN, and this is the only place that matters. The
-     blob holds its days up to the stamp and the month tier holds the rest, so
-     the row is real and partial — a column that would read low for a reason no
-     reader could see. Starting after it costs one month, once, on a record that
-     by then reaches back years. */
-  const prehistory = ledger?.prehistory_through;
-  if (!prehistory) return earliest;
-  const [year, month] = prehistory.split("-").map(Number);
-  if (!year || !month) return earliest;
-  const after = new Date(year, month, 1).getTime();
-  return earliest === null ? after : Math.max(earliest, after);
+  return earliest;
 }
 
 /**
@@ -852,21 +830,20 @@ export function savedWindowSpan(
 /**
  * EVERY FIGURE THE LEDGER HOLDS, INCLUDING THE DAYS THAT HAVE AGED OUT OF IT.
  *
- * `retired` is what the runtime adds a day row into on its way out of the file
- * (ADR 0176), and reading the days without it is how a lifetime total starts
- * falling after two years and two months — the exact failure the ledger exists
- * to prevent, reintroduced by the code that keeps the file small.
+ * `months` is what the runtime folds a day row into on its way out of the file
+ * (ADR 0176, ADR 0243), and reading the days without it is how a lifetime total
+ * starts falling after two years and two months — the exact failure the ledger
+ * exists to prevent, reintroduced by the code that keeps the file small.
  */
 export function ledgerTotals(ledger: ActivityLedger | null): LedgerDay {
   const total = emptyDay();
   if (!ledger) return total;
 
-  /* THREE TIERS AND THEY ARE DISJOINT (ADR 0243): the prehistory blob, the
-     month rows a day is folded into when it ages out, and the live days. A day
-     is in exactly one of them, so this adds rather than picks — and leaving the
-     months out is how a lifetime total would start falling again, one tier
-     further along than the failure ADR 0176 fixed. */
-  absorbDay(total, ledger.retired);
+  /* TWO TIERS AND THEY ARE DISJOINT (ADR 0243, ADR 0244): the month rows a day
+     is folded into when it ages out, and the live days. A day is in exactly one
+     of them, so this adds rather than picks — and leaving the months out is how
+     a lifetime total would start falling again, one tier further along than the
+     failure ADR 0176 fixed. */
   for (const row of Object.values(ledger.months ?? {})) absorbDay(total, row);
   for (const row of Object.values(ledger.days)) absorbDay(total, row);
   return total;
@@ -1006,13 +983,20 @@ export function ledgerPauseShare(ledger: ActivityLedger | null): number | null {
  *
  * Measured on the delivered text rather than read off `entry.language`, which is
  * the CONFIGURED language and would count how often somebody changed a dropdown.
- * A run whose text was too short to be sure of is in no bucket at all, so the
- * counts sum to less than the dictations and deliberately so.
+ * A run whose text was too short to be sure of is in no bucket at all; it is in
+ * `language_refused`, and the two together are every dictation the record
+ * counted.
+ *
+ * READ OFF THE TIERS AND NOT OFF A LIFETIME MAP (ADR 0244). There was a second
+ * counter beside them, live since ADR 0180, and two copies of one fact are what
+ * ADR 0123 forbids: they drifted by 67 runs on the only machine that had both,
+ * and the facts list underneath this chart summed to more than the dictations
+ * it was measured over.
  */
 export function ledgerLanguages(
   ledger: ActivityLedger | null,
 ): { code: string; count: number }[] {
-  const languages = ledger?.languages;
+  const languages = ledgerTotals(ledger).languages;
   if (!languages) return [];
   return Object.entries(languages)
     .filter(([code, count]) => code.trim().length > 0 && count > 0)

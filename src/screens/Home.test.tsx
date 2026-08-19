@@ -9,6 +9,7 @@ import type {
   TranscriptionHistoryQuery,
   TranscriptionHistorySummary,
 } from "@/types/history";
+import type { LedgerDay } from "@/lib/activity";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
@@ -134,7 +135,7 @@ function ledgerFor(
      so rather than having it derived from `w0 w1 w2`. */
   languages: Record<string, number> = {},
 ) {
-  const days: Record<string, Record<string, number>> = {};
+  const days: Record<string, LedgerDay> = {};
   /* The rate histogram the runtime keeps: one bucket per word a minute, over
      SPOKEN words and SPEECH seconds (ADR 0177). The median is read off this and
      not off the day rows, so a mock without it mocks the wrong half. */
@@ -194,12 +195,35 @@ function ledgerFor(
     }
   }
 
+  /* THE LANGUAGES GO ON A ROW, WHICH IS WHERE THE RUNTIME PUTS THEM (ADR 0244).
+     There used to be a lifetime map beside the tiers and the two drifted; the
+     tiers are the only counter now, so a fixture that set the map would be
+     testing a field no build writes. */
+  const oldest = Object.keys(days).sort()[0] ?? "2026-08-16";
+  if (Object.keys(languages).length > 0) {
+    const host = (days[oldest] ??= {
+      dictations: 0,
+      words: 0,
+      spoken_words: 0,
+      recorded_seconds: 0,
+      speech_seconds: 0,
+      timed: 0,
+      voiced: 0,
+      saved_runs: 0,
+      saved_words: 0,
+      saved_seconds: 0,
+      longest_seconds: 0,
+    });
+    host.languages = { ...(host.languages ?? {}), ...languages };
+    const named = Object.values(languages).reduce((sum, count) => sum + count, 0);
+    if (host.dictations < named) host.dictations = named;
+  }
+
   return {
     started_on: Object.keys(days).sort()[0] ?? null,
     days,
     rate_buckets,
     turnaround_buckets,
-    languages,
   };
 }
 

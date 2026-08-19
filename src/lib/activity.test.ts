@@ -374,13 +374,17 @@ describe("turnaround — the one figure a setting can move", () => {
 describe("the totals, which may never fall (ADR 0176)", () => {
   it("COUNTS THE DAYS THAT HAVE AGED OUT OF THE FILE", () => {
     /* The failure this exists against: the ledger keeps 800 day rows so the file
-       cannot grow without bound, and the build before this one simply dropped
+       cannot grow without bound, and the build before ADR 0176 simply dropped
        the 801st — so every lifetime figure started falling after two years and
-       two months. A retired row leaves the file and its numbers do not. */
+       two months. A row leaves `days` and its numbers do not.
+
+       IT USED TO NAME `retired` AND NOW IT NAMES `months`, which is the whole of
+       ADR 0244's change here: the tier a departing day lands in kept its place
+       in time (ADR 0243), so the opaque one it used to land in had nothing left
+       to do and was deleted rather than kept for a file nobody holds. */
     const totals = ledgerTotals(
       ledger({ [key(0)]: row({ dictations: 2, words: 200 }) }, [], [], undefined, {
-        retired: row({ dictations: 900, words: 90_000, saved_runs: 900 }),
-        retired_through: key(801),
+        months: { "2024-03": row({ dictations: 900, words: 90_000, saved_runs: 900 }) },
       }),
     );
 
@@ -424,10 +428,14 @@ describe("the pause share, which is why the rate moved (ADR 0177)", () => {
   });
 });
 
+/* THE COUNTS LIVE ON THE ROWS AND NOT BESIDE THEM (ADR 0244). These cases used
+   to set a lifetime map on the ledger; there were two counters over one fact,
+   they drifted by 67 runs on the one machine that had both, and the tiers are
+   what survived. Every fixture here is a day row for that reason. */
 describe("the languages, measured on the text (ADR 0180)", () => {
   it("ranks them most-used first", () => {
     const languages = ledgerLanguages(
-      ledger({ [key(0)]: row() }, [], [], undefined, { languages: { en: 12, de: 40, fr: 3 } }),
+      ledger({ [key(0)]: row({ dictations: 55, languages: { en: 12, de: 40, fr: 3 } }) }),
     );
 
     expect(languages.map(({ code }) => code)).toEqual(["de", "en", "fr"]);
@@ -439,7 +447,7 @@ describe("the languages, measured on the text (ADR 0180)", () => {
     expect(ledgerLanguages(ledger({ [key(0)]: row() }))).toEqual([]);
     /* A code with no runs behind it is not a language this reader dictates in. */
     expect(
-      ledgerLanguages(ledger({}, [], [], undefined, { languages: { de: 0 } })),
+      ledgerLanguages(ledger({ [key(0)]: row({ languages: { de: 0 } }) })),
     ).toEqual([]);
   });
 
@@ -448,7 +456,7 @@ describe("the languages, measured on the text (ADR 0180)", () => {
      gave. */
   it("measures the top language against the runs that WERE measured", () => {
     const languages = ledgerLanguages(
-      ledger({ [key(0)]: row() }, [], [], undefined, { languages: { de: 30, en: 4, sv: 1 } }),
+      ledger({ [key(0)]: row({ dictations: 40, languages: { de: 30, en: 4, sv: 1 } }) }),
     );
 
     /* 30 of 35, and 35 is deliberately not the dictation count: a run whose
@@ -533,14 +541,22 @@ describe("how far back the saved window actually reaches", () => {
     expect(savedWindowSpan(ledger({}, [], [], undefined, { started_on: null }), NOW)).toBeNull();
   });
 
-  /* A RETIRED DAY IS A FIGURE AND NO LONGER A DAY (ADR 0176), so anything that
-     draws a bucket has to start after the retirement — the window's own label
-     does not, because the sum still holds every credited word. */
-  it("starts a drawable series after the last retired day", () => {
+  /* AN AGED-OUT DAY IS A MONTH AND NO LONGER A DAY, so anything that draws a
+     DAY bucket has to start at the oldest row the day tier still holds — the
+     window's own label does not, because the sum still holds every credited
+     word.
+
+     IT USED TO READ A SECOND STAMP AND THAT IS THE REVERSAL (ADR 0244).
+     `retired_through` marked the edge of an opaque blob; with the blob gone the
+     oldest day row is the whole answer, and the case is the same claim with one
+     fewer moving part. */
+  it("starts a drawable day series at the oldest day row and no earlier", () => {
     const source = ledger({ [key(2)]: row() }, [], [], key(400), {
-      retired_through: key(10),
+      months: { "2025-06": row() },
     });
-    expect(ledgerSpeaksFrom(source)).toBe(new Date(NOW - 9 * 24 * 60 * 60 * 1000).setHours(0, 0, 0, 0));
+    expect(ledgerSpeaksFrom(source)).toBe(
+      new Date(NOW - 2 * 24 * 60 * 60 * 1000).setHours(0, 0, 0, 0),
+    );
     /* And the label still counts from the true beginning, which is what makes it
        say `last 4 weeks` on a record older than the window. */
     expect(savedWindowSpan(source, NOW)).toBe(SAVED_WINDOW_DAYS);

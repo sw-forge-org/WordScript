@@ -21,7 +21,7 @@
  *  2. **The month tier**, `ledgerMonthsSpeakFrom`, which is never pruned.
  *     `Months` and `Years` are made of month rows and therefore reach back as
  *     far as the installation does — **which is the whole of why a chart here
- *     can be infinite.** Before the month tier existed, a retired day lost its
+ *     can be infinite.** Before the month tier existed, an aged-out day lost its
  *     shape into one total, so every grain shared the day horizon: the `Months`
  *     tab could never hold more than 26 buckets and the `Years` tab could never
  *     hold more than three, on an installation of any age.
@@ -37,7 +37,6 @@
  */
 
 import {
-  dayLanguageUnasked,
   dayMeanTurnaround,
   dayMedianTurnaround,
   emptyDay,
@@ -489,8 +488,6 @@ export function languageSeries(
       const parts = codes.map((each) => `${each.code.toUpperCase()} ${each.count}`);
       const refused = folded.language_refused ?? 0;
       if (refused > 0) parts.push(`${refused} too short`);
-      const unasked = dayLanguageUnasked(folded);
-      if (unasked > 0) parts.push(`${unasked} never asked`);
       return {
         value: named,
         runs: folded.dictations,

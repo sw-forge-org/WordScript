@@ -32,19 +32,28 @@
 //! NOTHING HERE EVER GOES DOWN, AND THAT IS ENFORCED BY THE SHAPE RATHER THAN BY
 //! CARE (ADR 0176). Day rows still age out past `LEDGER_DAY_ROWS` — a file
 //! on a machine somebody keeps for a decade may not grow without bound — but a
-//! row that ages out is ADDED INTO `retired` on its way out instead of being
-//! dropped. `totals()` is `retired` plus the days still held, so it is monotone
-//! by construction: there is no sequence of writes, prunes or restarts that can
-//! make it smaller. Deleting history does not touch this file, and neither does
-//! deleting a single transcript. The one door that lowers these figures is the
-//! reset in Privacy & Data, which is a button a person presses on purpose.
+//! row that ages out is folded into its MONTH on the way out, and the month tier
+//! is never pruned (ADR 0243). `totals()` is the months plus the days still
+//! held, so it is monotone by construction: there is no sequence of writes,
+//! prunes or restarts that can make it smaller. Deleting history does not touch
+//! this file, and neither does deleting a single transcript. The one door that
+//! lowers these figures is the reset in Privacy & Data, which is a button a
+//! person presses on purpose.
+//!
+//! **AND NOTHING HERE IS EVER OPAQUE** (ADR 0244). There was a third tier — one
+//! `retired` row that swallowed an aged-out day's shape and kept only its
+//! figures — and it existed because pruning used to destroy that shape. The
+//! month tier removed the reason, so the blob, its stamp and the schema
+//! migrations that filled it were deleted rather than maintained: this product
+//! has never shipped a release build, so no installation anywhere holds a file
+//! they could convert.
 //!
 //! THE FIRST DAY IT SAW IS THE INSTALL DATE, as far as anything can honestly
 //! say. Nothing in this product recorded when it was installed, so `started_on`
 //! is the day this ledger first wrote a row — and unlike the pre-0176 build it
-//! now SURVIVES the prune, because `retired` still speaks for the days behind
-//! it. What may not span that far is the CALENDAR, which draws day rows and
-//! therefore draws only what `days` still holds (ADR 0172).
+//! now SURVIVES the prune, because the month rows still speak for the days
+//! behind it. What may not span that far is the CALENDAR, which draws day rows
+//! and therefore draws only what `days` still holds (ADR 0172).
 
 use std::{
     collections::BTreeMap,
@@ -62,9 +71,9 @@ use super::paths::user_data_dir;
 ///
 /// A row that ages out is folded into its MONTH on the way out (ADR 0243), so
 /// this horizon bounds one tier's resolution and never the figures and never
-/// the reach. Before 0243 it also bounded the reach: a retired day went into one
-/// opaque total, which is why the *Years* tab could never hold more than three
-/// buckets on an installation of any age.
+/// the reach. Before 0243 it also bounded the reach: an aged-out day went into
+/// one opaque total, which is why the *Years* tab could never hold more than
+/// three buckets on an installation of any age.
 const LEDGER_DAY_ROWS: i64 = 800;
 
 /// What the derived counts in this file mean. See `LEDGER_SCHEMA`.
@@ -317,23 +326,6 @@ impl LedgerDay {
         self.language_refused = self.language_refused.max(other.language_refused);
     }
 
-    /// How many of the period's dictations nothing ever asked a language of
-    /// (ADR 0243) — the derived half of what the screen calls *Not named*.
-    ///
-    /// CLAMPED AT ZERO, AND THE CLAMP IS NOT DEFENSIVE PROGRAMMING. `raise_to`
-    /// takes a field-wise maximum, so an import can raise `dictations` from one
-    /// archive and the language tally from another and leave the identity that
-    /// holds on every live write no longer holding. Under-reporting the unasked
-    /// runs is the safe direction: it can only ever make the record look better
-    /// measured than it was, which is visible, rather than printing a negative
-    /// count, which is a display nobody can read.
-    pub fn language_unasked(&self) -> u64 {
-        let named: u64 = self.languages.values().sum();
-        self.dictations
-            .saturating_sub(named)
-            .saturating_sub(self.language_refused)
-    }
-
     /// The period's middle wait, off the quarter-octave axis (ADR 0243).
     ///
     /// `None` where the period timed nothing — which is not a zero, and every
@@ -349,7 +341,7 @@ pub struct ActivityLedger {
     #[serde(default)]
     pub schema: u32,
     /// `YYYY-MM-DD` of the first row ever written. It survives the prune because
-    /// `retired` still speaks for the days behind it.
+    /// the month rows still speak for the days behind it.
     ///
     /// IT IS NOT THE INSTALL DATE AND THIS NOTE USED TO SAY IT WAS. It is the
     /// first day somebody DICTATED, which on a machine installed in March and
@@ -383,44 +375,12 @@ pub struct ActivityLedger {
     /// can check and find false.
     #[serde(default)]
     pub installed_on: Option<String>,
-    /// Every day that aged out BEFORE the month tier existed, summed. The
-    /// reason a total can promise never to fall (ADR 0176).
-    ///
-    /// IT IS A CLOSED SET SINCE ADR 0243 and it never grows again: a day that
-    /// ages out now goes into `months`, which keeps its shape. This row is the
-    /// product's own prehistory — the days a schema 2 file had already folded
-    /// into one number before anything could fold them into twelve.
-    #[serde(default)]
-    pub retired: LedgerDay,
-    /// The last day that is no longer in `days`, so a surface can say where the
-    /// day-by-day record starts without claiming the totals start there too.
-    /// It moves every time a day ages out, and the calendar reads it.
-    #[serde(default)]
-    pub retired_through: Option<String>,
-    /// The last day the OPAQUE `retired` blob speaks for, fixed at the migration
-    /// that introduced the month tier and never moved again (ADR 0243).
-    ///
-    /// TWO STAMPS BECAUSE THE ONE STAMP CAME TO MEAN TWO THINGS. Before the
-    /// month tier, *the last day not in `days`* and *the last day with no shape*
-    /// were the same day, and `retired_through` answered both. They part company
-    /// the moment a retired day keeps its month: `retired_through` goes on
-    /// moving with the prune, and what a MONTH series may not draw is bounded by
-    /// this one instead.
-    ///
-    /// **AND THE MONTH IT NAMES IS SPLIT DOWN THE MIDDLE.** The blob holds that
-    /// month's days up to this stamp and the month tier holds the rest, so the
-    /// row is real and partial — the one column a month series starts after
-    /// rather than on. Nothing on any machine alive today carries a value here:
-    /// it takes 800 days of rows to retire a first one, and this product is six
-    /// months old. It is written for the installation that will.
-    #[serde(default)]
-    pub prehistory_through: Option<String>,
     /// One row per MONTH, keyed `YYYY-MM`, and **this tier is never pruned**
     /// (ADR 0243).
     ///
     /// THE TIERS ARE DISJOINT AND THAT IS THE WHOLE CONTRACT. A day is in
     /// `days` or, once it ages out, in its month here — never in both. So
-    /// `totals()` is `retired + months + days` with nothing counted twice, and a
+    /// `totals()` is `months + days` with nothing counted twice, and a
     /// surface asking for one month's figures adds this row to whatever days of
     /// that month are still live. `month_totals` is the one implementation of
     /// that sum, on both sides of the bridge.
@@ -518,16 +478,6 @@ pub struct ActivityLedger {
     /// difference readable instead of merely disclosed in a note.
     #[serde(default)]
     pub mode_causes: BTreeMap<String, Vec<u32>>,
-    /// How many dictations came back in each language, all time, keyed by the
-    /// two-letter code (ADR 0180).
-    ///
-    /// THE LANGUAGE OF THE TEXT AND NOT OF THE SETTING. `entry.language` is the
-    /// configured hint, so counting it would count how often somebody changed a
-    /// dropdown. This is measured on the delivered text by
-    /// `core::language_detect`, which is why it works on the lanes that never
-    /// report one — Groq and the local runtime among them.
-    #[serde(default)]
-    pub languages: BTreeMap<String, u64>,
 }
 
 /// One recogniser's own turnaround distribution (ADR 0240).
@@ -680,11 +630,11 @@ impl ActivityLedger {
     /// Every day folded into one set of all-time figures, INCLUDING the days
     /// that have aged out of the file. This is the number that may never fall.
     ///
-    /// THREE TIERS AND THEY ARE DISJOINT (ADR 0243): the prehistory blob, the
-    /// month rows a day is folded into when it ages out, and the live days. A
-    /// day is in exactly one of them, so this adds rather than picks.
+    /// TWO TIERS AND THEY ARE DISJOINT (ADR 0243, ADR 0244): the month rows a
+    /// day is folded into when it ages out, and the live days. A day is in
+    /// exactly one of them, so this adds rather than picks.
     pub fn totals(&self) -> LedgerDay {
-        let mut total = self.retired.clone();
+        let mut total = LedgerDay::default();
         for month in self.months.values() {
             total.absorb(month);
         }
@@ -740,22 +690,6 @@ impl ActivityLedger {
         for (key, row) in &other.months {
             self.months.entry(key.clone()).or_default().raise_to(row);
         }
-        self.retired.raise_to(&other.retired);
-        if let Some(through) = &other.retired_through {
-            if self.retired_through.as_deref().map_or(true, |own| own < through.as_str()) {
-                self.retired_through = Some(through.clone());
-            }
-        }
-        /* THE LATER STAMP WINS HERE, WHICH IS THE OPPOSITE OF `started_on` AND
-           IS NOT AN INCONSISTENCY. This one bounds what a series may NOT draw:
-           an archive whose blob swallowed more months is evidence that more
-           months are shapeless, and taking the earlier stamp would let a chart
-           draw a column the merged record cannot fill. */
-        if let Some(through) = &other.prehistory_through {
-            if self.prehistory_through.as_deref().map_or(true, |own| own < through.as_str()) {
-                self.prehistory_through = Some(through.clone());
-            }
-        }
         /* The EARLIER start wins: an archive that reaches further back is
            evidence this installation is older than the local file knows. */
         if let Some(started) = &other.started_on {
@@ -784,10 +718,6 @@ impl ActivityLedger {
         }
         if !self.turnaround_buckets.is_empty() {
             self.turnaround_bucket_ms = TURNAROUND_BUCKET_MS;
-        }
-        for (code, count) in &other.languages {
-            let own = self.languages.entry(code.clone()).or_insert(0);
-            *own = (*own).max(*count);
         }
         /* THE SAME FIELD-WISE MAXIMUM, ONE LEVEL DOWN (ADR 0179, ADR 0240). A
            pair the archive knows and this machine does not is taken whole; one
@@ -927,7 +857,12 @@ fn ledger_store() -> &'static Mutex<Option<ActivityLedger>> {
 fn read_from_disk() -> ActivityLedger {
     let path = ledger_file_path();
     let Ok(raw) = std::fs::read_to_string(&path) else {
-        return ActivityLedger::default();
+        /* A LEDGER THIS BUILD CREATES STATES THIS BUILD'S SHAPE (ADR 0244). It
+           used to be born at schema 0 and get stamped on the NEXT read — so a
+           first run that wrote the install date and nothing else left a file
+           claiming a shape no build has ever had. Harmless while nothing reads
+           the stamp; not harmless from the release that does. */
+        return ActivityLedger { schema: LEDGER_SCHEMA, ..ActivityLedger::default() };
     };
     /* A LEDGER THAT WILL NOT PARSE IS REPLACED, NOT SURFACED AS AN ERROR. It is
        derived bookkeeping and every figure in it can be rebuilt by living
@@ -959,36 +894,22 @@ fn migrate(ledger: &mut ActivityLedger) {
         ledger.turnaround_bucket_ms = TURNAROUND_BUCKET_MS;
     }
 
-    /* SCHEMA 1 COUNTED A DIFFERENT QUANTITY AT THE SAME WIDTH, which the guard
-       above cannot see: the axis is identical and every count is plausible. Its
-       rate histogram is throughput over the open microphone, and this build's is
-       the speaking rate; one run of each in the same distribution is a median
-       that belongs to neither. It is dropped rather than converted, because the
-       conversion factor is the pause share and nothing recorded it. */
-    if ledger.schema < 2 {
-        ledger.rate_buckets = Vec::new();
-    }
+    /* NOTHING HERE CONVERTS BETWEEN SCHEMA VERSIONS, AND THAT IS A DECISION
+       RATHER THAN AN OMISSION (ADR 0244). This product has never shipped a
+       release build, so no installation outside this repository holds a file an
+       older shape could have written. The `schema < 2` and `schema < 3` branches
+       that stood here were maintained for exactly one machine — the developer's
+       own — and their output reached the screen as an arithmetic that did not
+       add up. The stamp below stays, because the first release is where it
+       starts meaning something and from that day forward every user is owed a
+       path.
 
-    /* SCHEMA 3 DISCARDS NOTHING, AND THAT IS WORTH STATING RATHER THAN INFERRING
-       FROM THE ABSENCE OF CODE (ADR 0243). Every structure schema 2 wrote means
-       under 3 exactly what it meant under 2: the day rows are the same
-       observations, the two histograms are on the same axes, `retired` speaks
-       for the same days. What is new starts empty — the month tier fills as days
-       age out, the per-period accumulators fill from the next dictation and from
-       whatever the seed can still reach — and `measured_from` is what keeps a
-       chart from drawing that emptiness as a row of zeroes.
-
-       THE WIDTH GUARD BELOW IS THE ONE THING THAT CAN DISCARD. A day row whose
-       log histogram is not this build's width is dropped rather than padded, for
-       the same reason the two guards above drop a histogram on the wrong axis:
-       counts in buckets they were not counted into are a plausible wrong number,
-       which is the failure this module is built against. */
-    for day in ledger
-        .days
-        .values_mut()
-        .chain(ledger.months.values_mut())
-        .chain(std::iter::once(&mut ledger.retired))
-    {
+       WHAT THE GUARDS ABOVE AND BELOW DO IS NOT MIGRATION. They drop a histogram
+       counted on an axis THIS build does not use — a defence against a constant
+       being edited in the present, which fires on a developer rather than on an
+       upgrade. Counts in buckets they were not counted into are a plausible
+       wrong number, which is the failure this module is built against. */
+    for day in ledger.days.values_mut().chain(ledger.months.values_mut()) {
         if !day.turnaround_log.is_empty() && day.turnaround_log.len() != TURNAROUND_LOG_BUCKETS {
             day.turnaround_log = Vec::new();
             day.turnaround_runs = 0;
@@ -1001,14 +922,6 @@ fn migrate(ledger: &mut ActivityLedger) {
         }
     }
     ledger.mode_causes.retain(|_, buckets| !buckets.is_empty());
-
-    /* WHERE THE OPAQUE BLOB ENDS, FIXED ONCE (ADR 0243). Under schema 2 that
-       was whatever `retired_through` said, because the two meant the same thing.
-       From here they diverge and this is the stamp that keeps the older meaning
-       — taken on the one and only migration that can still see it. */
-    if ledger.schema < 3 && ledger.retired.dictations > 0 {
-        ledger.prehistory_through = ledger.retired_through.clone();
-    }
 
     ledger.schema = LEDGER_SCHEMA;
 }
@@ -1321,12 +1234,6 @@ pub fn record(contribution: LedgerContribution) -> Result<(), String> {
         ledger.add_mode_cause(contribution.mode.as_deref(), milliseconds);
         ledger.stamp_measured("turnaround_runs", &key);
     }
-    if let Some(code) = contribution.language.as_deref() {
-        let code = code.trim().to_lowercase();
-        if !code.is_empty() {
-            *ledger.languages.entry(code).or_insert(0) += 1;
-        }
-    }
     /* THE STAMP GOES DOWN WHETHER OR NOT A LANGUAGE WAS NAMED, because what it
        dates is the ASKING and not the answer (ADR 0243). A day on which every
        run was too short still measured them all, and a chart that skipped it
@@ -1356,17 +1263,18 @@ pub fn record(contribution: LedgerContribution) -> Result<(), String> {
 /// Fold day rows past the horizon into their month.
 ///
 /// THE ROW LEAVES AND THE FIGURES DO NOT (ADR 0176). **AND SINCE ADR 0243 THE
-/// SHAPE DOES NOT EITHER.** A retired day used to be absorbed into one opaque
+/// SHAPE DOES NOT EITHER.** An aged-out day used to be absorbed into one opaque
 /// `retired` total, which kept every lifetime figure honest and cost the record
-/// its resolution — so `series.ts` started every chart after `retired_through`,
-/// the *Months* tab could never hold more than 26 buckets and **the *Years* tab
+/// its resolution — so `series.ts` started every chart after that horizon, the
+/// *Months* tab could never hold more than 26 buckets and **the *Years* tab
 /// could never hold more than three, on an installation of any age**. A product
 /// whose tabs stop learning after two years is not all-time in anything but its
 /// totals.
 ///
 /// A day now goes into its month row, and the month tier is never pruned. The
 /// tiers stay disjoint: the day leaves `days` in the same statement it joins
-/// `months`, so nothing is ever counted in both.
+/// `months`, so nothing is ever counted in both — and there is no third tier to
+/// keep a stamp for, which is why ADR 0244 deleted the one that stood here.
 fn prune(ledger: &mut ActivityLedger) {
     if ledger.days.len() as i64 <= LEDGER_DAY_ROWS {
         return;
@@ -1376,10 +1284,6 @@ fn prune(ledger: &mut ActivityLedger) {
     for key in doomed {
         if let Some(day) = ledger.days.remove(&key) {
             ledger.months.entry(month_key(&key)).or_default().absorb(&day);
-            /* `retired_through` still says where the DAY-BY-DAY record starts,
-               which is what the calendar reads it for. It no longer says where
-               the totals start — the month tier does, and reaches further. */
-            ledger.retired_through = Some(key);
         }
     }
 }
@@ -1560,7 +1464,6 @@ fn needs_seed(ledger: &ActivityLedger) -> bool {
     }
     ledger.days.is_empty()
         || ledger.turnaround_buckets.iter().all(|count| *count == 0)
-        || ledger.languages.is_empty()
         /* ADR 0240, and the ONLY reason it is in this list. On the reporting
            machine every other structure is full — days, buckets, languages — so
            without this line the gate returns false, the seed never runs, and the
@@ -1582,8 +1485,8 @@ fn needs_seed(ledger: &ActivityLedger) -> bool {
 /// Same shape of question as `needs_credited_seed` and the same answer: the
 /// fields cannot be derived from a day's totals, because which run waited how
 /// long and which came back in which language is a property of the RECORDS.
-/// What history still holds is folded in once; what it no longer holds is what
-/// `language_unasked` counts, and nothing can recover it.
+/// What history still holds is folded in once; what it no longer holds is gone,
+/// and nothing can recover it.
 fn needs_period_detail_seed(ledger: &ActivityLedger) -> bool {
     !ledger.days.is_empty()
         && ledger
@@ -1629,13 +1532,12 @@ pub fn seed_from_history(records: &[SeedRecord]) -> Result<(), String> {
         return Ok(());
     }
 
-    /* FOUR SEEDS, BECAUSE EACH ARRIVED AFTER THE DAYS DID. A ledger written
+    /* EACH SEED ARRIVED AFTER THE DAYS DID. A ledger written
        before the turnaround existed has rows but no distribution, and re-folding
        its days would double every one of them — so each case fills its own
        structure ALONE. All four are idempotent and none runs twice. */
     let seed_days = ledger.days.is_empty();
     let seed_turnarounds = ledger.turnaround_buckets.iter().all(|count| *count == 0);
-    let seed_languages = ledger.languages.is_empty();
     /* ITS OWN FLAG, NOT `seed_turnarounds`. The two structures arrived in
        different releases, so on any machine that dictated before ADR 0240 the
        histogram is full and this map is empty — the exact state the shared flag
@@ -1734,14 +1636,6 @@ pub fn seed_from_history(records: &[SeedRecord]) -> Result<(), String> {
                 ledger.add_mode_cause(record.mode.as_deref(), milliseconds);
             }
         }
-        if seed_languages {
-            if let Some(code) = record.language.as_deref() {
-                let code = code.trim().to_lowercase();
-                if !code.is_empty() {
-                    *ledger.languages.entry(code).or_insert(0) += 1;
-                }
-            }
-        }
     }
 
     if ledger.days.is_empty() {
@@ -1795,12 +1689,13 @@ fn absorb_period_detail(day: &mut LedgerDay, record: &SeedRecord) {
         }
         day.turnaround_log[turnaround_log_index(milliseconds)] += 1;
     }
-    /* A SEEDED RECORD WITH NO LANGUAGE WAS ASKED AND REFUSED, not unasked. The
-       seed re-measures with the same detector the live path uses, so a record
-       history still holds has been asked by definition. What `language_unasked`
-       is then left counting is precisely the runs the index no longer holds —
-       which is the honest meaning of the word and the one number on this split
-       that nothing will ever be able to improve. */
+    /* A SEEDED RECORD WITH NO LANGUAGE WAS ASKED AND REFUSED. The seed
+       re-measures with the same detector the live path uses, so a record history
+       still holds has been asked by definition — which is what keeps the seeded
+       rows on the same identity the live path guarantees: every counted
+       dictation increments exactly one of these two, so the two together are the
+       runs a language was asked of and there is no third population to name
+       (ADR 0244). */
     match record.language.as_deref().map(str::trim).filter(|code| !code.is_empty()) {
         Some(code) => *day.languages.entry(code.to_lowercase()).or_insert(0) += 1,
         None => day.language_refused += 1,
@@ -1908,7 +1803,9 @@ mod tests {
     /// **IT USED TO ASSERT `retired.dictations == 1` AND THAT IS THE REVERSAL.**
     /// The old mechanism was the assertion, so the honest change was not to
     /// delete the case but to make it name the fact underneath: the day is still
-    /// counted, and now it is still findable.
+    /// counted, and now it is still findable. ADR 0244 then deleted the blob it
+    /// used to land in, which cost this case one assertion and no coverage —
+    /// there is no longer a second place a day could have gone.
     #[test]
     fn a_day_that_ages_out_is_folded_into_its_month_rather_than_into_one_total() {
         let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
@@ -1929,11 +1826,6 @@ mod tests {
             Some(1),
             "the oldest day went into its month and kept its place in time",
         );
-        assert_eq!(
-            ledger.retired.dictations, 0,
-            "nothing goes into the prehistory blob any more — it is a closed set",
-        );
-
         /* THE FIGURE THE WHOLE MECHANISM EXISTS FOR, unchanged by the tier it
            now travels through. */
         let totals = ledger.totals();
@@ -2003,7 +1895,7 @@ mod tests {
         let totals = ledger.totals();
         assert_eq!(totals.dictations, 2);
         assert_eq!(totals.words, 150);
-        assert_eq!(ledger.languages.get("de").copied(), Some(1));
+        assert_eq!(totals.languages.get("de").copied(), Some(1));
     }
 
     /// ADR 0177. History has no speech clock, so it cannot answer the question
@@ -2140,11 +2032,44 @@ mod tests {
         assert!(ledger.median_rate().is_none());
     }
 
-    /// ADR 0177's migration. Same axis, same plausible counts, different
-    /// question — the width guard cannot see this one, so the schema stamp has
-    /// to.
+    /// ADR 0244. A ledger this build CREATES states this build's shape.
+    ///
+    /// Nothing on any screen shows a schema stamp, so this is a fact that can
+    /// move without anybody noticing — which is what earns it a case. It used to
+    /// be born at 0 and stamped on the next read, so a first run that wrote the
+    /// install date and nothing else left a file claiming a shape no build has
+    /// ever had. Harmless until the release that reads the stamp; this is the
+    /// record's insurance against arriving at that release with it broken.
     #[test]
-    fn a_throughput_histogram_from_the_old_schema_is_dropped_and_the_days_are_not() {
+    fn a_ledger_created_from_nothing_states_this_builds_schema() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        let path = ledger_file_path();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(snapshot().unwrap().schema, LEDGER_SCHEMA);
+    }
+
+    /// **THIS CASE ASSERTED A MIGRATION AND THE MIGRATION IS GONE** (ADR 0244).
+    ///
+    /// It covered ADR 0177's schema arm: a rate histogram on the same axis with
+    /// the same plausible counts, measuring throughput rather than the speaking
+    /// rate, which the width guard cannot see and the schema stamp therefore
+    /// had to. That arm was maintained for one machine — this repository's own
+    /// — and it is deleted, because no installation outside it has ever held a
+    /// file to convert.
+    ///
+    /// What it is now is the guard against that being quietly undone. The stamp
+    /// is raised and the observations survive, and **nothing branches on the
+    /// version it came in with.** If a later session re-adds a `schema < N` arm,
+    /// this case is where the question *whose file is that for* gets asked. The
+    /// answer changes at the first release build and not before — see the sister
+    /// case above, which covers the guard that DID stay, because an axis width
+    /// this build does not use is a defence against an edited constant rather
+    /// than against an older build.
+    #[test]
+    fn an_older_schema_is_stamped_and_never_converted() {
         let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
         reset_for_tests();
 
@@ -2152,21 +2077,25 @@ mod tests {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        let mut throughput = vec![0u32; RATE_BUCKETS];
-        throughput[87] = 50;
+        let mut buckets = vec![0u32; RATE_BUCKETS];
+        buckets[87] = 50;
         let raw = serde_json::to_string(&serde_json::json!({
+            "schema": 1,
             "started_on": "2026-08-16",
             "days": { "2026-08-16": { "dictations": 50, "words": 3325, "recorded_seconds": 2397.6, "timed": 50 } },
-            "rate_buckets": throughput,
-            "rate_bucket_wpm": 1.0,
+            "rate_buckets": buckets,
+            "rate_bucket_wpm": RATE_BUCKET_WPM,
         }))
         .unwrap();
         std::fs::write(&path, raw).unwrap();
 
         let ledger = snapshot().unwrap();
-        assert!(ledger.median_rate().is_none(), "the old rate is not read as a new one");
         assert_eq!(ledger.totals().dictations, 50, "the observations survive");
-        assert_eq!(ledger.schema, LEDGER_SCHEMA);
+        assert_eq!(ledger.schema, LEDGER_SCHEMA, "the stamp is raised");
+        assert!(
+            ledger.median_rate().is_some(),
+            "the histogram is read as it stands — no version branch touches it",
+        );
     }
 
     #[test]
@@ -2411,42 +2340,49 @@ mod tests {
         assert_eq!(rows, histogram, "the rows sum to the all-time histogram");
     }
 
-    /// ADR 0243. *Not named* was one counter over two populations with different
-    /// futures, and the split is the whole point: one is frozen and the other
-    /// grows every day. The derived half is what this case is really about —
-    /// nothing stores it, so nothing can store it wrongly.
+    /// ADR 0243, rewritten by ADR 0244. *Not named* was one counter over two
+    /// populations, and the split is what made the label sayable. The THIRD
+    /// population this case used to assert — the runs nothing ever asked about
+    /// — is gone with the legacy data it only ever described.
+    ///
+    /// **WHAT REPLACED IT IS THE IDENTITY THAT MADE IT REMOVABLE**, and it is
+    /// worth a case of its own because a surface now states a denominator built
+    /// on it: every counted dictation increments EXACTLY ONE of the two halves,
+    /// so `named + refused` is the count of runs a language was asked of, and on
+    /// the live path that is every run there is. A future path that counts a
+    /// dictation without asking would break the screen's arithmetic silently,
+    /// and this is what would catch it.
     #[test]
-    fn a_run_nothing_asked_about_is_derived_and_never_stored() {
+    fn every_counted_dictation_lands_in_exactly_one_half_of_the_language_split() {
         let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
         reset_for_tests();
 
         record(spoken(AUG_16, Some("de"))).unwrap();
         record(spoken(AUG_16, Some("de"))).unwrap();
+        record(spoken(AUG_16, Some("en"))).unwrap();
+        /* Asked and came back empty — too short for either instrument to name. */
         record(spoken(AUG_16, None)).unwrap();
+        /* A blank is not a language, and it is not a fifth population either. */
+        record(spoken(AUG_16, Some("   "))).unwrap();
 
         let ledger = snapshot().unwrap();
         let day = ledger.days.get(&day_key(AUG_16)).unwrap();
         assert_eq!(day.languages.get("de").copied(), Some(2));
-        assert_eq!(day.language_refused, 1, "asked and came back empty");
+        assert_eq!(day.languages.get("en").copied(), Some(1));
+        assert_eq!(day.language_refused, 2, "the empty verdict and the blank");
+
+        let named: u64 = day.languages.values().sum();
         assert_eq!(
-            day.language_unasked(),
-            0,
-            "every run the day counted was asked about, so nothing is left over",
+            named + day.language_refused,
+            day.dictations,
+            "the two halves account for every dictation the day counted",
         );
 
-        /* THE POPULATION NOTHING CAN EVER RECOVER, and the only way it arises:
-           a row whose dictations outnumber what the split accounts for, which is
-           a day seeded from records the index no longer holds. */
-        let mut older = LedgerDay { dictations: 10, ..LedgerDay::default() };
-        older.languages.insert("de".into(), 3);
-        older.language_refused = 2;
-        assert_eq!(older.language_unasked(), 5);
-
-        /* AND IT MAY NOT GO NEGATIVE after a merge raised the parts and the
-           whole out of step — under-reporting is the safe direction. */
-        let mut crossed = LedgerDay { dictations: 1, ..LedgerDay::default() };
-        crossed.language_refused = 4;
-        assert_eq!(crossed.language_unasked(), 0);
+        /* AND THE IDENTITY SURVIVES A FOLD, which is what lets a month row carry
+           the same denominator a day row does. */
+        let totals = ledger.totals();
+        let named_all: u64 = totals.languages.values().sum();
+        assert_eq!(named_all + totals.language_refused, totals.dictations);
     }
 
     /// ADR 0243. A period's wait shape is a log histogram, and a histogram read

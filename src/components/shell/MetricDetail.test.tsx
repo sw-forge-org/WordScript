@@ -79,6 +79,14 @@ function draw(
  *  The model names are invented on purpose: a catalogued id spelled outside
  *  `shared/` fails its own test (ADR 0115), and this list only ever prints what
  *  the ledger holds. */
+/** One mode's row in `mode_causes`: the same 25 ms axis, without the
+ *  provider/model envelope, because a mode is already its own key. */
+function modeBuckets(waits: number[]): number[] {
+  const buckets = new Array<number>(400).fill(0);
+  for (const wait of waits) buckets[Math.floor(wait / 25)] += 1;
+  return buckets;
+}
+
 function cause(provider: string, model: string, waits: number[]): LedgerCause {
   const buckets = new Array<number>(400).fill(0);
   for (const wait of waits) buckets[Math.floor(wait / 25)] += 1;
@@ -206,48 +214,109 @@ describe("the two metrics that had no history until ADR 0243", () => {
     expect(screen.queryByText(/runs all time/)).toBeNull();
   });
 
-  /* ADR 0236 REFUSED TO NAME THE CAUSE BECAUSE ONE COUNT COVERED TWO OF THEM,
-     and ADR 0243 splits the count instead — which is what makes the label
-     sayable. `Not named` became two rows with different futures: one grows with
-     every brief dictation, the other is frozen at whatever the index had already
-     forgotten. The old case asserted the single row and the refusal to name it;
-     both are now the wrong assertion, and this is the record of that. */
-  it("splits the unnamed runs into the two populations they have always been", () => {
+  /* ADR 0236 REFUSED TO NAME THE CAUSE BECAUSE ONE COUNT COVERED TWO OF THEM;
+     ADR 0243 split the count into three; **ADR 0244 deleted the third and this
+     is the record of that.** The third — *Never asked* — was sold as the runs
+     from before the record kept an answer. It actually measured how far back the
+     SEED could reach, it was non-zero on exactly one machine in the world, and
+     on the live path every counted dictation increments one of the two below.
+
+     WHAT THE CASE ASSERTS NOW IS THE ARITHMETIC THAT REPLACED IT: the
+     denominator is the runs a language was asked of, so the two rows account
+     for it exactly, at every age and on every machine. Before this the facts
+     list mixed a lifetime counter with the tiers and summed to more than the
+     dictations it claimed to be measured over. */
+  it("names the two populations and states the share against the runs that were asked", () => {
     draw(
       "languages",
-      ledger(
-        { [iso(0)]: row({ dictations: 10, languages: { de: 6, en: 1 }, language_refused: 2 }) },
-        { languages: { de: 6, en: 1 } },
-      ),
+      ledger({
+        [iso(0)]: row({ dictations: 9, languages: { de: 6, en: 1 }, language_refused: 2 }),
+      }),
     );
 
-    expect(fact("Named")).toBe("7 of 10");
+    /* 7 named, 2 refused, 9 asked — and 9 is the day's own dictation count,
+       because on the live path there is nowhere else for a run to be. */
+    expect(fact("Named")).toBe("7 of 9");
     expect(screen.getByText("German")).toBeInTheDocument();
-    /* ASKED AND TOO SHORT — the half a better detector could move. */
-    expect(fact("Too short to name")).toBe("2");
-    /* NEVER ASKED — 10 counted, 7 named, 2 refused, so one run is left whose
-       text the index no longer holds. Derived and never stored, which is why it
-       cannot disagree with the row it is derived from. */
-    expect(fact("Never asked")).toBe("1");
-    expect(fact("Not named")).toBeNull();
-  });
-
-  /* AND THE SECOND ROW IS NOT DRAWN AS A ZERO. A record every run of which was
-     asked about has nothing to explain, and a `Never asked · 0` would invite the
-     reader to wonder what it means — the same rule the marker legend follows. */
-  it("says nothing about runs nothing asked about where there are none", () => {
-    draw(
-      "languages",
-      ledger(
-        { [iso(0)]: row({ dictations: 8, languages: { de: 6 }, language_refused: 2 }) },
-        { languages: { de: 6 } },
-      ),
-    );
-
     expect(fact("Too short to name")).toBe("2");
     expect(fact("Never asked")).toBeNull();
-    expect(screen.getByText(/Every run this record counted was asked about/)).toBeInTheDocument();
+    expect(fact("Not named")).toBeNull();
+    expect(screen.queryByText(/Every run this record counted was asked about/)).toBeNull();
   });
+
+  /* AND THE TWO ROWS SUM TO THE DENOMINATOR EVEN WHERE A ROW IS EMPTY. A record
+     nothing was ever refused on states `of` its own count and draws a zero for
+     the refusals, which is a real reading rather than an absence — unlike the
+     row this replaced, which had to be hidden precisely because it was noise. */
+  it("keeps the arithmetic where nothing was refused", () => {
+    draw(
+      "languages",
+      ledger({ [iso(0)]: row({ dictations: 6, languages: { de: 6 } }) }),
+    );
+
+    expect(fact("Named")).toBe("6 of 6");
+    expect(fact("Too short to name")).toBe("0");
+  });
+
+  /* THE TWO CUTS OF THE TURNAROUND SAY THEY ARE TWO CUTS (ADR 0244). The owner
+     read two stacked lists, each ending in a total, and asked outright whether
+     they add up or are already split. They are the same runs cut a second way,
+     and the heading is where that has to be said — a sentence under the second
+     list arrives after the question has been answered wrongly. */
+  it("says the mode list is the same runs as the model list, not a share of them", () => {
+    const buckets = new Array<number>(400).fill(0);
+    buckets[40] = 3;
+    draw(
+      "turnaround",
+      ledger(
+        { [iso(1)]: row() },
+        {
+          turnaround_buckets: buckets,
+          turnaround_causes: {
+            "vendor-one/fast-recogniser": cause("vendor-one", "fast-recogniser", [1000, 1200, 1000]),
+          },
+          mode_causes: {
+            cleanup: modeBuckets([1000, 1200]),
+            agent: modeBuckets([4100]),
+          },
+        },
+      ),
+    );
+
+    expect(screen.getByText("3 runs all time")).toBeInTheDocument();
+    expect(screen.getByText("the same 3 runs")).toBeInTheDocument();
+  });
+
+  /* AND WHERE IT IS NOT THE SAME NUMBER IT SAYS SO. A run whose record names no
+     mode is counted in the histogram and in no row of this cut, so the list can
+     be short of the one above it — which until now was disclosed only in a
+     source comment claiming the surface stated it. */
+  it("says how short the mode list is where a run named no mode", () => {
+    const buckets = new Array<number>(400).fill(0);
+    buckets[40] = 4;
+    draw(
+      "turnaround",
+      ledger(
+        { [iso(1)]: row() },
+        {
+          turnaround_buckets: buckets,
+          turnaround_causes: {
+            /* Four runs the recogniser is known for... */
+            "vendor-one/fast-recogniser": cause("vendor-one", "fast-recogniser", [
+              1000, 1200, 1000, 4100,
+            ]),
+          },
+          /* ...and three the mode is. The fourth carries no `effective_mode`,
+             which is every record written before that field existed. */
+          mode_causes: { cleanup: modeBuckets([1000, 1200]), agent: modeBuckets([4100]) },
+        },
+      ),
+    );
+
+    expect(screen.getByText("4 runs all time")).toBeInTheDocument();
+    expect(screen.getByText("3 of the same 4 runs")).toBeInTheDocument();
+  });
+
 });
 
 /* THE TILE IS A MEDIAN AND A COLUMN IS AN AGGREGATE, which are two measurements
