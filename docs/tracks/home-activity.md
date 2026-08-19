@@ -1437,6 +1437,142 @@ first run of each reported failures, which is where the two Rust cases and the
 frontend case above came from; the baselines quoted are reconstructed from that
 run and not from the numbers this page carried.
 
+## The record — Stage J, 2026-08-19
+
+**Opened within the hour Stage I closed, by the owner reading the screen Stage I
+had just shipped.** Two sentences, and both of them were right about something
+neither of us had written down:
+
+> *Womit ich halt ein Problem habe, ist in der Languages-Metrik `Never asked`.
+> Das macht nur Sinn für mich als Legacy-Developer mit meinen lokalen Daten. Aber
+> die hat niemand anderes.* … *Und bei Turnaround wird nicht ganz klar, ob* which
+> model heard it *und* what the mode cost *sich addieren oder bereits irgendwie
+> aufgesplittet sind.*
+
+Durable form is [ADR 0244](../decisions/0244-there-is-no-legacy-in-a-build-nobody-has-shipped-so-the-retired-tier-the-prehistory-stamp-the-schema-migrations-and-the-duplicate-language-counter-are-deleted.md). This section is what the checking found.
+
+### `Never asked` did not measure what its own ADR said it measured
+
+ADR 0243 called it *the runs from before the record kept an answer*, and the
+label on the screen said the same. **It is the reach of the SEED.** The lifetime
+`languages` map had counted live since ADR 0180; the per-day split was seeded, on
+the day ADR 0243 shipped, from the records the index still held. Sixty runs sat
+in the first and not the second, because the index had lost their records to
+edits and retention in between. On the live path every counted dictation
+increments exactly one of the two halves — so on any installation from here on
+the figure is structurally zero, forever.
+
+The entry's own author had measured its population three times and never
+measured what produced it.
+
+### And the same split had put an arithmetic on the screen that does not add up
+
+| Row | Read from | Value |
+|---|---|---|
+| `Named 479 of 586` | the lifetime map | 479 |
+| `Too short to name` | the tiers | 114 |
+| `Never asked` | the tiers | 60 |
+
+**653 against 586 dictations.** Two generations of one counter, drifted by 67
+runs, presented as one list — the plausible wrong number this track exists
+against, produced by the record written to prevent it. Nothing in the suite could
+see it: every case fixture set one counter or the other, never both.
+
+### The turnaround question was a real ambiguity and hid a real defect
+
+Three totals stacked, identically shaped: `Runs timed 474`, then `474 runs all
+time`, then `474 runs all time`. The sentence explaining that the second list is
+the same runs cut another way sat **below both lists**, where it arrives after
+the reader has already answered the question wrongly.
+
+Underneath it, a defect: `add_mode_cause` returns without counting when a record
+names no `effective_mode`, so the mode cut can be short of the model cut. The
+source comment there says *the rows then sum to less than the total, which the
+surface states rather than papers over*. **The surface did not state it.** A
+comment asserting a behaviour is not that behaviour, and this one was written in
+the same session that shipped the screen.
+
+### The owner's answer was wider than the two defects
+
+> *Wir löschen alle lokalen Daten, die akkumuliert haben von mir, weil wir sind
+> im Developer-Modus. Wir wollen keine Migrationen bauen, wir wollen keine zwei
+> Systeme bauen, die irgendwie an lokalen Legacy-Daten festhalten, bei einem
+> Developer-Build, also nicht mal einer Release-Build-Version. Das ist nicht meine
+> Arbeitsumgebung.*
+
+**There has never been a release build, so there is no installed base, so there
+is no legacy.** Both defects above were the same construct wearing two hats: a
+compatibility path kept for one machine, whose output nobody could see was wrong
+because nobody else could produce it.
+
+### What was cut, and one of them was not asked for
+
+`Never asked` and the duplicate counter were named. **`retired`,
+`retired_through`, `prehistory_through` and the schema migrations were not** —
+they were put to the owner as the same rule applied consistently, and approved:
+*keine halben Sachen, alles vollständig und nachhaltig.*
+
+`retired` existed because pruning destroyed a day's shape (ADR 0176). ADR 0243
+removed that reason twenty-four hours earlier, and `prehistory_through` had been
+written the same day to describe the blob's edge. **A field introduced to
+describe a construct is deleted with that construct** rather than kept because it
+is new.
+
+What stayed, and the line it sits on: the histogram AXIS and WIDTH guards, which
+drop counts taken on a scale this build does not use — a defence against a
+constant being edited in the present, which fires on a developer rather than on
+an upgrade. The seed from the index, which rebuilds a lost ledger from records
+that still exist. `raise_to`, which merges a restored backup (ADR 0179). None of
+those is compatibility with a build nobody ran.
+
+### The suite caught a defect in the deletion, which is the argument for rewriting cases instead of deleting them
+
+`ledgerSpeaksFrom` used to be *the day after `retired_through`, or the first day
+row*. With the stamp gone the obvious rewrite is `return ledgerFirstDay(ledger)`,
+and it is **wrong**: `ledgerFirstDay` prefers `started_on`, which is where the
+RECORD begins, not where the DAY TIER begins. On a record whose old days have
+been folded into months, `started_on` sits a year before the oldest day row — so
+a day series would have drawn a year of empty buckets over periods the day rows
+cannot speak for, which is ADR 0172's one forbidden claim.
+
+Two cases failed on it, both of them cases that had been *rewritten* from
+asserting the retired tier rather than deleted with it. Deleting them would have
+shipped the defect.
+
+### The three cases that asserted removed behaviour, and what replaced each
+
+| Was | Now |
+|---|---|
+| `a_throughput_histogram_from_the_old_schema_is_dropped_and_the_days_are_not` | `an_older_schema_is_stamped_and_never_converted` — the guard against a `schema < N` branch coming back without the question *whose file is that for* being asked |
+| `a_run_nothing_asked_about_is_derived_and_never_stored` | `every_counted_dictation_lands_in_exactly_one_half_of_the_language_split` — the identity that made the third population removable, and that the screen's denominator now rests on |
+| `starts a drawable series after the last retired day` | `starts a drawable day series at the oldest day row and no earlier` — the case that caught the defect above |
+
+One case was added rather than rewritten:
+`a_ledger_created_from_nothing_states_this_builds_schema`. A ledger born at
+schema 0 and stamped on the next read is invisible on every screen, harmless
+until the release that reads the stamp, and exactly the kind of fact that moves
+without anybody noticing.
+
+### Measured on the real store, after the deletion
+
+The store was backed up and deleted — `activity.json`, `history.jsonl` and 492
+transcript files — and the host restarted on nothing. The ledger the build wrote
+from scratch:
+
+```
+{"schema":3,"started_on":null,"installed_on":"2026-08-17","months":{},
+ "measured_from":{},"reset_at_ms":null,"days":{},"rate_buckets":[],
+ "turnaround_buckets":[],"turnaround_bucket_ms":0.0,"rate_bucket_wpm":0.0,
+ "turnaround_causes":{},"mode_causes":{}}
+```
+
+No `retired`, no `retired_through`, no `prehistory_through`, no lifetime
+`languages` — and `schema: 3` on the first write rather than on the second.
+
+**Counts, measured at this session's own start:** Rust **1028 → 1029**, frontend
+**960 → 962** over 57 files, `npx tsc --noEmit` clean, `npm run build` clean but
+for the pre-existing chunk-size warning.
+
 ## The sequence
 
 **Stage A — the surface, on what already reads.** Nothing here is blocked.
@@ -1699,6 +1835,49 @@ set; it is the number ADR 0176 chose for a different purpose, kept because
 changing it in the same stage that changed its meaning would have made both
 untestable.
 
+### Stage J — the legacy paths are deleted rather than maintained, and two metrics stop under-saying what they know
+
+**Opened 2026-08-19 within the hour Stage I closed, and closed the same day: J1
+to J5 are landed.** The owner read the Languages metric Stage I had just shipped
+and said `Never asked` makes sense only for him. Checking that found the row did
+not measure what its own ADR claimed, and found a second defect nobody had
+raised: the facts list mixed two generations of one counter and **summed to 653
+against 586 dictations**. Durable form is [ADR 0244](../decisions/0244-there-is-no-legacy-in-a-build-nobody-has-shipped-so-the-retired-tier-the-prehistory-stamp-the-schema-migrations-and-the-duplicate-language-counter-are-deleted.md).
+
+**The premise this stage rests on, and it is a rule rather than a one-off:**
+*there has never been a release build, so there is no installed base, so there is
+no legacy.* A migration, a compatibility field or a conversion fallback earns its
+place only if some machine outside this repository could hold the data it
+converts. **The question is not whether it could ever be needed — everything
+could — but whether any installation holds it.** And the two defects above are
+why that is not merely a cost argument: a path exercised by one developer and no
+user is still exercised, and its output reaches the screen where nobody can see
+it is wrong.
+
+**Built in the order J1, J2, J3, J4, J5** — the ledger's shape first, because
+every reading below it is a consumer, and the accumulated store deleted before
+any of it, so nothing was written against data the build was about to stop
+understanding.
+
+| Step | What | Done means |
+|---|---|---|
+| **J1 · done** | **The accumulated store is deleted, not migrated.** `activity.json`, `history.jsonl` and 492 transcript files, backed up once and dropped. The decision applied to its own author: keeping them meant keeping every construct below | The host restarts on nothing and writes a ledger from scratch. Local data on this machine was already declared disposable in [`IMPLEMENTATION.md`](../IMPLEMENTATION.md#local-data-on-this-machine-is-disposable); this is the first stage to act on it wholesale |
+| **J2 · done** | **`retired`, `retired_through` and `prehistory_through` are deleted**, with the `schema < 2` and `schema < 3` branches that filled them. The blob existed because pruning destroyed a day's shape; ADR 0243 removed that reason twenty-four hours earlier, and the prehistory stamp had been written the same day to describe the blob's edge. `LEDGER_SCHEMA` keeps the value 3 rather than being renumbered — a version stamp that counts backwards is worse than one with gaps | `totals()` is `months + days`. The tier ladder is two rows deep and nothing in the file is ever opaque. A ledger this build creates states this build's stamp on the FIRST write, which it did not before — invisible on every screen, and the reason it has a case of its own |
+| **J3 · done** | **One language counter.** The lifetime map that had counted since ADR 0180 is deleted; the per-period rows are the only source, and `ledgerLanguages()` reads them. Two copies of one fact (ADR 0123) had drifted by 67 runs | The chart, the tile and the facts list come off one number. The surviving counter is the tiered one because it answers every question the lifetime map could and one it could not — per period, with a `measured_from` stamp |
+| **J4 · done** | **`Never asked` is deleted and the denominator says what it counts.** `Named: n of m` states `m = named + refused`, the runs a language was asked of — the same construction the speaking rate uses for `Measured over`. The runtime increments exactly one of the two halves on every counted dictation, so they account for it exactly | The two rows sum to the figure above them at every age and on every machine. The lifetime dictation count stays on the tiles, where it answers a different question |
+| **J5 · done** | **The two turnaround cuts say they are two cuts, in the heading.** `What the mode cost` reads `the same 474 runs`, or `470 of the same 474 runs` where a record named no mode — a shortfall that existed since ADR 0243 and was disclosed only in a source comment claiming the surface stated it | The reader's own question is answered where they are looking, rather than by a sentence under both lists that arrives after they have answered it wrongly |
+
+**What this stage does NOT do.** It does not touch the index, the archive or
+their byte budgets (ADR 0241, ADR 0242), and it does not touch ADR 0243's
+accumulator rule, day-to-month ladder or `measured_from`. What it removed from
+ADR 0243 is only the part that existed to carry one developer's file forward.
+
+**And the window it opens closes on its own.** Reading a pre-0244 ledger is safe
+exactly once, because no such file exists anywhere. **At the first release build
+that stops being true**, and every schema change from then on owes its users a
+path. ADR 0244 says so in its own Decision section rather than leaving it to be
+inferred from the absence of code.
+
 ## Traps
 
 The first four were found by reading the tree on 2026-08-16, before any session
@@ -1808,26 +1987,30 @@ and `not drawn`, and so is a period before its field's `measured_from`.**
 
 ## The prompt for the next session
 
-**Stage A, and Stage C through Stage I, are all closed** — A1 to A11, C1 to C11,
-D1 to D4, E1 to E5, F1 to F4, G1 to G6, H1 to H5 and I1 to I7 are landed, C12
-stays withdrawn. Stage H and Stage I were each opened by one evening's use of
-what the session before landed, and each was built the same day. Read the record
-sections above before anything else, in particular the A3/A4/A5 one, *What the
-readings actually measure*, and the Stage C, D, E, G, H and I ones: they carry
-findings that are not in the tree's own comments. **Stage I's first section is
-the one to read even if you read nothing else** — four of the eight items this
-page raised misdescribed the code they pointed at, and finding that out is where
-the stage's shape came from.
+**Stage A, and Stage C through Stage J, are all closed** — A1 to A11, C1 to C11,
+D1 to D4, E1 to E5, F1 to F4, G1 to G6, H1 to H5, I1 to I7 and J1 to J5 are
+landed, C12 stays withdrawn. Stage H, I and J were each opened by the owner
+using what the session before it landed, and each was built the same day; Stage J
+was opened within the hour Stage I closed, by reading the screen Stage I had just
+shipped. Read the record sections above before anything else, in particular the
+A3/A4/A5 one, *What the readings actually measure*, and the Stage C, D, E, G, H,
+I and J ones.
+
+**Stage I's first section and Stage J's first two are the ones to read even if
+you read nothing else.** Between them: four of the eight items this page raised
+misdescribed the code they pointed at, a row shipped with a label that did not
+match what it measured, and a source comment asserted a behaviour the surface did
+not have. **Everything on this page is evidence and nothing on it is a source.**
 
 Work in the repo root on `main`. Do not create a branch. **Seven other tracks
 work in the same tree** — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so
 run `git status` and `git log --oneline -5` before you start, and stage your own
-paths. Never `git add -A`. **0244 is the next free ADR number unless the tree
+paths. Never `git add -A`. **0245 is the next free ADR number unless the tree
 says otherwise — grep, and grep again immediately before you write the file.**
 Stage D cited 0234 twelve times in source and lost the number to another track
 while the session was running; Stage G was grepped clean at its start, cited 0238
 across 14 files over the hours that followed, and lost it anyway, at a cost of a
-`sed` over 14 files. Stage E, F, H and I all wrote the ADR file the moment the
+`sed` over 14 files. Stage E, F, H, I and J all wrote the ADR file the moment the
 number was known and none of them lost it. The rule is not *grep first*, it is
 **write the file the moment you know you need a number.**
 
@@ -1845,103 +2028,118 @@ the thing this track spent Stage A making impossible.
 | **B4** | Meetings and uploads as calendar origins — [`context-objects.md`](context-objects.md). The tooltip already holds their line, unwired and tagged |
 
 **So a session opening this page should probably not be a home-activity
-session.** If the owner brings new readings they open a Stage J and this page is
-where it goes. If they do not, the four questions below are what this track still
-has to say, and every one of them is a PROPOSAL rather than a task.
+session.** If the owner brings new readings they open a Stage K and this page is
+where it goes. If they do not, the five below are what this track still has to
+say, and every one of them is a PROPOSAL rather than a task.
 
-### Four things to raise, down from eight
-
-Stage I closed or deleted seven of the eight, and answered the one open item
-Stage H left. What follows is what survived, plus what Stage I created.
+### Five things to raise
 
 1. **The second clock inside the turnaround is still not on the record.** The
    clock stops when the TEXT exists (ADR 0181), so a mode that rewrites what was
    said has a second model inside the same interval and the record names only the
-   recogniser. Stage I gave the list a per-mode cut, which is the cheap half and
-   is now built; **splitting the clock itself needs a second timestamp on the
-   record**, and that changes what every existing record can be compared against.
-   This is the surviving half of the old item 5.
+   recogniser. Stage I gave the list a per-mode cut and Stage J made it say what
+   it is; **splitting the clock itself needs a second timestamp on the record**,
+   and that changes what every existing record can be compared against. The
+   surviving half of the old item 5.
 2. **`LEDGER_DAY_ROWS` is 800 and nothing measured says it should be.** ADR 0243
-   changed what the number means — it is the calendar's working set now, not a
-   bound on the product's memory — and deliberately did not change its value in
-   the same stage. The calendar draws a year at a time and the day tier is its
-   only source, so the honest question is *how many years back should a reader be
-   able to scroll at day resolution*, and the answer is a product decision rather
-   than an arithmetic one. Roughly 330 bytes a day row: a decade is 1.2 MB.
-3. **The three per-record numbers are re-measured and still one machine.** 685
-   bytes mean and 386 median per transcript, 2,550 per index record, 187
-   dictations a day — see the Stage I record for what they say about the byte
-   budgets, which is more than Stage H could say. The archive figures held to
-   within a byte across two windows, which is evidence they describe this reader
-   rather than that week. **They still describe one reader.** If the thresholds
-   ever have to be defended rather than stated, a second machine is the work.
+   changed what the number means — the calendar's working set, not a bound on the
+   product's memory — and deliberately did not change its value in the same
+   stage. The calendar draws a year at a time and the day tier is its only
+   source, so the honest question is *how many years back should a reader scroll
+   at day resolution*, and that is a product decision rather than an arithmetic
+   one. Roughly 330 bytes a day row: a decade is 1.2 MB.
+3. **The three per-record numbers are re-measured, still one machine, and the
+   machine has since been wiped.** 685 bytes mean and 386 median per transcript,
+   2,550 per index record, 187 dictations a day — the Stage I record carries what
+   they say about the byte budgets, which is more than Stage H could say, and the
+   archive figures held to within a byte across two windows. **They still
+   describe one reader**, and Stage J deleted the store they were measured on, so
+   a third window starts from zero. If the thresholds ever have to be defended
+   rather than stated, a second machine is the work.
 4. **Nothing else on Home is a candidate for a tile until ADR 0243 §1 admits
    it.** A reading goes on Home only if it can be stored as a fixed-size
    mergeable accumulator per period. A distinct-count, a most-recent-value or an
    exact percentile cannot, and belongs on a surface that speaks for a window and
-   says so. **This is a gate on future work rather than an open question**, and
-   it is here so that a session proposing a fifth tile checks it before designing
-   one.
+   says so. A gate on future work rather than an open question, here so a session
+   proposing a fifth tile checks it before designing one.
+5. **The no-legacy licence expires at the first release build, and nothing will
+   remind you.** ADR 0244 deleted the ledger's schema migrations because no
+   installation outside this repository holds a file to convert. **That stops
+   being true the day a release ships**, and from then on every schema change
+   owes its users a path. Whoever cuts the first release owns re-reading ADR 0244
+   before they do — this is the only place that says so outside the ADR itself.
 
 **Answered and kept for findability:** the old items 1, 2, 4, 6, 8 and 9 were
-built in Stage I and the old item 3 was DECIDED in ADR 0243 §8 — *if
-multi-selection ever lands on History, a multi-row delete confirms rather than
-offering an undo.* It is a decision rather than an open question so the next
-session finds an answer instead of a discussion. The old item 7 was reversed by
-the owner within an hour of being raised and its record is in the Stage H
-section.
+built in Stage I; the old item 3 was DECIDED in ADR 0243 §8 — *if multi-selection
+ever lands on History, a multi-row delete confirms rather than offering an undo.*
+The old item 7 was reversed by the owner within an hour of being raised and its
+record is in the Stage H section.
 
 ### Rules that still have teeth here
 
 1. **Never render a number the runtime did not produce.** A drawn reading carries
    `PreviewTag` and shows no figure at all (ADR 0161).
 2. **`unlit` and `not drawn` are different claims**, and so are `0` and `unknown`.
-   Anything that draws absence starts at the horizon its grain can reach. A chart column has
-   the same two states: `empty` is not a zero, and a week with no dictation has
-   no speaking rate at all. **Since ADR 0243 there is a third**: a period before
-   its field's `measured_from` is not drawn, because a zero there is a claim
-   about the product's past that the record cannot make. The horizon is
+   Anything that draws absence starts at the horizon its grain can reach. A chart
+   column has the same two states: `empty` is not a zero, and a week with no
+   dictation has no speaking rate at all. **Since ADR 0243 there is a third**: a
+   period before its field's `measured_from` is not drawn. The horizon is
    `speaksFrom(ledger, period)`, one answer per grain — not the single
-   `activityWindow` the older sections of this page still name.
-3. **A stored figure that is the remainder of two others is a defect.**
-   `raise_to` merges field by field, so a stored remainder can survive a merge
-   that moved the numbers it is the remainder of. Derive it. This is why
-   `language_unasked` is not a field.
-4. **A dev host may be running.** Check `pgrep -af "tauri dev"`. Do not write
+   `activityWindow` the older sections of this page still name, which no longer
+   exists.
+3. **A stored figure that is the remainder of two others is a defect**, and so is
+   a second copy of one fact. `raise_to` merges field by field, so a stored
+   remainder can survive a merge that moved the numbers it is the remainder of;
+   and two counters over one quantity drift, which is what put 653 on a screen
+   measuring 586. Derive the remainder, keep one counter.
+4. **A comment asserting a behaviour is not that behaviour.** `add_mode_cause`
+   carried *the rows then sum to less than the total, which the surface states
+   rather than papers over*, written in the session that shipped a surface which
+   did not state it. If a source comment claims a screen says something, open the
+   screen.
+5. **No compatibility path without an installation that needs it.** Ask *does any
+   machine outside this repository hold that data* rather than *could this ever
+   be needed*. See item 5 above for when this rule expires.
+6. **A dev host may be running.** Check `pgrep -af "tauri dev"`. Do not write
    `vite.config.ts` while one is up, and batch anything under `src-tauri/` into
-   one pass — say out loud that a rebuild is coming before you do it. **And the
-   shell's cwd is state**: `cd src-tauri && cargo test` leaves the shell there,
-   and the next relative path you type is not the path you meant. Absolute paths.
-5. **A capture measurement may be running.** Take
+   one pass — say out loud that a rebuild is coming before you do it. **The
+   shell's cwd is state**: `cd src-tauri && cargo test` leaves the shell there.
+   **And a `pkill` pattern matches your own shell's command line** — killing
+   `tauri dev` by name kills the command that typed it, which cost two attempts
+   in Stage J. Kill by pid, or build the pattern so it cannot match itself.
+7. **A capture measurement may be running.** Take
    `wc -l ~/.config/WordScript/logs/wordscript-runtime.log` before and after and
    report both; no heavy builds, `cargo test` included, during one.
-6. **Measure geometry in a browser, do not read `shell.css` and believe it.**
+8. **Measure geometry in a browser, do not read `shell.css` and believe it.**
    Stage A's corrected trap is three separate ways that goes wrong, **Stage D is
    the same rule one step up — render the chart and look at it**, **and Stage E
    is one step up again: render the REAL workspace over the dev server with
    `__TAURI_INTERNALS__` stubbed and this machine's own `config.json`,
-   `activity.json` and `history.json` behind it.** Synthetic data cannot show you
-   that one recogniser appears under two vendors.
-7. **`activity.json` has no test for its own migration**, and neither did
-   `history.json`. Both were watched on the live store instead — back it up
-   first, restart the host, read the file off disk. **A migration runs on read
-   and persists on the next write**, so a file checked too early still says the
-   old schema and nothing is wrong.
-8. **A matrix glyph is graded by looking at it at its real size.** Stage C's own
-   trap, and it cost two rounds: the arithmetic was right both times.
-9. **The owner does not want every change tested.** Said in as many words on
-   2026-08-17. A case earns its place where a fact could silently move — a
-   derivation, a refusal, a timing rule — and not where a constant changed.
-10. **An `Accepted` ADR is not a closed door.** Said in as many words on
+   `activity.json` and `history.json` behind it.** Note that as of Stage J this
+   machine's store is EMPTY, so that technique needs the owner to dictate first.
+9. **A migration runs on read and persists on the next write**, so a file checked
+   too early still says the old schema and nothing is wrong. Neither
+   `activity.json` nor `history.json` has ever had a test for its own
+   conversion — both were watched on the live store instead, backed up first.
+10. **A matrix glyph is graded by looking at it at its real size.** Stage C's own
+    trap, and it cost two rounds: the arithmetic was right both times.
+11. **The owner does not want every change tested.** Said in as many words on
+    2026-08-17. A case earns its place where a fact could silently move — a
+    derivation, a refusal, a timing rule — and not where a constant changed.
+    **And a case that fails because the behaviour was deliberately removed gets
+    REWRITTEN, not deleted**: in Stage J two such rewrites caught a defect in the
+    deletion itself, which deleting them would have shipped.
+12. **An `Accepted` ADR is not a closed door.** Said in as many words on
     2026-08-19: *alle festen Entscheidungen sind nicht fest — wir können uns
     umentscheiden, falls wir was Besseres haben.* Stage I overruled ADR 0176's
-    day-row bound on exactly that basis. What an ADR guarantees is that the
-    reasoning is findable before it is overturned, not that it never is.
+    day-row bound and Stage J overruled parts of ADR 0243 one day after it was
+    written. What an ADR guarantees is that the reasoning is findable before it
+    is overturned, not that it never is.
 
 **Validation:** `npm test`, `npm run build`, and `cd src-tauri && cargo test` if
 Rust moved. Quote the counts as a delta against the baselines you measure at the
-start. Baselines at the close of Stage I: **960 frontend cases over 57 files**
-and **1028 Rust cases**, with `npx tsc --noEmit` clean. **They are a sanity check
+start. Baselines at the close of Stage J: **962 frontend cases over 57 files**
+and **1029 Rust cases**, with `npx tsc --noEmit` clean. **They are a sanity check
 and not a baseline**, because seven other tracks write into this tree: Stage F
 closed with three of its five new Rust cases and one of its three new frontend
 cases belonging to one of them, counted as its own until the log said otherwise.

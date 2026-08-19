@@ -241,13 +241,16 @@ The active product core lives in `src-tauri/src/core/`.
   addition without loss. That is what lets a period be coarsened without the
   reading losing its meaning, and it is a gate — a figure that cannot be
   expressed this way does not go on Home.
-  **Three tiers, disjoint, and a lifetime total is their sum**: `days`, one row
-  per day, rolling at `LEDGER_DAY_ROWS`; `months`, one row per month, **never
-  pruned**; and `retired`, the single opaque row that speaks for everything
-  before the ladder existed. A day past the horizon is folded into its month
-  rather than into the blob, so **nothing in it subtracts** and no shape is lost
-  with the row (ADR 0176, ADR 0243). `years` is not a tier — twelve month rows
-  are a year, and storing the sum would be a second copy of one fact (ADR 0123).
+  **Two tiers, disjoint, and a lifetime total is their sum**: `days`, one row
+  per day, rolling at `LEDGER_DAY_ROWS`, and `months`, one row per month,
+  **never pruned**. A day past the horizon is folded into its month, so
+  **nothing in it subtracts** and no shape is lost with the row (ADR 0176,
+  ADR 0243). `years` is not a tier — twelve month rows are a year, and storing
+  the sum would be a second copy of one fact (ADR 0123). There was a third tier,
+  one opaque `retired` row for the days a pre-ladder build had already
+  flattened; ADR 0244 deleted it along with the schema migrations that filled
+  it, because no installation outside this repository has ever held such a
+  file.
   Beside the tiers sit the lifetime terms: two fixed-width histograms for the
   medians the tiles state to one decimal, and two independent one-dimensional
   cuts of the turnaround — `turnaround_causes` by `provider/model`, bounded at 64

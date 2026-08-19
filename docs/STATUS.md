@@ -179,15 +179,15 @@ Status: 2026-08-19
   names one in its answer. **That verdict is stored on the record**
   (`spoken_language`, ADR 0236, 2026-08-18), so a ledger rebuilt from history
   keeps the naming call's answer instead of re-measuring without it; records
-  written before that date carry none and stay unnamed. **Since ADR 0243 those
-  are two rows rather than one** — *Too short to name* is the verdict coming back
-  empty and grows with every brief dictation; *Never asked* is the frozen backlog
-  from before the field, is derived from the row rather than stored, and is not
-  drawn at all where it is zero.
+  written before that date carry none and stay unnamed. **Since ADR 0243 the
+  screen names what it could not** — *Too short to name* is the verdict coming
+  back empty, and the share beside it is stated against the runs a language was
+  asked of rather than against every dictation, so the two rows account for that
+  population exactly (ADR 0244).
 - **The lifetime figures cannot fall, they keep their shape, and one button
-  clears them** (ADR 0176, ADR 0179, 2026-08-16; ADR 0243, 2026-08-19). A day row
-  that ages out of the rolling day tier is folded INTO ITS MONTH rather than
-  dropped, and month rows are never pruned — so a chart on Home reaches as far
+  clears them** (ADR 0176, ADR 0179, 2026-08-16; ADR 0243 and ADR 0244,
+  2026-08-19). A day row that ages out of the rolling day tier is folded INTO ITS
+  MONTH rather than dropped, and month rows are never pruned — so a chart on Home reaches as far
   back as the installation does rather than the 2.2 years the old single-tier
   bound allowed. Every stored reading is a mergeable accumulator and every
   median, rate and share is derived when a surface asks; `activity.json` travels

@@ -1,6 +1,10 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-19 (**a reading that lasts
+Status: created 2026-07-24, last drift check 2026-08-19 (**there is no legacy in
+a build nobody has shipped**: the ledger's opaque `retired` tier, its prehistory
+stamp, its schema migrations and the duplicate lifetime language counter are
+deleted rather than maintained, and a share is stated against the runs it was
+measured over (ADR 0244); before it **a reading that lasts
 forever is a mergeable accumulator per period**: the activity ledger grows a
 month tier that is never pruned, so a pruned day keeps its shape as well as its
 figures and a chart on Home reaches as far back as the installation does; every
@@ -1004,15 +1008,15 @@ no account. Entities:
   **Every reading it stores is a fixed-size mergeable accumulator per period,
   and every median, mean, rate and share is derived at read time** (ADR 0243).
   A reading that cannot be expressed that way does not go on Home.
-  Three DISJOINT tiers, all of the same row type, and a lifetime figure is their
-  sum: `days` rolling at `LEDGER_DAY_ROWS`, `months` never pruned, and `retired`
-  as one opaque row for everything before the ladder. Pruning folds a day into
-  its month, so the figures survive and so does the shape. A row carries counts
-  and durations, `turnaround_runs`/`turnaround_ms_sum` for an exact mean, a
-  41-bucket quarter-octave `turnaround_log` for the shape, and the language
-  split as `languages` plus `language_refused` -- the third population,
-  *never asked*, is DERIVED from the row and never stored, so it cannot disagree
-  with the row after a merge.
+  Two DISJOINT tiers, both of the same row type, and a lifetime figure is their
+  sum: `days` rolling at `LEDGER_DAY_ROWS` and `months` never pruned. Pruning
+  folds a day into its month, so the figures survive and so does the shape. A
+  row carries counts and durations, `turnaround_runs`/`turnaround_ms_sum` for an
+  exact mean, a 41-bucket quarter-octave `turnaround_log` for the shape, and the
+  language split as `languages` plus `language_refused` -- **the runtime
+  increments exactly one of those two on every counted dictation**, so their sum
+  is the population a language was asked of and it is what a share is stated
+  against (ADR 0244).
   Beside the tiers: `rate_buckets` and `turnaround_buckets`, the two fixed
   400-bucket lifetime histograms the tiles state a median from; `turnaround_causes`,
   keyed `provider/model`, bounded at 64 keys with an `other` row that keeps the
@@ -1021,10 +1025,12 @@ no account. Entities:
   total and never a cross-tab.**
   `measured_from` maps a field to the first day it was written, so no series
   draws a zero for a period that predates its field; merging takes the EARLIER
-  stamp. `retired`/`retired_through` carry what pruning removed (ADR 0176), and
-  `prehistory_through` -- written once by the migration, merged by taking the
-  LATER -- is the last day the opaque row speaks for, which is where the month
-  series must start after.
+  stamp.
+  **The schema stamp converts nothing** (ADR 0244). There is no installed base,
+  so a `schema < N` branch would be maintained for this repository alone -- and
+  the two that stood here put an arithmetic on a screen that did not add up. A
+  ledger this build creates states this build's stamp; the first release is
+  where that stamp starts owing users a path.
   Each term is seeded once, idempotently, from whatever the index still holds,
   and two ledgers merge by field-wise maximum (ADR 0179) -- so a seeded term can
   start slightly short of the all-time truth and never double-counts. The file

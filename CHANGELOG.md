@@ -53,6 +53,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed — there is no legacy in a build nobody has shipped
+
+- **The ledger's opaque `retired` tier is deleted, with its stamp and its schema
+  migrations.** It existed because pruning used to destroy a day's shape; the
+  month tier removed that reason the day before. What was left was three
+  constructs maintained for files that no installation outside this repository
+  has ever held — and they were not idle: their output reached the screen as a
+  language count that summed to 653 against 586 dictations. A ledger this build
+  creates now states this build's schema stamp, and nothing branches on the
+  version a file arrived with. **The first release build is where that changes**;
+  from it forward every schema change owes its users a path.
+- **`Never asked` is gone from the Languages metric.** It was described as the
+  runs from before the record kept an answer. It actually measured how far back
+  the SEED could reach, it was non-zero on exactly one machine in the world, and
+  every counted dictation increments one of the two rows beside it — so on any
+  installation it is structurally zero.
+- **One language counter, not two.** A lifetime map had counted alongside the
+  per-period rows since the language verdict was first stored; two copies of one
+  fact drifted by 67 runs. The tiered counter is the survivor, because it can
+  answer every question the lifetime map could and one it could not.
+
+### Changed — what the two metrics state
+
+- **A share is stated against the runs it was measured over.** `Named: 412 of
+  526` counts the runs a language was asked of, not every dictation — the same
+  construction the speaking rate already uses for `Measured over`. The two rows
+  under it account for that population exactly, at every age and on every
+  machine.
+- **The two turnaround lists say they are two cuts of the same runs.** Which
+  model heard it and what the mode cost were stacked, identically shaped and each
+  ending in a total, which reads as a breakdown. The second now says `the same
+  474 runs` — or `470 of the same 474 runs` where a run's record named no mode,
+  a shortfall that until now was disclosed only in a source comment claiming the
+  surface stated it.
+
 ### Changed — every reading on Home can now exist indefinitely
 
 - **The activity ledger grows a month tier, and it is never pruned.** Until now
