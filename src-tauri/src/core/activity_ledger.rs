@@ -30,7 +30,7 @@
 //! is a number that has nothing to do with how much they dictate.
 //!
 //! NOTHING HERE EVER GOES DOWN, AND THAT IS ENFORCED BY THE SHAPE RATHER THAN BY
-//! CARE (ADR 0176). Day rows still age out past `LEDGER_RETENTION_DAYS` — a file
+//! CARE (ADR 0176). Day rows still age out past `LEDGER_DAY_ROWS` — a file
 //! on a machine somebody keeps for a decade may not grow without bound — but a
 //! row that ages out is ADDED INTO `retired` on its way out instead of being
 //! dropped. `totals()` is `retired` plus the days still held, so it is monotone
@@ -56,13 +56,44 @@ use serde::{Deserialize, Serialize};
 
 use super::paths::user_data_dir;
 
-/// How many days of rows are kept. Two years and a bit: long enough that no
-/// display this product will ever draw runs off the end, short enough that the
-/// file cannot grow without bound on a machine somebody keeps for a decade.
+/// How many DAY rows are kept. Two years and a bit: long enough that the
+/// calendar — which draws a year at a time and is the only surface that needs
+/// day resolution — can always reach the year before the one it is showing.
 ///
-/// A row that ages out is retired into `retired` rather than dropped, so this
-/// horizon bounds the FILE and never the FIGURES.
-const LEDGER_RETENTION_DAYS: i64 = 800;
+/// A row that ages out is folded into its MONTH on the way out (ADR 0243), so
+/// this horizon bounds one tier's resolution and never the figures and never
+/// the reach. Before 0243 it also bounded the reach: a retired day went into one
+/// opaque total, which is why the *Years* tab could never hold more than three
+/// buckets on an installation of any age.
+const LEDGER_DAY_ROWS: i64 = 800;
+
+/// What the derived counts in this file mean. See `LEDGER_SCHEMA`.
+///
+/// The turnaround shape a PERIOD carries, as opposed to the all-time one
+/// (ADR 0243). Quarter-octave buckets from 25 ms: bucket `i` opens at
+/// `25 × 2^(i/4)` milliseconds, so forty of them reach 25.6 seconds and the
+/// forty-first is everything above.
+///
+/// WHY NOT THE FINE AXIS, WHICH ALREADY EXISTS. `turnaround_buckets` is 400
+/// counters at 25 ms; on a day row that is twelve kilobytes a year of mostly
+/// zeroes, which is the one thing a file kept forever may not be. Why not the
+/// five bands the screen draws: the band EDGES are chosen per lane from three
+/// sets at read time, so storing them would freeze a choice the display makes
+/// after the fact. A log axis is band-set agnostic — any edge is a sum of
+/// buckets plus at most one interpolated bucket — and its error is bounded by
+/// one bucket's own width.
+const TURNAROUND_LOG_BUCKETS: usize = 41;
+const TURNAROUND_LOG_BASE_MS: f64 = 25.0;
+/// Four buckets per doubling. Quarter-octave, so a bucket spans 19% of its own
+/// lower edge and a median read off it is within that.
+const TURNAROUND_LOG_PER_OCTAVE: f64 = 4.0;
+
+/// The reserved cause key everything past `MAX_CAUSE_KEYS` is counted under
+/// (ADR 0243).
+///
+/// IT CANNOT COLLIDE WITH A REAL ONE. Every real key is `format!("{provider}/{model}")`
+/// and therefore contains a slash; this one does not.
+const OTHER_CAUSE_KEY: &str = "other";
 
 /// What the derived counts in this file mean. Bumped when a histogram changes
 /// its DEFINITION rather than its width — which the width guard below cannot
@@ -75,7 +106,13 @@ const LEDGER_RETENTION_DAYS: i64 = 800;
 /// module exists to avoid. On the bump the histogram is emptied and it is NOT
 /// re-seeded: history holds no speech clock, so the old records cannot answer
 /// the new question, and a tile with no reading is dark rather than wrong.
-const LEDGER_SCHEMA: u32 = 2;
+///
+/// **3**: the month tier, the per-period accumulators and `measured_from`
+/// (ADR 0243). **Nothing is discarded on this bump.** Every structure schema 2
+/// wrote means exactly what it meant, and the new ones start empty and fill
+/// forward — which is what `measured_from` exists to state, so no chart draws a
+/// zero for a period that predates a field.
+const LEDGER_SCHEMA: u32 = 3;
 
 /// The rate histogram: four hundred buckets of one word a minute, 0 to 400.
 ///
@@ -176,6 +213,47 @@ pub struct LedgerDay {
     pub saved_seconds: f64,
     #[serde(default)]
     pub longest_seconds: f64,
+    /// How many of the period's dictations carried a turnaround clock, and the
+    /// sum of what they cost (ADR 0243). Two numbers give the period an EXACT
+    /// mean; the shape below gives it a median.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub turnaround_runs: u64,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub turnaround_ms_sum: u64,
+    /// The period's wait distribution on the quarter-octave axis — see
+    /// `TURNAROUND_LOG_BUCKETS`. Empty where the period counted none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub turnaround_log: Vec<u32>,
+    /// How many of the period's dictations came back in each language, keyed by
+    /// the two-letter code. The all-time map one level up answers *which
+    /// languages*; this answers *when* (ADR 0243).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub languages: BTreeMap<String, u64>,
+    /// Dictations whose language was ASKED FOR and came back empty — the text
+    /// was too short for the detector to be sure of.
+    ///
+    /// THE OTHER HALF OF *NOT NAMED* IS DERIVED AND NOT STORED, and that is the
+    /// whole point of splitting it (ADR 0243). Every dictation counted since the
+    /// verdict existed increments either a language or this, so
+    /// `dictations - languages - refused` is exactly the count of runs nothing
+    /// ever asked about. Storing it as well would be a second copy of a fact the
+    /// row already carries, and one that could disagree with itself after an
+    /// import raised the parts and the whole separately.
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub language_refused: u64,
+}
+
+/// `#[serde(skip_serializing_if)]` on the fields ADR 0243 added, and on those
+/// only.
+///
+/// THE ELEVEN OLDER FIELDS KEEP WRITING THEIR ZEROES, deliberately: they are
+/// present in every file this product has ever written, and making them
+/// conditional would change what an existing row looks like on disk for no
+/// reading's benefit. The new ones are absent far more often than not — a day
+/// with no dictation in a given language is the normal case — and a row that
+/// writes six empty structures is the file growing to say nothing.
+fn is_zero_u64(value: &u64) -> bool {
+    *value == 0
 }
 
 impl LedgerDay {
@@ -193,6 +271,18 @@ impl LedgerDay {
         self.saved_words += other.saved_words;
         self.saved_seconds += other.saved_seconds;
         self.longest_seconds = self.longest_seconds.max(other.longest_seconds);
+        /* THE ACCUMULATORS ADR 0243 ADDED, AND THEY ARE HERE BECAUSE THEY ARE
+           MERGEABLE — which is the rule that lets a day become a month and a
+           month a year without the reading losing its meaning. A counter adds, a
+           histogram adds bucket by bucket, a tally adds key by key. Anything
+           that cannot be folded this way does not belong in a row. */
+        self.turnaround_runs += other.turnaround_runs;
+        self.turnaround_ms_sum += other.turnaround_ms_sum;
+        absorb_buckets(&mut self.turnaround_log, &other.turnaround_log, TURNAROUND_LOG_BUCKETS);
+        for (code, count) in &other.languages {
+            *self.languages.entry(code.clone()).or_insert(0) += *count;
+        }
+        self.language_refused += other.language_refused;
     }
 
     /// The larger of two rows, field by field.
@@ -217,6 +307,39 @@ impl LedgerDay {
         self.saved_words = self.saved_words.max(other.saved_words);
         self.saved_seconds = self.saved_seconds.max(other.saved_seconds);
         self.longest_seconds = self.longest_seconds.max(other.longest_seconds);
+        self.turnaround_runs = self.turnaround_runs.max(other.turnaround_runs);
+        self.turnaround_ms_sum = self.turnaround_ms_sum.max(other.turnaround_ms_sum);
+        raise_buckets(&mut self.turnaround_log, &other.turnaround_log, TURNAROUND_LOG_BUCKETS);
+        for (code, count) in &other.languages {
+            let own = self.languages.entry(code.clone()).or_insert(0);
+            *own = (*own).max(*count);
+        }
+        self.language_refused = self.language_refused.max(other.language_refused);
+    }
+
+    /// How many of the period's dictations nothing ever asked a language of
+    /// (ADR 0243) — the derived half of what the screen calls *Not named*.
+    ///
+    /// CLAMPED AT ZERO, AND THE CLAMP IS NOT DEFENSIVE PROGRAMMING. `raise_to`
+    /// takes a field-wise maximum, so an import can raise `dictations` from one
+    /// archive and the language tally from another and leave the identity that
+    /// holds on every live write no longer holding. Under-reporting the unasked
+    /// runs is the safe direction: it can only ever make the record look better
+    /// measured than it was, which is visible, rather than printing a negative
+    /// count, which is a display nobody can read.
+    pub fn language_unasked(&self) -> u64 {
+        let named: u64 = self.languages.values().sum();
+        self.dictations
+            .saturating_sub(named)
+            .saturating_sub(self.language_refused)
+    }
+
+    /// The period's middle wait, off the quarter-octave axis (ADR 0243).
+    ///
+    /// `None` where the period timed nothing — which is not a zero, and every
+    /// surface that draws this has to keep the two apart (ADR 0172).
+    pub fn median_turnaround_ms(&self) -> Option<f64> {
+        median_of_log(&self.turnaround_log)
     }
 }
 
@@ -260,14 +383,71 @@ pub struct ActivityLedger {
     /// can check and find false.
     #[serde(default)]
     pub installed_on: Option<String>,
-    /// Every day that has aged out of `days`, summed. The reason a total can
-    /// promise never to fall (ADR 0176).
+    /// Every day that aged out BEFORE the month tier existed, summed. The
+    /// reason a total can promise never to fall (ADR 0176).
+    ///
+    /// IT IS A CLOSED SET SINCE ADR 0243 and it never grows again: a day that
+    /// ages out now goes into `months`, which keeps its shape. This row is the
+    /// product's own prehistory — the days a schema 2 file had already folded
+    /// into one number before anything could fold them into twelve.
     #[serde(default)]
     pub retired: LedgerDay,
-    /// The last day `retired` speaks for, so a surface can say where the
+    /// The last day that is no longer in `days`, so a surface can say where the
     /// day-by-day record starts without claiming the totals start there too.
+    /// It moves every time a day ages out, and the calendar reads it.
     #[serde(default)]
     pub retired_through: Option<String>,
+    /// The last day the OPAQUE `retired` blob speaks for, fixed at the migration
+    /// that introduced the month tier and never moved again (ADR 0243).
+    ///
+    /// TWO STAMPS BECAUSE THE ONE STAMP CAME TO MEAN TWO THINGS. Before the
+    /// month tier, *the last day not in `days`* and *the last day with no shape*
+    /// were the same day, and `retired_through` answered both. They part company
+    /// the moment a retired day keeps its month: `retired_through` goes on
+    /// moving with the prune, and what a MONTH series may not draw is bounded by
+    /// this one instead.
+    ///
+    /// **AND THE MONTH IT NAMES IS SPLIT DOWN THE MIDDLE.** The blob holds that
+    /// month's days up to this stamp and the month tier holds the rest, so the
+    /// row is real and partial — the one column a month series starts after
+    /// rather than on. Nothing on any machine alive today carries a value here:
+    /// it takes 800 days of rows to retire a first one, and this product is six
+    /// months old. It is written for the installation that will.
+    #[serde(default)]
+    pub prehistory_through: Option<String>,
+    /// One row per MONTH, keyed `YYYY-MM`, and **this tier is never pruned**
+    /// (ADR 0243).
+    ///
+    /// THE TIERS ARE DISJOINT AND THAT IS THE WHOLE CONTRACT. A day is in
+    /// `days` or, once it ages out, in its month here — never in both. So
+    /// `totals()` is `retired + months + days` with nothing counted twice, and a
+    /// surface asking for one month's figures adds this row to whatever days of
+    /// that month are still live. `month_totals` is the one implementation of
+    /// that sum, on both sides of the bridge.
+    ///
+    /// WHY THE OTHER ARRANGEMENT WAS REJECTED. Writing every dictation into both
+    /// tiers would spare the read side that addition and would store each fact
+    /// twice — and a write path that updated one tier and not the other would
+    /// diverge SILENTLY. This way the failure mode of forgetting the live days
+    /// is a current month that reads empty, which somebody notices the same day.
+    ///
+    /// Twelve rows a year is under four kilobytes a year. Fifty years of them is
+    /// smaller than one week of the index.
+    #[serde(default)]
+    pub months: BTreeMap<String, LedgerDay>,
+    /// The first day each accumulator was written, keyed by the row field it
+    /// belongs to (ADR 0243).
+    ///
+    /// A SERIES MAY NOT DRAW A PERIOD THAT BEGINS BEFORE ITS FIELD'S STAMP. A
+    /// zero there is not a measurement of nought, it is the field not having
+    /// existed — the same distinction ADR 0172 drew for the calendar's cells,
+    /// made general so that the next field added does not need its own paragraph
+    /// of prose. This track has written that paragraph twice already: once for
+    /// the speech clock (ADR 0177) and once for the language verdict (ADR 0236).
+    ///
+    /// The EARLIER stamp wins on a merge, for the same reason `started_on` does.
+    #[serde(default)]
+    pub measured_from: BTreeMap<String, String>,
     /// When somebody last pressed reset, and the reason the reset STAYS reset.
     ///
     /// Without it the seed would undo the button: `seed_from_history` folds
@@ -319,6 +499,25 @@ pub struct ActivityLedger {
     /// no growth with use — and it costs about eight hundred bytes per model.
     #[serde(default)]
     pub turnaround_causes: BTreeMap<String, LedgerCause>,
+    /// The same distribution again, split by the MODE that ran rather than by
+    /// the recogniser that answered, keyed by `effective_mode` (ADR 0243).
+    ///
+    /// TWO ONE-DIMENSIONAL CUTS OF ONE TOTAL, NEVER A CROSS-TAB. Model×mode is
+    /// the product of two sets and is bounded only in the sense that a large
+    /// number is finite; each cut on its own sums to `turnaround_buckets` and
+    /// answers a question somebody actually asks — *which model is slow* and
+    /// *what does this mode cost me*.
+    ///
+    /// It needs no key cap. `ProcessingMode` is an enum, so unlike a model name
+    /// off the wire this map cannot be grown by a vendor.
+    ///
+    /// AND IT IS THE HALF OF THE WAIT THE OTHER CUT CANNOT SEE. The clock stops
+    /// when the TEXT exists (ADR 0181), so a mode that rewrites what was said
+    /// has a second model inside the same interval and `turnaround_causes` names
+    /// only the recogniser. Cutting the same runs by mode is what makes that
+    /// difference readable instead of merely disclosed in a note.
+    #[serde(default)]
+    pub mode_causes: BTreeMap<String, Vec<u32>>,
     /// How many dictations came back in each language, all time, keyed by the
     /// two-letter code (ADR 0180).
     ///
@@ -404,16 +603,25 @@ impl ActivityLedger {
         if model.is_empty() {
             return;
         }
-        let key = format!("{provider}/{model}");
+        let mut key = format!("{provider}/{model}");
+        let (mut provider, mut model) = (provider.to_string(), model.to_string());
+        /* PAST THE CAP THE RUN IS COUNTED SOMEWHERE ELSE, NOT DROPPED
+           (ADR 0243). It used to return here, which made the rows stop summing
+           to `turnaround_buckets` with no signal at all — on an installation
+           old enough to have seen sixty-five models, which is a decade of a
+           vendor renaming on every release rather than anything exotic. The
+           display's own note says the rows sum. Now they do, at every age. */
         if !self.turnaround_causes.contains_key(&key)
             && self.turnaround_causes.len() >= MAX_CAUSE_KEYS
         {
-            return;
+            key = OTHER_CAUSE_KEY.to_string();
+            provider = OTHER_CAUSE_KEY.to_string();
+            model = String::new();
         }
 
         let cause = self.turnaround_causes.entry(key).or_insert_with(|| LedgerCause {
-            provider: provider.to_string(),
-            model: model.to_string(),
+            provider,
+            model,
             buckets: Vec::new(),
         });
         if cause.buckets.len() != TURNAROUND_BUCKETS {
@@ -422,6 +630,27 @@ impl ActivityLedger {
         let index =
             ((milliseconds as f64 / TURNAROUND_BUCKET_MS) as usize).min(TURNAROUND_BUCKETS - 1);
         cause.buckets[index] += 1;
+    }
+
+    /// Count one wait against the MODE that produced it (ADR 0243). Same funnel,
+    /// same condition and the same axis as `add_turnaround`, so this cut and the
+    /// model cut describe the same set of runs from the day both exist.
+    fn add_mode_cause(&mut self, mode: Option<&str>, milliseconds: u64) {
+        let Some(mode) = mode.map(str::trim).filter(|value| !value.is_empty()) else {
+            /* A run whose mode the record does not name is counted in the
+               histogram and in no row of this cut, exactly as a run with no
+               model name would be — and unlike that case there is no coarser
+               true answer to file it under. The rows then sum to less than the
+               total, which the surface states rather than papers over. */
+            return;
+        };
+        let buckets = self.mode_causes.entry(mode.to_string()).or_default();
+        if buckets.len() != TURNAROUND_BUCKETS {
+            *buckets = vec![0; TURNAROUND_BUCKETS];
+        }
+        let index =
+            ((milliseconds as f64 / TURNAROUND_BUCKET_MS) as usize).min(TURNAROUND_BUCKETS - 1);
+        buckets[index] += 1;
     }
 
     /// The middle dictation's wait, in milliseconds.
@@ -450,12 +679,50 @@ impl ActivityLedger {
 
     /// Every day folded into one set of all-time figures, INCLUDING the days
     /// that have aged out of the file. This is the number that may never fall.
+    ///
+    /// THREE TIERS AND THEY ARE DISJOINT (ADR 0243): the prehistory blob, the
+    /// month rows a day is folded into when it ages out, and the live days. A
+    /// day is in exactly one of them, so this adds rather than picks.
     pub fn totals(&self) -> LedgerDay {
         let mut total = self.retired.clone();
+        for month in self.months.values() {
+            total.absorb(month);
+        }
         for day in self.days.values() {
             total.absorb(day);
         }
         total
+    }
+
+    /// One calendar month's figures, whichever tier they are sitting in
+    /// (ADR 0243).
+    ///
+    /// THE ONE IMPLEMENTATION OF THE TIER SUM, and the reason it is a method
+    /// rather than a line at each call site: a caller that read `months` alone
+    /// would report the CURRENT month as empty until the day it ages out, which
+    /// is the whole month a reader is most likely to be looking at.
+    pub fn month_totals(&self, month_key: &str) -> LedgerDay {
+        let mut total = self.months.get(month_key).cloned().unwrap_or_default();
+        for (key, day) in &self.days {
+            if key.len() >= 7 && &key[..7] == month_key {
+                total.absorb(day);
+            }
+        }
+        total
+    }
+
+    /// The first day a given accumulator was written, or `None` where it has
+    /// never been written at all (ADR 0243).
+    pub fn measured_from(&self, field: &str) -> Option<&str> {
+        self.measured_from.get(field).map(String::as_str)
+    }
+
+    /// Stamp an accumulator's first day, keeping the earliest ever seen.
+    fn stamp_measured(&mut self, field: &str, day: &str) {
+        let entry = self.measured_from.entry(field.to_string()).or_insert_with(|| day.to_string());
+        if day < entry.as_str() {
+            *entry = day.to_string();
+        }
     }
 
     /// Raise every figure here to the larger of itself and the archive's
@@ -464,10 +731,29 @@ impl ActivityLedger {
         for (key, row) in &other.days {
             self.days.entry(key.clone()).or_default().raise_to(row);
         }
+        /* THE MONTH TIER RAISES EXACTLY LIKE THE DAY TIER (ADR 0243). It has to:
+           an archive from a machine that has run longer carries months this one
+           has never had a day for, and taking them whole is the only way a
+           restore can reach further back than the local file. Field-wise
+           maximum keeps it idempotent — the same archive imported twice changes
+           nothing — which is ADR 0179's rule and not a new one. */
+        for (key, row) in &other.months {
+            self.months.entry(key.clone()).or_default().raise_to(row);
+        }
         self.retired.raise_to(&other.retired);
         if let Some(through) = &other.retired_through {
             if self.retired_through.as_deref().map_or(true, |own| own < through.as_str()) {
                 self.retired_through = Some(through.clone());
+            }
+        }
+        /* THE LATER STAMP WINS HERE, WHICH IS THE OPPOSITE OF `started_on` AND
+           IS NOT AN INCONSISTENCY. This one bounds what a series may NOT draw:
+           an archive whose blob swallowed more months is evidence that more
+           months are shapeless, and taking the earlier stamp would let a chart
+           draw a column the merged record cannot fill. */
+        if let Some(through) = &other.prehistory_through {
+            if self.prehistory_through.as_deref().map_or(true, |own| own < through.as_str()) {
+                self.prehistory_through = Some(through.clone());
             }
         }
         /* The EARLIER start wins: an archive that reaches further back is
@@ -522,6 +808,80 @@ impl ActivityLedger {
             });
             raise_buckets(&mut own.buckets, &cause.buckets, TURNAROUND_BUCKETS);
         }
+        /* NO CAP ON THIS ONE, because the key is an enum and not a wire value —
+           see the field's own note. */
+        for (mode, buckets) in &other.mode_causes {
+            let own = self.mode_causes.entry(mode.clone()).or_default();
+            raise_buckets(own, buckets, TURNAROUND_BUCKETS);
+        }
+        /* THE EARLIER STAMP WINS, and for the same reason `started_on` does: an
+           archive that measured a field sooner is evidence this reader has been
+           measuring it for longer than the local file knows. Taking the later
+           one would hide periods the record can genuinely speak for. */
+        for (field, day) in &other.measured_from {
+            self.stamp_measured(field, day);
+        }
+    }
+}
+
+/// `YYYY-MM` from a `YYYY-MM-DD` day key, which is the first seven characters
+/// and nothing cleverer — the day keys are written by `day_key` and are always
+/// that shape.
+fn month_key(day: &str) -> String {
+    day.chars().take(7).collect()
+}
+
+/// Which quarter-octave bucket a wait lands in — see `TURNAROUND_LOG_BUCKETS`.
+///
+/// Anything under the base lands in bucket 0 and anything past the top lands in
+/// the overflow, which is the same clamping rule the rate histogram uses and for
+/// the same reason: an outlier held at the edge counts as one run and cannot
+/// drag a median, where a dropped one is a silent edit of the distribution.
+fn turnaround_log_index(milliseconds: u64) -> usize {
+    if milliseconds as f64 <= TURNAROUND_LOG_BASE_MS {
+        return 0;
+    }
+    let octaves = (milliseconds as f64 / TURNAROUND_LOG_BASE_MS).log2();
+    ((octaves * TURNAROUND_LOG_PER_OCTAVE) as usize).min(TURNAROUND_LOG_BUCKETS - 1)
+}
+
+/// The lower edge of a quarter-octave bucket, in milliseconds.
+fn turnaround_log_edge(index: usize) -> f64 {
+    TURNAROUND_LOG_BASE_MS * 2f64.powf(index as f64 / TURNAROUND_LOG_PER_OCTAVE)
+}
+
+/// The middle run's wait off the log axis, at its bucket's lower edge.
+fn median_of_log(buckets: &[u32]) -> Option<f64> {
+    let total: u64 = buckets.iter().map(|count| *count as u64).sum();
+    if total == 0 {
+        return None;
+    }
+    let midpoint = total / 2;
+    let mut seen: u64 = 0;
+    for (index, count) in buckets.iter().enumerate() {
+        seen += *count as u64;
+        if seen > midpoint {
+            return Some(turnaround_log_edge(index));
+        }
+    }
+    None
+}
+
+/// Add one histogram into another, widening the target where it is empty.
+///
+/// A HISTOGRAM OF THE WRONG WIDTH IS DROPPED RATHER THAN PADDED, exactly as
+/// `raise_buckets` drops one: a file whose axis does not match this build's
+/// means something else, and folding it in would put runs in buckets they were
+/// never counted into.
+fn absorb_buckets(own: &mut Vec<u32>, other: &[u32], expected: usize) {
+    if other.len() != expected {
+        return;
+    }
+    if own.len() != expected {
+        *own = vec![0; expected];
+    }
+    for (index, count) in other.iter().enumerate() {
+        own[index] = own[index].saturating_add(*count);
     }
 }
 
@@ -608,6 +968,48 @@ fn migrate(ledger: &mut ActivityLedger) {
     if ledger.schema < 2 {
         ledger.rate_buckets = Vec::new();
     }
+
+    /* SCHEMA 3 DISCARDS NOTHING, AND THAT IS WORTH STATING RATHER THAN INFERRING
+       FROM THE ABSENCE OF CODE (ADR 0243). Every structure schema 2 wrote means
+       under 3 exactly what it meant under 2: the day rows are the same
+       observations, the two histograms are on the same axes, `retired` speaks
+       for the same days. What is new starts empty — the month tier fills as days
+       age out, the per-period accumulators fill from the next dictation and from
+       whatever the seed can still reach — and `measured_from` is what keeps a
+       chart from drawing that emptiness as a row of zeroes.
+
+       THE WIDTH GUARD BELOW IS THE ONE THING THAT CAN DISCARD. A day row whose
+       log histogram is not this build's width is dropped rather than padded, for
+       the same reason the two guards above drop a histogram on the wrong axis:
+       counts in buckets they were not counted into are a plausible wrong number,
+       which is the failure this module is built against. */
+    for day in ledger
+        .days
+        .values_mut()
+        .chain(ledger.months.values_mut())
+        .chain(std::iter::once(&mut ledger.retired))
+    {
+        if !day.turnaround_log.is_empty() && day.turnaround_log.len() != TURNAROUND_LOG_BUCKETS {
+            day.turnaround_log = Vec::new();
+            day.turnaround_runs = 0;
+            day.turnaround_ms_sum = 0;
+        }
+    }
+    for buckets in ledger.mode_causes.values_mut() {
+        if !buckets.is_empty() && buckets.len() != TURNAROUND_BUCKETS {
+            *buckets = Vec::new();
+        }
+    }
+    ledger.mode_causes.retain(|_, buckets| !buckets.is_empty());
+
+    /* WHERE THE OPAQUE BLOB ENDS, FIXED ONCE (ADR 0243). Under schema 2 that
+       was whatever `retired_through` said, because the two meant the same thing.
+       From here they diverge and this is the stamp that keeps the older meaning
+       — taken on the one and only migration that can still see it. */
+    if ledger.schema < 3 && ledger.retired.dictations > 0 {
+        ledger.prehistory_through = ledger.retired_through.clone();
+    }
+
     ledger.schema = LEDGER_SCHEMA;
 }
 
@@ -651,13 +1053,55 @@ fn created_day(path: &std::path::Path) -> Option<String> {
     Some(day_key(since.as_millis() as u64))
 }
 
+/// Write the ledger, ATOMICALLY and COMPACTLY (ADR 0243).
+///
+/// **THIS IS THE ONE FILE IN THE PRODUCT THAT CANNOT BE REBUILT FROM ANYTHING
+/// ELSE** (ADR 0179), and until this ADR it was the one written the least
+/// carefully: `to_string_pretty` into `std::fs::write`, which truncates in place.
+/// A crash between the truncate and the last byte left no ledger and no second
+/// copy to replay from. Stage G found exactly this on `history.json` — *the
+/// write is whole-file, non-atomic and pretty-printed* — and Stage H fixed it
+/// for the index, which is the collection that CAN be rebuilt.
+///
+/// So: temporary plus rename, the same shape `compact_journal` uses. The rename
+/// is what makes it atomic; a failed one leaves a stray sibling, which is swept,
+/// rather than a torn ledger, which is unrecoverable.
+///
+/// AND MINIFIED, WHICH WAS 73% OF THE FILE. Measured on the reporting machine:
+/// 21,326 bytes on disk against 5,634 bytes of content. Indentation nobody reads
+/// paid for on every dictation.
+///
+/// WHAT IS DELIBERATELY UNCHANGED IS THE FREQUENCY. Every dictation still
+/// writes. The ledger is an accumulator over a file bounded by construction, not
+/// a log over an unbounded one, so the argument that made the index a journal
+/// (ADR 0241) does not reach it — there is no second copy to replay a skipped
+/// write from, and at the sizes the tier ladder permits the write is a fraction
+/// of a millisecond.
 fn write_to_disk(ledger: &ActivityLedger) -> Result<(), String> {
     let path = ledger_file_path();
-    let raw = serde_json::to_string_pretty(ledger).map_err(|error| error.to_string())?;
+    let raw = serde_json::to_string(ledger).map_err(|error| error.to_string())?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    std::fs::write(path, raw).map_err(|error| error.to_string())
+
+    let temporary = path.with_extension("json.tmp");
+    std::fs::write(&temporary, raw).map_err(|error| error.to_string())?;
+    std::fs::rename(&temporary, &path).map_err(|error| {
+        let _ = std::fs::remove_file(&temporary);
+        error.to_string()
+    })
+}
+
+/// Seconds, at the precision a second is worth storing to.
+///
+/// `recorded_seconds` arrived as `4647.276553287982`: twelve decimal places of
+/// which three carry a measurement and nine are the float's own shape, written
+/// out in full on every dictation, for a figure the screen reports in whole
+/// minutes. Rounding on ACCUMULATE rather than at write time keeps what is in
+/// memory identical to what is on disk — the alternative drifts the two apart
+/// and makes a test that reads the file disagree with one that reads the store.
+fn round_seconds(value: f64) -> f64 {
+    (value * 1000.0).round() / 1000.0
 }
 
 /// `YYYY-MM-DD` in LOCAL time, because a calendar of your days is a calendar of
@@ -730,6 +1174,8 @@ pub struct SeedRecord {
     pub model: Option<String>,
     /// Whether this record's mode may be credited against a typing baseline.
     pub credited: bool,
+    /// Which mode ran, for the mode cut of the turnaround (ADR 0243).
+    pub mode: Option<String>,
     /// The language this record was credited with — read off the record where
     /// it kept one (ADR 0236), re-measured from its text where it predates the
     /// field. Never the configured one (ADR 0180).
@@ -764,6 +1210,11 @@ pub struct LedgerContribution {
     /// Prompt Enhance. Their output may not be credited against typing, because
     /// nobody would have typed it (ADR 0178).
     pub credited: bool,
+    /// Which mode actually ran, so the wait can be cut by it as well as by the
+    /// recogniser (ADR 0243). The record's own `effective_mode` — never the
+    /// profile's default, which is what the reader CHOSE rather than what
+    /// happened.
+    pub mode: Option<String>,
     /// The language of the delivered text, as `core::language_detect` measured
     /// it. `None` where the text was too short to be sure, which is a refusal
     /// rather than a gap.
@@ -793,9 +1244,9 @@ pub fn record(contribution: LedgerContribution) -> Result<(), String> {
         .recorded_seconds
         .filter(|seconds| seconds.is_finite() && *seconds > 0.0);
     if let Some(seconds) = recorded {
-        day.recorded_seconds += seconds;
+        day.recorded_seconds = round_seconds(day.recorded_seconds + seconds);
         day.timed += 1;
-        day.longest_seconds = day.longest_seconds.max(seconds);
+        day.longest_seconds = round_seconds(day.longest_seconds.max(seconds));
     }
 
     /* CLAMPED TO THE WINDOW IT IS A PART OF. Speech seconds are measured in the
@@ -811,7 +1262,7 @@ pub fn record(contribution: LedgerContribution) -> Result<(), String> {
             None => seconds,
         });
     if let Some(seconds) = speaking {
-        day.speech_seconds += seconds;
+        day.speech_seconds = round_seconds(day.speech_seconds + seconds);
         day.voiced += 1;
     }
 
@@ -822,8 +1273,33 @@ pub fn record(contribution: LedgerContribution) -> Result<(), String> {
         if let Some(seconds) = recorded {
             day.saved_runs += 1;
             day.saved_words += contribution.words;
-            day.saved_seconds += seconds;
+            day.saved_seconds = round_seconds(day.saved_seconds + seconds);
         }
+    }
+
+    /* THE PERIOD'S OWN TURNAROUND (ADR 0243), written in the same statement as
+       the all-time one below so that no run can ever land in one and not the
+       other — the rule ADR 0240 set for the cause map, one tier further down.
+       Two counters give the period an exact mean and the log histogram gives it
+       a median; neither is stored as a figure, because a figure cannot be
+       merged when the day becomes a month. */
+    if let Some(milliseconds) = contribution.turnaround_ms {
+        day.turnaround_runs += 1;
+        day.turnaround_ms_sum += milliseconds;
+        if day.turnaround_log.len() != TURNAROUND_LOG_BUCKETS {
+            day.turnaround_log = vec![0; TURNAROUND_LOG_BUCKETS];
+        }
+        day.turnaround_log[turnaround_log_index(milliseconds)] += 1;
+    }
+
+    /* THE LANGUAGE, PER PERIOD AND SPLIT (ADR 0243). Every dictation counted
+       from here on increments EXACTLY ONE of these two — a code, or the refusal
+       — which is what makes the third population derivable rather than stored:
+       whatever the day counted and neither of these two accounts for is a run
+       nothing ever asked about. */
+    match contribution.language.as_deref().map(str::trim).filter(|code| !code.is_empty()) {
+        Some(code) => *day.languages.entry(code.to_lowercase()).or_insert(0) += 1,
+        None => day.language_refused += 1,
     }
 
     /* THE RATE IS SPOKEN WORDS OVER SPEECH SECONDS AND NOTHING ELSE. Without a
@@ -835,13 +1311,15 @@ pub fn record(contribution: LedgerContribution) -> Result<(), String> {
     }
     if let Some(milliseconds) = contribution.turnaround_ms {
         ledger.add_turnaround(milliseconds);
-        /* ONE CONDITION FOR BOTH, so no live run can ever land in one and not
-           the other (ADR 0240). */
+        /* ONE CONDITION FOR ALL THREE, so no live run can ever land in one and
+           not the others (ADR 0240, extended by ADR 0243). */
         ledger.add_turnaround_cause(
             &contribution.provider,
             contribution.model.as_deref(),
             milliseconds,
         );
+        ledger.add_mode_cause(contribution.mode.as_deref(), milliseconds);
+        ledger.stamp_measured("turnaround_runs", &key);
     }
     if let Some(code) = contribution.language.as_deref() {
         let code = code.trim().to_lowercase();
@@ -849,6 +1327,11 @@ pub fn record(contribution: LedgerContribution) -> Result<(), String> {
             *ledger.languages.entry(code).or_insert(0) += 1;
         }
     }
+    /* THE STAMP GOES DOWN WHETHER OR NOT A LANGUAGE WAS NAMED, because what it
+       dates is the ASKING and not the answer (ADR 0243). A day on which every
+       run was too short still measured them all, and a chart that skipped it
+       would be hiding a period the record can speak for perfectly well. */
+    ledger.stamp_measured("languages", &key);
 
     if ledger.started_on.is_none() {
         ledger.started_on = Some(key.clone());
@@ -870,21 +1353,32 @@ pub fn record(contribution: LedgerContribution) -> Result<(), String> {
     write_to_disk(ledger)
 }
 
-/// Retire rows past the retention horizon into the all-time totals.
+/// Fold day rows past the horizon into their month.
 ///
-/// THE ROW LEAVES AND THE FIGURES DO NOT (ADR 0176). Before this, a pruned day
-/// was simply removed, which meant every lifetime total silently began falling
-/// after two years and two months of use — the exact failure this module was
-/// built to prevent, reintroduced by the code that keeps the file small.
+/// THE ROW LEAVES AND THE FIGURES DO NOT (ADR 0176). **AND SINCE ADR 0243 THE
+/// SHAPE DOES NOT EITHER.** A retired day used to be absorbed into one opaque
+/// `retired` total, which kept every lifetime figure honest and cost the record
+/// its resolution — so `series.ts` started every chart after `retired_through`,
+/// the *Months* tab could never hold more than 26 buckets and **the *Years* tab
+/// could never hold more than three, on an installation of any age**. A product
+/// whose tabs stop learning after two years is not all-time in anything but its
+/// totals.
+///
+/// A day now goes into its month row, and the month tier is never pruned. The
+/// tiers stay disjoint: the day leaves `days` in the same statement it joins
+/// `months`, so nothing is ever counted in both.
 fn prune(ledger: &mut ActivityLedger) {
-    if ledger.days.len() as i64 <= LEDGER_RETENTION_DAYS {
+    if ledger.days.len() as i64 <= LEDGER_DAY_ROWS {
         return;
     }
-    let excess = ledger.days.len() - LEDGER_RETENTION_DAYS as usize;
+    let excess = ledger.days.len() - LEDGER_DAY_ROWS as usize;
     let doomed: Vec<String> = ledger.days.keys().take(excess).cloned().collect();
     for key in doomed {
         if let Some(day) = ledger.days.remove(&key) {
-            ledger.retired.absorb(&day);
+            ledger.months.entry(month_key(&key)).or_default().absorb(&day);
+            /* `retired_through` still says where the DAY-BY-DAY record starts,
+               which is what the calendar reads it for. It no longer says where
+               the totals start — the month tier does, and reaches further. */
             ledger.retired_through = Some(key);
         }
     }
@@ -960,6 +1454,7 @@ pub fn read_activity_ledger() -> Result<ActivityLedger, String> {
                     provider: entry.provider.clone(),
                     model: entry.model.clone(),
                     credited: super::history::mode_credits_typing(entry.effective_mode.as_ref()),
+                    mode: entry.effective_mode.as_ref().map(|mode| mode.as_str().to_string()),
                     /* THE ANSWER THE RECORD KEPT (ADR 0236), which is the only
                        way a rebuild can be as good as the live path was. The
                        naming model saw this dictation once, weeks ago; the seed
@@ -1074,6 +1569,27 @@ fn needs_seed(ledger: &ActivityLedger) -> bool {
            422 runs there on the first launch after the change. */
         || ledger.turnaround_causes.is_empty()
         || needs_credited_seed(ledger)
+        /* ADR 0243, and both are here for the same reason ADR 0240's line above
+           is: on any machine that dictated before this build, every older
+           structure is full and these two are empty — which is exactly the
+           installation with the records still on disk to fill them from. */
+        || ledger.mode_causes.is_empty()
+        || needs_period_detail_seed(ledger)
+}
+
+/// Whether the day rows predate the per-period accumulators (ADR 0243).
+///
+/// Same shape of question as `needs_credited_seed` and the same answer: the
+/// fields cannot be derived from a day's totals, because which run waited how
+/// long and which came back in which language is a property of the RECORDS.
+/// What history still holds is folded in once; what it no longer holds is what
+/// `language_unasked` counts, and nothing can recover it.
+fn needs_period_detail_seed(ledger: &ActivityLedger) -> bool {
+    !ledger.days.is_empty()
+        && ledger
+            .days
+            .values()
+            .all(|day| day.turnaround_runs == 0 && day.languages.is_empty())
 }
 
 /// Whether the day rows predate the credited-run fields (ADR 0178).
@@ -1125,6 +1641,13 @@ pub fn seed_from_history(records: &[SeedRecord]) -> Result<(), String> {
        histogram is full and this map is empty — the exact state the shared flag
        would skip. */
     let seed_causes = ledger.turnaround_causes.is_empty();
+    /* ADR 0243's three, each on its own flag for the reason the four above are:
+       they arrived in different releases, so a machine can perfectly well hold
+       one and not the others. `seed_period` fills structures that are empty by
+       definition when its own guard is true, so it adds rather than clearing —
+       unlike `seed_credited`, which runs over rows that already carry figures. */
+    let seed_modes = ledger.mode_causes.is_empty();
+    let seed_period = !seed_days && needs_period_detail_seed(ledger);
     /* The one seed that runs over rows that already exist, so it CLEARS before
        it accumulates. Every other seed here fills a structure that is empty by
        definition and can simply add; this one would double what it found if it
@@ -1157,14 +1680,24 @@ pub fn seed_from_history(records: &[SeedRecord]) -> Result<(), String> {
             day.words += record.words;
             day.spoken_words += record.spoken_words;
             if let Some(value) = measured {
-                day.recorded_seconds += value;
+                day.recorded_seconds = round_seconds(day.recorded_seconds + value);
                 day.timed += 1;
-                day.longest_seconds = day.longest_seconds.max(value);
+                day.longest_seconds = round_seconds(day.longest_seconds.max(value));
                 if record.credited && record.words > 0 {
                     day.saved_runs += 1;
                     day.saved_words += record.words;
-                    day.saved_seconds += value;
+                    day.saved_seconds = round_seconds(day.saved_seconds + value);
                 }
+            }
+            absorb_period_detail(day, record);
+        }
+        if seed_period {
+            /* Only days the ledger already holds, for the reason `seed_credited`
+               says: history may reach back past them or not far enough, and
+               either way this fills in what a row is missing rather than
+               inventing one. */
+            if let Some(day) = ledger.days.get_mut(&day_key(record.created_at_ms)) {
+                absorb_period_detail(day, record);
             }
         }
         if seed_credited {
@@ -1196,6 +1729,11 @@ pub fn seed_from_history(records: &[SeedRecord]) -> Result<(), String> {
                 );
             }
         }
+        if seed_modes {
+            if let Some(milliseconds) = record.turnaround_ms {
+                ledger.add_mode_cause(record.mode.as_deref(), milliseconds);
+            }
+        }
         if seed_languages {
             if let Some(code) = record.language.as_deref() {
                 let code = code.trim().to_lowercase();
@@ -1213,7 +1751,60 @@ pub fn seed_from_history(records: &[SeedRecord]) -> Result<(), String> {
     if seed_days {
         ledger.started_on = ledger.days.keys().next().cloned();
     }
+    /* THE STAMP GOES DOWN WHERE THE SEED ACTUALLY REACHED, NOT AT TODAY
+       (ADR 0243). A seeded day carries a real split — of the records history
+       still holds — so a chart may draw it; what it may not do is draw the days
+       before the oldest one the seed touched, and this is the line that says
+       where that is. Under-claiming would hide months the record can speak for;
+       over-claiming would draw a zero where a field did not exist. */
+    if seed_days || seed_period {
+        if let Some(first) = ledger
+            .days
+            .iter()
+            .find(|(_, day)| day.turnaround_runs > 0)
+            .map(|(key, _)| key.clone())
+        {
+            ledger.stamp_measured("turnaround_runs", &first);
+        }
+        if let Some(first) = ledger
+            .days
+            .iter()
+            .find(|(_, day)| !day.languages.is_empty() || day.language_refused > 0)
+            .map(|(key, _)| key.clone())
+        {
+            ledger.stamp_measured("languages", &first);
+        }
+    }
     write_to_disk(ledger)
+}
+
+/// Fold one seed record's per-period accumulators into a day row (ADR 0243).
+///
+/// ONE FUNCTION BECAUSE THE SEED HAS TWO ENTRANCES. A ledger being built from
+/// scratch and one being filled in behind a new field are different flags and
+/// the same arithmetic, and the live funnel's version of this is the one thing
+/// it must agree with — two implementations of "what a record contributes to a
+/// day" is exactly how a seeded row and a live row start meaning different
+/// things.
+fn absorb_period_detail(day: &mut LedgerDay, record: &SeedRecord) {
+    if let Some(milliseconds) = record.turnaround_ms {
+        day.turnaround_runs += 1;
+        day.turnaround_ms_sum += milliseconds;
+        if day.turnaround_log.len() != TURNAROUND_LOG_BUCKETS {
+            day.turnaround_log = vec![0; TURNAROUND_LOG_BUCKETS];
+        }
+        day.turnaround_log[turnaround_log_index(milliseconds)] += 1;
+    }
+    /* A SEEDED RECORD WITH NO LANGUAGE WAS ASKED AND REFUSED, not unasked. The
+       seed re-measures with the same detector the live path uses, so a record
+       history still holds has been asked by definition. What `language_unasked`
+       is then left counting is precisely the runs the index no longer holds —
+       which is the honest meaning of the word and the one number on this split
+       that nothing will ever be able to improve. */
+    match record.language.as_deref().map(str::trim).filter(|code| !code.is_empty()) {
+        Some(code) => *day.languages.entry(code.to_lowercase()).or_insert(0) += 1,
+        None => day.language_refused += 1,
+    }
 }
 
 /// The lock EVERY test that can touch this ledger takes, including the history
@@ -1258,6 +1849,7 @@ mod tests {
             provider: "groq".into(),
             model: Some("whisper-large-v3-turbo".into()),
             credited: true,
+            mode: Some("cleanup".into()),
             language: None,
         }
     }
@@ -1308,28 +1900,61 @@ mod tests {
         assert!((totals.recorded_seconds - 300.0).abs() < 1e-6);
     }
 
-    /// ADR 0176. The retention horizon may shrink the FILE and may not shrink a
-    /// FIGURE — before this, every lifetime total began falling after 800 days.
+    /// ADR 0176, and since ADR 0243 one assertion more. The horizon may shrink
+    /// the FILE and may not shrink a FIGURE — and it may no longer flatten the
+    /// SHAPE either, which is what this case gained when the retired day went
+    /// into its month instead of into one opaque total.
+    ///
+    /// **IT USED TO ASSERT `retired.dictations == 1` AND THAT IS THE REVERSAL.**
+    /// The old mechanism was the assertion, so the honest change was not to
+    /// delete the case but to make it name the fact underneath: the day is still
+    /// counted, and now it is still findable.
     #[test]
-    fn a_day_that_ages_out_is_retired_into_the_totals_rather_than_dropped() {
+    fn a_day_that_ages_out_is_folded_into_its_month_rather_than_into_one_total() {
         let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
         reset_for_tests();
 
-        /* One row per day, one day past the horizon. The oldest is retired on
+        /* One row per day, one day past the horizon. The oldest is folded on
            the write that overflows the file. */
-        for day in 0..=(LEDGER_RETENTION_DAYS as u64) {
+        for day in 0..=(LEDGER_DAY_ROWS as u64) {
             record(dictation(AUG_16 + day * DAY_MS, 10, Some(6.0))).unwrap();
         }
 
         let ledger = snapshot().unwrap();
-        assert_eq!(ledger.days.len(), LEDGER_RETENTION_DAYS as usize);
-        assert_eq!(ledger.retired.dictations, 1, "the oldest day was retired");
+        assert_eq!(ledger.days.len(), LEDGER_DAY_ROWS as usize);
+        let oldest = day_key(AUG_16);
+        let month = month_key(&oldest);
+        assert_eq!(
+            ledger.months.get(&month).map(|row| row.dictations),
+            Some(1),
+            "the oldest day went into its month and kept its place in time",
+        );
+        assert_eq!(
+            ledger.retired.dictations, 0,
+            "nothing goes into the prehistory blob any more — it is a closed set",
+        );
+
+        /* THE FIGURE THE WHOLE MECHANISM EXISTS FOR, unchanged by the tier it
+           now travels through. */
         let totals = ledger.totals();
-        assert_eq!(totals.dictations, LEDGER_RETENTION_DAYS as u64 + 1);
-        assert_eq!(totals.words, (LEDGER_RETENTION_DAYS as u64 + 1) * 10);
+        assert_eq!(totals.dictations, LEDGER_DAY_ROWS as u64 + 1);
+        assert_eq!(totals.words, (LEDGER_DAY_ROWS as u64 + 1) * 10);
+
+        /* AND THE TIERS ARE DISJOINT, which is the contract every reading on the
+           other side of the bridge composes against: the month that still holds
+           live days answers for both, and answers once. */
+        let live_in_month =
+            ledger.days.keys().filter(|key| month_key(key) == month).count() as u64;
+        assert!(live_in_month > 0, "the folded day's month still holds live days");
+        assert_eq!(
+            ledger.month_totals(&month).dictations,
+            1 + live_in_month,
+            "a month's figures are its row plus whatever days of it are still live",
+        );
+
         assert_eq!(
             ledger.started_on.as_deref(),
-            Some(day_key(AUG_16).as_str()),
+            Some(oldest.as_str()),
             "the install date survives the prune because the totals still speak for it",
         );
     }
@@ -1366,8 +1991,8 @@ mod tests {
         reset_for_tests();
 
         let records = [
-            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: Some(1200), provider: "groq".into(), model: Some("whisper-large-v3".into()), credited: true, language: Some("de".into()) },
-            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 50, recorded_seconds: None, turnaround_ms: None, provider: "groq".into(), model: None, credited: true, language: None },
+            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: Some(1200), provider: "groq".into(), model: Some("whisper-large-v3".into()), credited: true, mode: Some("cleanup".into()), language: Some("de".into()) },
+            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 50, recorded_seconds: None, turnaround_ms: None, provider: "groq".into(), model: None, credited: true, mode: Some("cleanup".into()), language: None },
         ];
         seed_from_history(&records).unwrap();
         /* Second call, same records: a ledger with rows in it is already seeded
@@ -1398,6 +2023,7 @@ mod tests {
             provider: "groq".into(),
             model: None,
             credited: true,
+            mode: Some("cleanup".into()),
             language: None,
         }])
         .unwrap();
@@ -1428,10 +2054,10 @@ mod tests {
         std::fs::write(&path, raw).unwrap();
 
         seed_from_history(&[
-            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: None, provider: "groq".into(), model: None, credited: true, language: None },
+            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: None, provider: "groq".into(), model: None, credited: true, mode: Some("cleanup".into()), language: None },
             /* Generated prose. Its words are on the day and may not be credited
                against typing (ADR 0178). */
-            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 8, recorded_seconds: Some(30.0), turnaround_ms: None, provider: "groq".into(), model: None, credited: false, language: None },
+            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 8, recorded_seconds: Some(30.0), turnaround_ms: None, provider: "groq".into(), model: None, credited: false, mode: Some("cleanup".into()), language: None },
         ])
         .unwrap();
 
@@ -1473,6 +2099,7 @@ mod tests {
             provider: "groq".into(),
             model: None,
             credited: true,
+            mode: Some("cleanup".into()),
             language: None,
         }];
         seed_from_history(&records).unwrap();
@@ -1579,6 +2206,7 @@ mod tests {
             provider: "groq".into(),
             model: Some("whisper-large-v3-turbo".into()),
             credited: false,
+            mode: Some("cleanup".into()),
             language: None,
         })
         .unwrap();
@@ -1604,6 +2232,7 @@ mod tests {
             provider: "groq".into(),
             model: Some("whisper-large-v3-turbo".into()),
             credited: false,
+            mode: Some("cleanup".into()),
             language: None,
         })
         .unwrap();
@@ -1638,6 +2267,14 @@ mod tests {
 
 
     /// One timed run, from a named recogniser. ADR 0240.
+    /// One dictation that came back in a named language, or in none.
+    fn spoken(created_at_ms: u64, language: Option<&str>) -> LedgerContribution {
+        LedgerContribution {
+            language: language.map(str::to_string),
+            ..dictation(created_at_ms, 10, Some(6.0))
+        }
+    }
+
     fn timed(
         created_at_ms: u64,
         provider: &str,
@@ -1654,6 +2291,7 @@ mod tests {
             provider: provider.into(),
             model: model.map(str::to_string),
             credited: true,
+            mode: Some("cleanup".into()),
             language: None,
         }
     }
@@ -1724,24 +2362,227 @@ mod tests {
 
     /// The key comes off the wire, so the map is bounded. Past the bound the
     /// pairs already known keep counting — a new name may not evict a history
-    /// somebody has.
+    /// somebody has — **and the run is counted under `other` rather than
+    /// dropped (ADR 0243)**, so the rows go on summing to the histogram at every
+    /// age of the installation.
+    ///
+    /// THE ASSERTION THAT INVERTED IS THE LAST ONE. It used to say a pair past
+    /// the bound is *dropped, not swapped in*, and dropped is what made the
+    /// display's own claim quietly false. Both halves of the old rule survive:
+    /// nothing is evicted, and nothing new takes a named slot.
     #[test]
-    fn the_cause_map_stops_at_its_bound_and_keeps_counting_what_it_knows() {
+    fn the_cause_map_stops_naming_at_its_bound_and_never_stops_counting() {
         let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
         reset_for_tests();
 
-        for index in 0..(MAX_CAUSE_KEYS + 12) {
+        let overflow = 12;
+        for index in 0..(MAX_CAUSE_KEYS + overflow) {
             record(timed(AUG_16, "groq", Some(&format!("model-{index}")), 1_000)).unwrap();
         }
         record(timed(AUG_16, "groq", Some("model-0"), 1_000)).unwrap();
 
         let ledger = snapshot().unwrap();
-        assert_eq!(ledger.turnaround_causes.len(), MAX_CAUSE_KEYS, "bounded");
+        let named = ledger
+            .turnaround_causes
+            .keys()
+            .filter(|key| key.as_str() != OTHER_CAUSE_KEY)
+            .count();
+        assert_eq!(named, MAX_CAUSE_KEYS, "the NAMED rows are what is bounded");
         assert_eq!(cause_runs(&ledger, "groq/model-0"), 2, "a known pair still counts");
         assert!(
             !ledger.turnaround_causes.contains_key("groq/model-70"),
-            "a pair that arrived past the bound is dropped, not swapped in",
+            "a pair that arrived past the bound is not swapped in",
         );
+        assert_eq!(
+            cause_runs(&ledger, OTHER_CAUSE_KEY),
+            overflow as u64,
+            "every run past the bound is counted somewhere",
+        );
+
+        /* THE FACT THE CHANGE EXISTS FOR, and the one the screen states: the
+           rows sum to the histogram. Nothing else in this case would notice if
+           they stopped. */
+        let rows: u64 = ledger
+            .turnaround_causes
+            .values()
+            .map(|cause| cause.buckets.iter().map(|count| *count as u64).sum::<u64>())
+            .sum();
+        let histogram: u64 = ledger.turnaround_buckets.iter().map(|count| *count as u64).sum();
+        assert_eq!(rows, histogram, "the rows sum to the all-time histogram");
+    }
+
+    /// ADR 0243. *Not named* was one counter over two populations with different
+    /// futures, and the split is the whole point: one is frozen and the other
+    /// grows every day. The derived half is what this case is really about —
+    /// nothing stores it, so nothing can store it wrongly.
+    #[test]
+    fn a_run_nothing_asked_about_is_derived_and_never_stored() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(spoken(AUG_16, Some("de"))).unwrap();
+        record(spoken(AUG_16, Some("de"))).unwrap();
+        record(spoken(AUG_16, None)).unwrap();
+
+        let ledger = snapshot().unwrap();
+        let day = ledger.days.get(&day_key(AUG_16)).unwrap();
+        assert_eq!(day.languages.get("de").copied(), Some(2));
+        assert_eq!(day.language_refused, 1, "asked and came back empty");
+        assert_eq!(
+            day.language_unasked(),
+            0,
+            "every run the day counted was asked about, so nothing is left over",
+        );
+
+        /* THE POPULATION NOTHING CAN EVER RECOVER, and the only way it arises:
+           a row whose dictations outnumber what the split accounts for, which is
+           a day seeded from records the index no longer holds. */
+        let mut older = LedgerDay { dictations: 10, ..LedgerDay::default() };
+        older.languages.insert("de".into(), 3);
+        older.language_refused = 2;
+        assert_eq!(older.language_unasked(), 5);
+
+        /* AND IT MAY NOT GO NEGATIVE after a merge raised the parts and the
+           whole out of step — under-reporting is the safe direction. */
+        let mut crossed = LedgerDay { dictations: 1, ..LedgerDay::default() };
+        crossed.language_refused = 4;
+        assert_eq!(crossed.language_unasked(), 0);
+    }
+
+    /// ADR 0243. A period's wait shape is a log histogram, and a histogram read
+    /// off the wrong axis is the plausible wrong number this module exists
+    /// against — the same failure the `rate_bucket_wpm` note records, one
+    /// structure further in.
+    #[test]
+    fn a_periods_turnaround_keeps_a_mean_and_a_median_that_survive_a_fold() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        for milliseconds in [400u64, 800, 1_200, 1_600, 30_000] {
+            record(timed(AUG_16, "groq", Some("whisper"), milliseconds)).unwrap();
+        }
+
+        let ledger = snapshot().unwrap();
+        let day = ledger.days.get(&day_key(AUG_16)).unwrap().clone();
+        assert_eq!(day.turnaround_runs, 5);
+        assert_eq!(day.turnaround_ms_sum, 34_000, "the mean is exact, not binned");
+
+        /* THE MIDDLE RUN IS 1,200 ms, and a quarter-octave bucket is 19% wide —
+           so the median is at or just below it and never above any run that
+           actually happened. */
+        let median = day.median_turnaround_ms().unwrap();
+        assert!(median <= 1_200.0 && median > 1_200.0 * 0.82, "median {median} off the log axis");
+
+        /* THE OUTLIER IS HELD AT THE EDGE RATHER THAN DROPPED, so it counts as
+           one run and cannot drag the median — the rate histogram's rule, and
+           the reason a mean and a median are both kept. */
+        assert_eq!(
+            day.turnaround_log.iter().map(|count| *count as u64).sum::<u64>(),
+            5,
+            "every run is in a bucket, the 30-second one included",
+        );
+
+        /* AND IT FOLDS. A month is a day plus a day, and the median of the fold
+           is read off the same axis — which is the property that lets a day
+           become a month and a month a year without the reading changing what it
+           means. */
+        let mut folded = day.clone();
+        folded.absorb(&day);
+        assert_eq!(folded.turnaround_runs, 10);
+        assert_eq!(folded.median_turnaround_ms(), day.median_turnaround_ms());
+    }
+
+    /// ADR 0243. A field that did not exist may not be drawn as a zero, and the
+    /// stamp is what a chart asks. The merge takes the EARLIER one, for the same
+    /// reason `started_on` does.
+    #[test]
+    fn an_accumulator_says_which_day_it_started_being_measured() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(timed(AUG_16 + 3 * DAY_MS, "groq", Some("whisper"), 900)).unwrap();
+        let ledger = snapshot().unwrap();
+        let stamped = day_key(AUG_16 + 3 * DAY_MS);
+        assert_eq!(ledger.measured_from("turnaround_runs"), Some(stamped.as_str()));
+        assert_eq!(ledger.measured_from("languages"), Some(stamped.as_str()));
+        assert_eq!(ledger.measured_from("nothing_named_this"), None);
+
+        let mut archive = ActivityLedger::default();
+        archive
+            .measured_from
+            .insert("turnaround_runs".into(), day_key(AUG_16));
+        merge_from_archive(&archive).unwrap();
+        assert_eq!(
+            snapshot().unwrap().measured_from("turnaround_runs"),
+            Some(day_key(AUG_16).as_str()),
+            "an archive that measured it sooner moves the stamp back",
+        );
+    }
+
+    /// ADR 0243. The one file that cannot be rebuilt is written through a
+    /// rename, and leaves no sibling behind — the same shape `compact_journal`
+    /// uses for the index, which is the collection that CAN be rebuilt.
+    #[test]
+    fn the_ledger_is_written_through_a_temporary_and_lands_minified() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(dictation(AUG_16, 10, Some(6.0))).unwrap();
+
+        let path = ledger_file_path();
+        let raw = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !path.with_extension("json.tmp").exists(),
+            "the temporary is renamed away, not left beside the ledger",
+        );
+        assert!(!raw.contains("\n  "), "written minified, not pretty-printed");
+        assert!(
+            serde_json::from_str::<ActivityLedger>(&raw).is_ok(),
+            "and it is still a ledger",
+        );
+    }
+
+    /// ADR 0243. Seconds are stored at the precision a second is worth, so a
+    /// figure the screen reports in minutes stops carrying nine digits of float
+    /// noise into a file kept forever.
+    #[test]
+    fn seconds_are_stored_to_the_millisecond_and_no_further() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(dictation(AUG_16, 10, Some(1.0 / 3.0))).unwrap();
+        record(dictation(AUG_16, 10, Some(1.0 / 3.0))).unwrap();
+
+        let ledger = snapshot().unwrap();
+        let day = ledger.days.get(&day_key(AUG_16)).unwrap();
+        /* 0.666 AND NOT 0.667, WHICH IS THE ROUNDING BEING ON THE ACCUMULATE
+           RATHER THAN ON THE WRITE: each 0.3333… lands as 0.333 and the sum of
+           two of them is 0.666. A millisecond per addition, unbiased, so a
+           lifetime of dictations wanders by a fraction of a second on a figure
+           reported in minutes — and in exchange what is in memory is exactly
+           what is on disk, which is the property a test reading either one
+           depends on. */
+        assert_eq!(day.recorded_seconds, 0.666);
+        let raw = std::fs::read_to_string(ledger_file_path()).unwrap();
+        assert!(
+            !raw.contains("0.6666666"),
+            "the file carries the measurement and not the float's shape",
+        );
+    }
+
+    /// The reserved key cannot be minted by a provider (ADR 0243). Every real
+    /// key carries a slash; a vendor literally called `other` still lands under
+    /// `other/other` and leaves the overflow bucket alone.
+    #[test]
+    fn a_provider_called_other_cannot_collide_with_the_overflow_row() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(timed(AUG_16, OTHER_CAUSE_KEY, Some(OTHER_CAUSE_KEY), 1_000)).unwrap();
+
+        let ledger = snapshot().unwrap();
+        assert_eq!(cause_runs(&ledger, "other/other"), 1);
+        assert!(!ledger.turnaround_causes.contains_key(OTHER_CAUSE_KEY));
     }
 
     /// ADR 0179 one level down. Importing the same archive twice may not double
@@ -1797,6 +2638,7 @@ mod tests {
             provider: "groq".into(),
             model: Some("whisper-large-v3".into()),
             credited: true,
+            mode: Some("cleanup".into()),
             language: Some("de".into()),
         }])
         .unwrap();
@@ -1896,6 +2738,7 @@ mod tests {
             provider: "groq".into(),
             model: Some("whisper-large-v3".into()),
             credited: true,
+            mode: Some("cleanup".into()),
             language: Some("de".into()),
         }])
         .unwrap();

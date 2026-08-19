@@ -13,10 +13,21 @@
  * quietly wrong.
  *
  * THE HARD RULE, INHERITED FROM ADR 0172: A BUCKET THE RECORD CANNOT SPEAK FOR
- * IS NOT DRAWN. The ledger retires day rows into a total after 800 of them, so a
- * month older than that has figures and no days; drawing it as an empty column
- * would assert that nothing happened in a month the file simply no longer holds.
- * Every series here starts at `ledgerSpeaksFrom` and not a day earlier.
+ * IS NOT DRAWN. It has three horizons now and a series starts at the latest of
+ * the ones that apply to it (ADR 0243):
+ *
+ *  1. **The day tier**, `ledgerSpeaksFrom`, which rolls at 800 rows. `Days` and
+ *     `Weeks` are made of day rows and stop there.
+ *  2. **The month tier**, `ledgerMonthsSpeakFrom`, which is never pruned.
+ *     `Months` and `Years` are made of month rows and therefore reach back as
+ *     far as the installation does — **which is the whole of why a chart here
+ *     can be infinite.** Before the month tier existed, a retired day lost its
+ *     shape into one total, so every grain shared the day horizon: the `Months`
+ *     tab could never hold more than 26 buckets and the `Years` tab could never
+ *     hold more than three, on an installation of any age.
+ *  3. **The field's own stamp**, `measured_from`, for a reading the record has
+ *     not always carried. A zero before it would be the field not existing
+ *     rather than nothing happening.
  *
  * AND AN EMPTY BUCKET IS NOT ALWAYS A ZERO. A week with no dictation in it saved
  * no time — that is a true zero and it is drawn. The same week has no speaking
@@ -26,6 +37,12 @@
  */
 
 import {
+  dayLanguageUnasked,
+  dayMeanTurnaround,
+  dayMedianTurnaround,
+  emptyDay,
+  absorbDay,
+  ledgerMonthsSpeakFrom,
   ledgerSpeaksFrom,
   ledgerTotals,
   TURNAROUND_BUCKET_MS,
@@ -148,31 +165,105 @@ export interface SeriesPoint {
    *  zero; for a rate it is the absence of a reading, and the chart draws the
    *  two differently. */
   empty: boolean;
+  /** What this bucket says that one number cannot — the language split, the
+   *  mean behind the median (ADR 0243).
+   *
+   *  IT IS BUILT IN THE FOLD, where the bucket's rows are already summed, and
+   *  not by a second walk from the component. Two walks over the same rows are
+   *  two chances to group them differently. */
+  note?: string;
 }
 
 /** The day rows of one bucket, summed. */
-type Fold = (rows: LedgerDay[]) => { value: number; runs: number; empty: boolean };
+type Fold = (rows: LedgerDay[]) => {
+  value: number;
+  runs: number;
+  empty: boolean;
+  note?: string;
+};
+
+/**
+ * WHICH TIER A GRAIN READS, AND IT IS THE WHOLE OF WHY A CHART CAN BE INFINITE
+ * (ADR 0243).
+ *
+ * A day and a week are made of day rows, which roll: they reach back
+ * `LEDGER_DAY_ROWS` and no further, which is right, because their whole purpose
+ * is the recent shape. A month and a year are made of MONTH rows, which are
+ * never pruned — so those two grains reach back as far as the installation goes,
+ * and go on doing so at fifty years.
+ *
+ * WHY NOT BUILD MONTHS OUT OF DAYS AS WELL. That is exactly what this module did
+ * before, and it is why the *Years* tab could never hold more than three
+ * buckets: past the day horizon there were no rows left to build one from.
+ */
+function tierOf(period: Period): "day" | "month" {
+  return period === "day" || period === "week" ? "day" : "month";
+}
+
+/** Where a grain's own tier starts speaking. */
+export function speaksFrom(ledger: ActivityLedger | null, period: Period): number | null {
+  return tierOf(period) === "day" ? ledgerSpeaksFrom(ledger) : ledgerMonthsSpeakFrom(ledger);
+}
+
+/**
+ * WHEN A FIELD STARTED BEING MEASURED, AS A MOMENT (ADR 0243).
+ *
+ * A series over an accumulator younger than the record has two horizons, and it
+ * starts at the later of them. Drawing the earlier periods would put a zero
+ * where the field did not exist — which is not a measurement of nought, and is
+ * the claim ADR 0172 keeps the calendar's cells away from.
+ */
+function measuredFrom(ledger: ActivityLedger | null, field: string): number | null {
+  const stamp = ledger?.measured_from?.[field];
+  if (!stamp) return null;
+  const [year, month, day] = stamp.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day).getTime();
+}
 
 function walk(
   ledger: ActivityLedger | null,
   period: Period,
   fold: Fold,
   now: number,
+  /** The field this series reads, where it is one the record has not always
+   *  carried. The series then starts at the later of the tier's horizon and the
+   *  field's own. */
+  field?: string,
 ): SeriesPoint[] {
-  const from = ledgerSpeaksFrom(ledger);
-  if (from === null) return [];
+  const tier = speaksFrom(ledger, period);
+  const since = field ? measuredFrom(ledger, field) : null;
+  if (tier === null) return [];
+  if (field && since === null) return [];
+  const from = since === null ? tier : Math.max(tier, since);
 
   /* THE ROWS, GROUPED BY THE BUCKET THEY FALL IN. Keyed on the bucket's own
      start so the walk below can look one up without parsing anything twice. */
   const grouped = new Map<number, LedgerDay[]>();
+  const push = (start: number, row: LedgerDay) => {
+    const standing = grouped.get(start);
+    if (standing) standing.push(row);
+    else grouped.set(start, [row]);
+  };
+
+  if (tierOf(period) === "month") {
+    /* BOTH TIERS, BECAUSE THEY ARE DISJOINT AND A MONTH SPANS THEM. The month
+       rows carry everything that has aged out and the day rows carry the rest,
+       so the current month is its row plus today — and reading `months` alone
+       would draw the month the reader is standing in as empty. */
+    for (const [key, row] of Object.entries(ledger?.months ?? {})) {
+      if (!row) continue;
+      const [year, month] = key.split("-").map(Number);
+      if (!year || !month) continue;
+      push(periodStart(new Date(year, month - 1, 1), period).getTime(), row);
+    }
+  }
+
   for (const [key, row] of Object.entries(ledger?.days ?? {})) {
     if (!row) continue;
     const [year, month, day] = key.split("-").map(Number);
     if (!year || !month || !day) continue;
-    const start = periodStart(new Date(year, month - 1, day), period).getTime();
-    const standing = grouped.get(start);
-    if (standing) standing.push(row);
-    else grouped.set(start, [row]);
+    push(periodStart(new Date(year, month - 1, day), period).getTime(), row);
   }
 
   /* THE SPAN IS CLIPPED TO WHAT THE ROWS REACH OVER, at both ends. The newest
@@ -213,7 +304,7 @@ export function periodReach(
   period: Period,
   now = Date.now(),
 ): number {
-  const from = ledgerSpeaksFrom(ledger);
+  const from = speaksFrom(ledger, period);
   if (from === null) return 0;
   let count = 0;
   for (
@@ -321,6 +412,94 @@ export function rateSeries(
       };
     },
     now,
+  );
+}
+
+/**
+ * THE WAIT, PER PERIOD (ADR 0243) — and until it, the one reading on this block
+ * that had no history at all.
+ *
+ * IT IS A MEDIAN AND THE TILE IS A MEDIAN, but they are read off different
+ * axes and will not always agree to the digit: the tile divides the all-time
+ * histogram at 25 ms, and a period divides its own log histogram, whose buckets
+ * are 19% wide. That is the trade the log axis buys — a shape per period at
+ * forty counters instead of four hundred — and where the two disagree the tile
+ * is the finer answer.
+ *
+ * The mean is on the hint rather than in the bar: one cold start behind a model
+ * that had to load sits visibly above anything typical, which is the whole
+ * reason ADR 0175 made this figure a median in the first place.
+ */
+export function turnaroundSeries(
+  ledger: ActivityLedger | null,
+  period: Period,
+  now = Date.now(),
+): SeriesPoint[] {
+  return walk(
+    ledger,
+    period,
+    (rows) => {
+      const folded = emptyDay();
+      for (const row of rows) absorbDay(folded, row);
+      const median = dayMedianTurnaround(folded);
+      const mean = dayMeanTurnaround(folded);
+      return {
+        value: median ?? 0,
+        runs: folded.turnaround_runs ?? 0,
+        /* NOT A ZERO. A week nobody dictated in has no wait at all, and a bar
+           at nought would read as the fastest week on the chart. */
+        empty: median === null,
+        note: mean === null ? undefined : `mean ${(mean / 1000).toFixed(1)} s`,
+      };
+    },
+    now,
+    "turnaround_runs",
+  );
+}
+
+/**
+ * HOW MANY OF A PERIOD'S DICTATIONS CAME BACK IN A LANGUAGE THE RECORD COULD
+ * NAME (ADR 0243).
+ *
+ * The bar is the named count and the split is on the hint, because a bar can
+ * carry one number and the question a reader brings here — *when did I start
+ * dictating in English* — is answered by the split rather than by the total.
+ *
+ * A PERIOD THAT NAMED NOTHING IS A TRUE ZERO AND IS DRAWN. Unlike a rate, this
+ * is a count: a month in which every dictation was too short to read a language
+ * off really did name none, and that is a fact about the month rather than a
+ * gap in the record. What is NOT drawn is a period before the verdict existed,
+ * and that is what the field stamp above is for.
+ */
+export function languageSeries(
+  ledger: ActivityLedger | null,
+  period: Period,
+  now = Date.now(),
+): SeriesPoint[] {
+  return walk(
+    ledger,
+    period,
+    (rows) => {
+      const folded = emptyDay();
+      for (const row of rows) absorbDay(folded, row);
+      const codes = Object.entries(folded.languages ?? {})
+        .map(([code, count]) => ({ code, count }))
+        .sort((left, right) => right.count - left.count || left.code.localeCompare(right.code));
+      const named = codes.reduce((sum, each) => sum + each.count, 0);
+      const parts = codes.map((each) => `${each.code.toUpperCase()} ${each.count}`);
+      const refused = folded.language_refused ?? 0;
+      if (refused > 0) parts.push(`${refused} too short`);
+      const unasked = dayLanguageUnasked(folded);
+      if (unasked > 0) parts.push(`${unasked} never asked`);
+      return {
+        value: named,
+        runs: folded.dictations,
+        empty: false,
+        note: parts.length > 0 ? parts.join(" · ") : "nothing dictated",
+      };
+    },
+    now,
+    "languages",
   );
 }
 
@@ -492,6 +671,31 @@ export function turnaroundCauses(ledger: ActivityLedger | null | undefined): Cau
       runs,
       median,
     });
+  }
+
+  return rows.sort((left, right) => right.runs - left.runs || right.median - left.median);
+}
+
+/**
+ * THE SAME WAITS, KEYED BY THE MODE THAT RAN (ADR 0243).
+ *
+ * The other cut of one total, and the one a reader can act on: a mode is a
+ * choice they make per profile, where a recogniser is a lane they would have to
+ * change. Same axis as the model cut, so a median from either can be read
+ * against the median above them.
+ */
+export function modeCauses(ledger: ActivityLedger | null | undefined): CauseRow[] {
+  const causes = ledger?.mode_causes;
+  if (!causes) return [];
+
+  const rows: CauseRow[] = [];
+  for (const [key, buckets] of Object.entries(causes)) {
+    const counts = buckets ?? [];
+    const runs = counts.reduce((sum, count) => sum + (count ?? 0), 0);
+    if (runs === 0) continue;
+    const median = bucketQuantile(counts, TURNAROUND_BUCKET_MS, 0.5);
+    if (median === null) continue;
+    rows.push({ key, model: key, provider: key, runs, median });
   }
 
   return rows.sort((left, right) => right.runs - left.runs || right.median - left.median);

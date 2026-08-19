@@ -70,6 +70,64 @@ interface RefreshOptions {
   background?: boolean;
 }
 
+/**
+ * THE DELIVERIES THAT FELL BACK AND THAT NOBODY HAS ANSWERED FOR (ADR 0243).
+ *
+ * ITS OWN HOOK BECAUSE IT IS ITS OWN QUESTION. Home asks two things of the
+ * index — *the last five dictations* and *is anything still owed* — and until
+ * this it asked them both by fetching every summary the store holds and
+ * filtering in the component. The five rows do not need 519 records and the owed
+ * list cannot be found in the newest five, so one query could not serve both:
+ * the answer is two narrow questions rather than one wide one.
+ *
+ * ALMOST ALWAYS EMPTY, WHICH IS THE POINT. The common case is now a query that
+ * returns nothing over the bridge instead of a megabyte that is thrown away.
+ */
+export function useOwedFallbacks(isActive: boolean) {
+  const [owed, setOwed] = useState<TranscriptionHistorySummary[]>([]);
+
+  useEffect(() => {
+    if (!isActive) {
+      setOwed([]);
+      return;
+    }
+    let cancelled = false;
+
+    const read = () => {
+      void invoke<TranscriptionHistorySummary[]>("transcription_history_summaries", {
+        query: { owed_fallback_only: true },
+      })
+        .then((next) => {
+          if (!cancelled && Array.isArray(next)) setOwed(next);
+        })
+        .catch(() => {
+          /* A question the runtime could not answer is not the same as *nothing
+             is owed*, and the difference matters on this one: the notice exists
+             to stop text being lost. The last answer stands rather than being
+             replaced by an empty list. */
+        });
+    };
+
+    read();
+    const unlisten = listen<BackendEvent>("wordscript-event", ({ payload }) => {
+      if (!RECORD_WRITING_EVENTS.has(payload?.event)) return;
+      read();
+    }).catch(() => () => {});
+    const onVisible = () => {
+      if (document.visibilityState === "visible") read();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      cancelled = true;
+      void unlisten.then((off) => off());
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [isActive]);
+
+  return owed;
+}
+
 function sanitizeQuery(query?: TranscriptionHistoryQuery): TranscriptionHistoryQuery {
   if (!query) return {};
 
@@ -81,16 +139,31 @@ function sanitizeQuery(query?: TranscriptionHistoryQuery): TranscriptionHistoryQ
     active_profile: query.active_profile?.trim() || undefined,
     search: query.search?.trim() || undefined,
     include_errors_only: query.include_errors_only || undefined,
+    owed_fallback_only: query.owed_fallback_only || undefined,
   };
 }
 
-export function useTranscriptionHistory(isActive: boolean) {
+/**
+ * @param initialQuery What this screen actually draws, where that is narrower
+ * than the whole index (ADR 0243). Home draws five rows and asked for every
+ * summary the store holds to get them — 519 rows and about 570 kB over the
+ * bridge on every dictation, on a screen showing five. It is the FIRST query
+ * rather than a fixed one: History still narrows and re-narrows through
+ * `refresh`, and this only decides what the hook asks for before anybody has.
+ */
+export function useTranscriptionHistory(
+  isActive: boolean,
+  initialQuery?: TranscriptionHistoryQuery,
+) {
   const [entries, setEntries] = useState<TranscriptionHistorySummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
   const [transcriptRoot, setTranscriptRoot] = useState<string | null>(null);
-  const activeQueryRef = useRef<TranscriptionHistoryQuery>({});
+  /* THE QUERY IN FLIGHT, and it starts as whatever the screen said it draws.
+     `useRef` and not state: changing it must not re-render, because every path
+     that changes it is already about to set `entries`. */
+  const activeQueryRef = useRef<TranscriptionHistoryQuery>(initialQuery ?? {});
 
   const refreshStorageStatus = useCallback(async () => {
     /* Two stores and both are read here, because History's foot states both:

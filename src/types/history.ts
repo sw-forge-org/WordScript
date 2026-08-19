@@ -24,6 +24,11 @@ export interface TranscriptionHistoryQuery {
   active_profile?: string;
   search?: string;
   include_errors_only?: boolean;
+  /** Only deliveries that fell back and that nobody has answered for yet
+   *  (ADR 0243). What Home asks instead of scanning every summary the store
+   *  holds — an owed fallback can be arbitrarily old, so a limit cannot find
+   *  one and only the runtime can. */
+  owed_fallback_only?: boolean;
 }
 
 export interface ExportTranscriptionHistoryResponse {

@@ -755,7 +755,17 @@ export function ActivityCalendar({
           {markers.size > 0 && (
             <>
               <i className="ws-cal-key-marker" />
-              <span>{MARKER_LEGEND}</span>
+              {/* ONE WORD WHILE ONE WORD IS TRUE (ADR 0243). Every marker on
+                  this grid is a milestone, so naming the sort is the whole
+                  legend — and the moment the grid draws more than one named day,
+                  the word carries the count as well, because a reader looking at
+                  two green circles is asking how many kinds there are before
+                  they hover either. The names stay on the hover, which is where
+                  a name is readable. */}
+              <span>
+                {MARKER_LEGEND}
+                {markers.size > 1 ? ` · ${markers.size}` : ""}
+              </span>
               <span className="ws-sep" aria-hidden="true">
                 ·
               </span>

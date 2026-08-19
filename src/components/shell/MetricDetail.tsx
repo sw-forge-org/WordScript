@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  dayLanguageUnasked,
   durationFigure,
   languageLabel,
   ledgerLanguages,
@@ -14,8 +15,11 @@ import {
 import {
   bestPoint,
   bucketQuantile,
+  languageSeries,
+  modeCauses,
   turnaroundBands,
   turnaroundCauses,
+  turnaroundSeries,
   offeredPeriods,
   PERIOD_LABELS,
   rateSeries,
@@ -24,6 +28,8 @@ import {
   type Period,
   type SeriesPoint,
 } from "@/lib/series";
+import { PROCESSING_MODE_LABELS } from "@/lib/transformRules";
+import type { ProcessingMode } from "@/types/ipc";
 import { CATALOGUE } from "@/lib/modelCatalogue";
 import { Icon } from "./Icon";
 import { MetricChart, type ChartBar } from "./MetricChart";
@@ -39,14 +45,19 @@ import { SegmentControl } from "./SegmentControl";
  * and it is a view of the same block rather than a panel over it: the calendar
  * proved that a second view of one block is a shape this display already has.
  *
- * EVERY METRIC GETS A CHART AND NOT EVERY METRIC GETS A HISTORY, which is the
- * whole honesty question here. The ledger's day rows carry words and seconds, so
- * time saved and the speaking rate can be walked over days, weeks, months and
- * years. They carry NO turnaround and NO language, which exist only as all-time
- * histograms — so those two draw their spread rather than a history, and say in
- * one line that this is what the record holds. A history invented by spreading
- * an all-time figure evenly over the weeks would be the plausible wrong number
- * this whole track exists to make impossible.
+ * EVERY METRIC GETS A CHART AND, SINCE ADR 0243, A HISTORY. The ledger's rows
+ * carry words, seconds, waits and languages, so all four readings walk over
+ * days, weeks, months and years — and the coarse grains read the month tier,
+ * which is never pruned, so they reach as far back as the installation goes
+ * rather than as far as the day rows roll.
+ *
+ * WHAT MAKES THAT HONEST RATHER THAN INVENTED is that nothing here is spread:
+ * every figure a bucket reports was accumulated into a row of that bucket's own
+ * period, and a reading younger than the record starts at its own `measured_from`
+ * stamp rather than at the record's beginning. A history built by spreading an
+ * all-time figure evenly over the weeks would be the plausible wrong number this
+ * whole track exists to make impossible, and two of these four used to say so in
+ * a line of prose because the rows could not carry them.
  *
  * THE GRAINS ON OFFER ARE THE ONES THE RECORD CAN FILL, the same rule the year
  * picker follows (ADR 0183). A three-day-old ledger is offered days, the control
@@ -202,6 +213,7 @@ function RateDetail({
   const median = ledgerMedianWpm(ledger);
   const pause = ledgerPauseShare(ledger);
   const measured = points.filter((point) => !point.empty);
+  const totals = ledgerTotals(ledger);
 
   const bars: ChartBar[] = points.map((point) => ({
     key: point.key,
@@ -234,7 +246,17 @@ function RateDetail({
             label: "Thinking pauses",
             value: pause === null ? "not measured" : `${Math.round(pause * 100)} % of the mic`,
           },
-          { label: "Runs timed", value: median ? String(median.timed) : "0" },
+          /* WHAT THE RATE WAS MEASURED OVER, WHICH IS NOT EVERY DICTATION
+             (ADR 0243, closing the oldest open item on this track). The speech
+             clock arrived with ADR 0177 and every run before it carries only the
+             open microphone — 69 runs on the reporting machine, and no way to
+             re-measure one: the audio is not kept. That is a fact about the
+             record rather than a defect, and the honest thing a surface can do
+             about it is say over how much of the record it speaks. */
+          {
+            label: "Measured over",
+            value: `${totals.voiced} of ${totals.dictations}`,
+          },
         ]}
       />
       {/* THE TWO FIGURES ON THIS SCREEN ARE DIFFERENT STATISTICS AND THE READER
@@ -246,6 +268,9 @@ function RateDetail({
         A column is that {period}&apos;s spoken words over its speaking seconds.
         The tile above is the middle dictation of all time, which is a different
         measurement of the same voice.
+        {totals.voiced < totals.dictations
+          ? " Dictations from before the speaking clock existed are in neither — nothing kept the audio, so they cannot be measured again."
+          : ""}
       </p>
     </>
   );
@@ -329,7 +354,19 @@ function Causes({ ledger }: { ledger: ActivityLedger | null }) {
   );
 }
 
-function TurnaroundDetail({ ledger }: { ledger: ActivityLedger | null }) {
+function TurnaroundDetail({
+  ledger,
+  period,
+  offered,
+  onPeriod,
+  now,
+}: {
+  ledger: ActivityLedger | null;
+  period: Period;
+  offered: Period[];
+  onPeriod: (next: Period) => void;
+  now: number;
+}) {
   const median = ledgerMedianTurnaround(ledger);
   const p90 = bucketQuantile(ledger?.turnaround_buckets, TURNAROUND_BUCKET_MS, 0.9);
   const runs = (ledger?.turnaround_buckets ?? []).reduce((sum, count) => sum + count, 0);
@@ -351,8 +388,42 @@ function TurnaroundDetail({ ledger }: { ledger: ActivityLedger | null }) {
     }),
   );
 
+  /* THE HISTORY THIS VIEW SPENT THREE STAGES SAYING IT COULD NOT HAVE
+     (ADR 0243). A day row holds a wait now — two counters and a log histogram —
+     so the same question every other metric answers is answerable here, and the
+     sentence explaining its absence is deleted rather than softened. It starts
+     at the day the field arrived and not at the record's own beginning, which
+     is what `measured_from` is for. */
+  const points = useMemo(() => turnaroundSeries(ledger, period, now), [ledger, period, now]);
+  const drawn = points.filter((point) => !point.empty);
+  const seriesBars: ChartBar[] = points.map((point) => ({
+    key: point.key,
+    label: point.label,
+    value: point.value,
+    empty: point.empty,
+    hint: point.empty
+      ? `${point.full} · nothing timed`
+      : `${point.full} · median ${(point.value / 1000).toFixed(1)} s · ${point.runs} dictations${
+          point.note ? ` · ${point.note}` : ""
+        }`,
+  }));
+
   return (
     <>
+      {seriesBars.length > 0 && (
+        <>
+          <Grain offered={offered} period={period} onPeriod={onPeriod} />
+          <MetricChart
+            bars={seriesBars}
+            ariaLabel={`The middle wait per ${period}`}
+            fallback={
+              drawn.length > 0
+                ? `the middle wait over the ${drawn.length} ${period}s the record timed`
+                : "nothing timed yet"
+            }
+          />
+        </>
+      )}
       <MetricChart
         bars={bars}
         ariaLabel="How long the wait was, over every dictation"
@@ -370,32 +441,103 @@ function TurnaroundDetail({ ledger }: { ledger: ActivityLedger | null }) {
         ]}
       />
       <Causes ledger={ledger} />
-      {/* NO HISTORY, AND THE REASON IS THE RECORD RATHER THAN THE SCREEN — plus
-          the one thing the list above cannot say for itself (ADR 0182). The
-          clock stops when the TEXT exists, so a mode that rewrites what you said
-          has a second model inside the same wait, and the record names only the
-          one that heard you. The row is still where the wait is charged; it is
-          not always where all of it was spent.
+      <Modes ledger={ledger} />
+      {/* THE ONE THING THE LISTS ABOVE CANNOT SAY FOR THEMSELVES (ADR 0182),
+          and it is now a smaller claim than it was: the clock stops when the
+          TEXT exists, so a mode that rewrites what you said has a second model
+          inside the same wait and the MODEL list names only the one that heard
+          you. The mode list is the other cut of the same runs, which is what
+          makes that difference readable rather than merely disclosed.
 
-          THE SECOND HALF OF THIS NOTE USED TO EXPLAIN A DISCREPANCY AND IS GONE
-          (ADR 0240). It said the list covered fewer runs than the spread because
-          it read the pruned records; the ledger answers it now, so there is
-          nothing left to excuse. A sentence apologising for a defect outlives
-          the defect unless somebody deletes it. */}
+          TWO SENTENCES THAT USED TO BE HERE ARE GONE. One apologised for the
+          list covering fewer runs than the spread — answered by ADR 0240. One
+          said a day row holds no wait — answered by ADR 0243. A sentence
+          explaining a limit outlives the limit unless somebody deletes it. */}
       <p className="ws-metric-note">
-        The ledger keeps this one as a spread rather than a history — a day row
-        holds no wait. The wait runs from you stopping to the text being ready,
-        so where a mode rewrote the text a second model is inside it that the
-        record does not name.
+        The wait runs from you stopping to the text being ready. Where a mode
+        rewrote the text, a second model is inside it that the model list does
+        not name — the mode list is the same runs cut the other way.
       </p>
     </>
   );
 }
 
-function LanguagesDetail({ ledger }: { ledger: ActivityLedger | null }) {
+/**
+ * THE SAME WAITS, CUT BY THE MODE THAT RAN (ADR 0243).
+ *
+ * Two one-dimensional cuts of one total and never a cross-tab. This one answers
+ * *what does this mode cost me*, which is a question the reader can act on — the
+ * model list answers *which recogniser is slow*, which is one they can only
+ * change by switching lanes.
+ */
+function Modes({ ledger }: { ledger: ActivityLedger | null }) {
+  const rows = useMemo(() => modeCauses(ledger), [ledger]);
+  const timed = rows.reduce((sum, row) => sum + row.runs, 0);
+  /* ONE ROW IS NOT A COMPARISON. A reader who has only ever run one mode learns
+     nothing from a list of it, and the figure is already the median above —
+     which is the same argument `Grain` makes about a control with one option. */
+  if (timed === 0 || rows.length < 2) return null;
+
+  return (
+    <div className="ws-metric-causes">
+      <p className="ws-metric-causes-head">
+        <span>What the mode cost</span>
+        <span>
+          {timed} {timed === 1 ? "run" : "runs"} all time
+        </span>
+      </p>
+      <ul>
+        {rows.slice(0, 5).map((row) => (
+          <li key={row.key}>
+            <span className="ws-metric-cause-name">{PROCESSING_MODE_LABELS[row.key as ProcessingMode] ?? row.key}</span>
+            <span className="ws-metric-cause-runs">
+              {row.runs} {row.runs === 1 ? "run" : "runs"}
+            </span>
+            <span className="ws-metric-cause-wait">{(row.median / 1000).toFixed(1)} s</span>
+          </li>
+        ))}
+      </ul>
+      {rows.length > 5 ? (
+        <p className="ws-metric-causes-rest">and {rows.length - 5} more</p>
+      ) : null}
+    </div>
+  );
+}
+
+function LanguagesDetail({
+  ledger,
+  period,
+  offered,
+  onPeriod,
+  now,
+}: {
+  ledger: ActivityLedger | null;
+  period: Period;
+  offered: Period[];
+  onPeriod: (next: Period) => void;
+  now: number;
+}) {
   const languages = ledgerLanguages(ledger);
   const measured = languages.reduce((sum, language) => sum + language.count, 0);
-  const dictations = ledgerTotals(ledger).dictations;
+  const totals = ledgerTotals(ledger);
+  const dictations = totals.dictations;
+  /* THE TWO POPULATIONS UNDER *NOT NAMED*, AND THEY HAVE DIFFERENT FUTURES
+     (ADR 0243). `refused` is asked-and-too-short: it grows with every short
+     dictation and it is the one a better detector could move. `unasked` is the
+     runs whose text the index no longer holds — frozen, and nothing will ever
+     improve it. One counter over both said a true number that answered no
+     question, and the entry that raised this said it would *hold 91 runs
+     forever*: it was 91 that day and 104 the next. */
+  const refused = totals.language_refused ?? 0;
+  const unasked = dayLanguageUnasked(totals);
+  const points = useMemo(() => languageSeries(ledger, period, now), [ledger, period, now]);
+  const seriesBars: ChartBar[] = points.map((point) => ({
+    key: point.key,
+    label: point.label,
+    value: point.value,
+    empty: point.empty,
+    hint: `${point.full} · ${point.note ?? "nothing dictated"}`,
+  }));
   const bars: ChartBar[] = languages.slice(0, 12).map((language) => ({
     key: language.code,
     label: language.code.toUpperCase(),
@@ -407,6 +549,16 @@ function LanguagesDetail({ ledger }: { ledger: ActivityLedger | null }) {
 
   return (
     <>
+      {seriesBars.length > 0 && (
+        <>
+          <Grain offered={offered} period={period} onPeriod={onPeriod} />
+          <MetricChart
+            bars={seriesBars}
+            ariaLabel={`How many dictations were named per ${period}`}
+            fallback={`what was named over the ${seriesBars.length} ${period}s the record can speak for`}
+          />
+        </>
+      )}
       <MetricChart
         bars={bars}
         ariaLabel="How many dictations came back in each language"
@@ -423,23 +575,26 @@ function LanguagesDetail({ ledger }: { ledger: ActivityLedger | null }) {
             value: languages.length > 0 ? languageLabel(languages[0].code) : "nothing yet",
           },
           { label: "Named", value: `${measured} of ${dictations}` },
-          {
-            /* NOT `Too short to name`, WHICH NAMED A REASON THE RECORD CANNOT
-               VOUCH FOR. Some of these runs were short. Others are the ones the
-               ledger was folded from before it existed, where nothing had asked
-               a model and the offline detector's eight-word floor decided alone.
-               The count is one number covering two causes, so it states the
-               fact and the note carries both (ADR 0161, ADR 0236). */
-            label: "Not named",
-            value: String(Math.max(0, dictations - measured)),
-          },
+          /* TWO ROWS WHERE THERE WAS ONE, AND ONLY WHERE BOTH ARE REAL. The
+             split is meaningless on a record whose runs were all asked about, so
+             a machine with no unasked backlog sees one row and not a zero — the
+             same rule the marker legend follows. */
+          { label: "Too short to name", value: String(refused) },
+          ...(unasked > 0 ? [{ label: "Never asked", value: String(unasked) }] : []),
         ]}
       />
       <p className="ws-metric-note">
-        Measured on the text you spoke, never on your language setting. A run
-        goes unnamed where it was too short to read a language off — and where
-        the ledger was folded from records that never stored one, which is every
-        dictation from before it started counting. Nothing goes back over them.
+        Measured on the text you spoke, never on your language setting.{" "}
+        <em>Too short to name</em> was asked and came back empty, and it moves
+        with every brief dictation.{" "}
+        {unasked > 0 ? (
+          <>
+            <em>Never asked</em> is the runs from before the record kept an
+            answer — that number is fixed, and nothing goes back over them.
+          </>
+        ) : (
+          "Every run this record counted was asked about."
+        )}
       </p>
     </>
   );
@@ -505,8 +660,24 @@ export function MetricDetail({
           now={now}
         />
       )}
-      {metric === "turnaround" && <TurnaroundDetail ledger={ledger} />}
-      {metric === "languages" && <LanguagesDetail ledger={ledger} />}
+      {metric === "turnaround" && (
+        <TurnaroundDetail
+          ledger={ledger}
+          period={grain}
+          offered={offered}
+          onPeriod={setPeriod}
+          now={now}
+        />
+      )}
+      {metric === "languages" && (
+        <LanguagesDetail
+          ledger={ledger}
+          period={grain}
+          offered={offered}
+          onPeriod={setPeriod}
+          now={now}
+        />
+      )}
     </div>
   );
 }

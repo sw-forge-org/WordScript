@@ -502,6 +502,19 @@ pub struct TranscriptionHistoryQuery {
     pub active_profile: Option<String>,
     pub search: Option<String>,
     pub include_errors_only: bool,
+    /// Only records whose delivery fell back and whom nobody has answered for
+    /// yet (ADR 0243).
+    ///
+    /// IT EXISTS SO THAT A LIST OF FIVE ROWS CAN BE A LIST OF FIVE ROWS. Home
+    /// draws five recent dictations and a notice for every unacknowledged
+    /// fallback, and until this filter the only way to have both was to ask for
+    /// the WHOLE index and scan it — 519 summaries over the bridge, on every
+    /// dictation, to find a list that is almost always empty and to draw five
+    /// rows from the top of it. An owed fallback can be arbitrarily old, so the
+    /// answer could not be a bigger limit; it had to be a question the runtime
+    /// can answer for itself.
+    #[serde(default)]
+    pub owed_fallback_only: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1254,6 +1267,19 @@ fn record_entry_with_work_mode(
             provider: entry.provider.clone(),
             model: entry.model.clone(),
             credited: mode_credits_typing(entry.effective_mode.as_ref()),
+            /* WHICH MODE RAN, for the second cut of the same wait (ADR 0243).
+               Read off the record for the same reason `provider` and `language`
+               are: the funnel counts what the record says happened, never what
+               the config currently says.
+
+               `as_str` and not a serde round trip, because that method exists to
+               be the stable token — it is the same string the TypeScript union
+               uses, and a key written into a kept-forever file may not change
+               shape because a derive did. */
+            mode: entry
+                .effective_mode
+                .as_ref()
+                .map(|mode| mode.as_str().to_string()),
             /* THE VERDICT THE RECORD ALREADY CARRIES, not a second reading of
                the same text (ADR 0236). It was decided at the top of this
                function — against `entry.language`, which is the configured hint
@@ -2287,6 +2313,14 @@ impl HistoryFilter {
     }
 
     fn admits(&self, entry: &TranscriptionHistoryEntry, query: &TranscriptionHistoryQuery) -> bool {
+        if query.owed_fallback_only
+            && !(matches!(
+                entry.insert_mode,
+                Some(NativeInsertMode::ClipboardFallback) | Some(NativeInsertMode::ScratchpadFallback)
+            ) && !entry.fallback_acknowledged)
+        {
+            return false;
+        }
         if let Some(provider) = &self.provider {
             if !entry.provider.eq_ignore_ascii_case(provider) {
                 return false;

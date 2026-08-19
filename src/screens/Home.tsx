@@ -23,7 +23,7 @@ import {
   UndoNotice,
   type MetricKey,
 } from "@/components/shell";
-import { useTranscriptionHistory } from "@/hooks/useTranscriptionHistory";
+import { useOwedFallbacks, useTranscriptionHistory } from "@/hooks/useTranscriptionHistory";
 import { useUndoableDelete } from "@/hooks/useUndoableDelete";
 import { useWholeTranscript } from "@/hooks/useWholeTranscript";
 import { PROCESSING_MODE_LABELS } from "@/lib/transformRules";
@@ -254,8 +254,15 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      drill-down is a place the reader went, and a window that reopens three
      screens deep into a chart nobody asked for again is furniture. */
   const [metric, setMetric] = useState<MetricKey | null>(null);
+  /* FIVE ROWS, ASKED FOR AS FIVE ROWS (ADR 0243). This asked for the whole index
+     and sliced it — 519 summaries and about 570 kB over the bridge on every
+     dictation, for a list of five and a length. `RECENT_LIMIT + 1` because a row
+     inside its undo window is hidden here and must not leave a gap. */
   const { entries, record, deliveredText, remove, retry, reveal, acknowledgeFallback } =
-    useTranscriptionHistory(Boolean(runtime?.active));
+    useTranscriptionHistory(Boolean(runtime?.active), { limit: RECENT_LIMIT + 1 });
+  /* AND THE OWED FALLBACKS AS THEIR OWN QUESTION, because one can be arbitrarily
+     old and a limit would never find it. */
+  const owed = useOwedFallbacks(Boolean(runtime?.active));
   /* THE WHOLE TEXT OF THE ONE ROW THAT IS OPEN (ADR 0240), on History's own
      hook. Home's rows are History's rows on History's builders, and a *View
      raw* that showed 160 characters here and the whole dictation one screen
@@ -266,7 +273,7 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      it grows, sticks at the limit and then runs backwards. The ledger keeps one
      row per day and does not forget. Re-read when a record lands, which is the
      only moment any of these numbers move. */
-  const ledger = useActivityLedger(Boolean(runtime?.active), entries.length);
+  const ledger = useActivityLedger(Boolean(runtime?.active));
 
   useEffect(() => {
     if (!runtime?.active) return;
@@ -370,14 +377,6 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      Ordered newest first, which is also ADR 0044's own order: the cost column
      is "what happens if you do nothing", and for this source that cost grows
      with every clipboard write, so the most recent is the most recoverable. */
-  const owed = runtime
-    ? entries.filter(
-        (entry) =>
-          !entry.fallback_acknowledged &&
-          (entry.insert_mode === "clipboard_fallback" ||
-            entry.insert_mode === "scratchpad_fallback"),
-      )
-    : [];
 
   /* THE SAME UNDO WINDOW HISTORY HAS (ADR 0195). Home's five rows are a slice of
      the same record and draw the same builder, so a delete has to behave the

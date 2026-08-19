@@ -248,6 +248,54 @@ export interface LedgerDay {
   /** Recorded seconds of exactly those runs. */
   saved_seconds: number;
   longest_seconds: number;
+  /** How many of the period's dictations carried a turnaround clock, and what
+   *  they cost in total (ADR 0243). Two numbers, so the period has an exact
+   *  mean; the shape below gives it a median. Absent on a period that timed
+   *  none — the runtime writes neither field at zero. */
+  turnaround_runs?: number;
+  turnaround_ms_sum?: number;
+  /** The period's wait distribution on the quarter-octave axis —
+   *  `TURNAROUND_LOG_BASE_MS × 2^(i/4)`, forty buckets and an overflow. */
+  turnaround_log?: number[];
+  /** How many of the period's dictations came back in each language. The
+   *  all-time map answers WHICH; this answers WHEN. */
+  languages?: Record<string, number>;
+  /** Dictations whose language was asked for and came back empty.
+   *
+   *  THE OTHER HALF OF *NOT NAMED* IS DERIVED — see `dayLanguageUnasked`. It is
+   *  not stored anywhere, on either side of the bridge, because a row that
+   *  carries both a whole and its parts can disagree with itself. */
+  language_refused?: number;
+}
+
+/** One dictation's log-histogram axis, and it has to match the runtime's
+ *  `TURNAROUND_LOG_BASE_MS` and `TURNAROUND_LOG_PER_OCTAVE` or every reading off
+ *  it is a plausible wrong number (the `rate_bucket_wpm` lesson, ADR 0243). */
+export const TURNAROUND_LOG_BASE_MS = 25;
+export const TURNAROUND_LOG_PER_OCTAVE = 4;
+
+/** The lower edge of a quarter-octave bucket, in milliseconds. */
+export function turnaroundLogEdge(index: number): number {
+  return TURNAROUND_LOG_BASE_MS * Math.pow(2, index / TURNAROUND_LOG_PER_OCTAVE);
+}
+
+/**
+ * HOW MANY OF A PERIOD'S DICTATIONS NOTHING EVER ASKED A LANGUAGE OF
+ * (ADR 0243).
+ *
+ * The frozen half of what the screen calls *Not named*, and the half no future
+ * release can improve: these are runs whose text the index no longer holds, so
+ * there is nothing left to measure. The growing half is `language_refused` —
+ * asked, and too short to answer — and separating them is the whole point,
+ * because one of them is worth acting on and the other never will be.
+ *
+ * Clamped at zero for the same reason the runtime's version is: a merge takes a
+ * field-wise maximum and can raise a whole and its parts out of step.
+ */
+export function dayLanguageUnasked(day: LedgerDay | null | undefined): number {
+  if (!day) return 0;
+  const named = Object.values(day.languages ?? {}).reduce((sum, count) => sum + count, 0);
+  return Math.max(0, (day.dictations ?? 0) - named - (day.language_refused ?? 0));
 }
 
 /** One recogniser's own turnaround distribution (ADR 0240).
@@ -274,13 +322,37 @@ export interface ActivityLedger {
    *  claim the reader can check and find wrong. A missing marker costs nothing;
    *  a wrong one costs the display its credibility. */
   installed_on?: string | null;
-  /** Every day that has aged out of `days`, summed. Why a total can promise
-   *  never to fall: the row leaves the file and its figures do not. */
+  /** Every day that aged out BEFORE the month tier existed, summed. Why a total
+   *  can promise never to fall: the row leaves the file and its figures do not.
+   *
+   *  A CLOSED SET SINCE ADR 0243 — nothing is added to it again. */
   retired?: LedgerDay;
-  /** The last day `retired` speaks for. */
+  /** The last day that is no longer in `days`. Moves with the prune; the
+   *  calendar reads it. */
   retired_through?: string | null;
+  /** The last day the opaque `retired` blob speaks for, fixed at the migration
+   *  that introduced the month tier (ADR 0243). The month a MONTH series starts
+   *  after, because that one month is split between the blob and the tier. */
+  prehistory_through?: string | null;
   /** Keyed `YYYY-MM-DD`. */
   days: Record<string, LedgerDay>;
+  /** One row per month, keyed `YYYY-MM`, and never pruned (ADR 0243).
+   *
+   *  THE TIERS ARE DISJOINT: a day is in `days` or, once it ages out, in its
+   *  month here — never in both. So a month's real figures are this row PLUS
+   *  whatever days of it are still live, which is what `monthTotals` is for and
+   *  why no caller should read this map directly. */
+  months?: Record<string, LedgerDay>;
+  /** The turnaround again, cut by the MODE that ran rather than by the
+   *  recogniser that answered (ADR 0243), on the same axis as
+   *  `turnaround_buckets`. Two one-dimensional cuts of one total, never a
+   *  cross-tab. */
+  mode_causes?: Record<string, number[]>;
+  /** The first day each accumulator was written, keyed by its row field
+   *  (ADR 0243). A series may not draw a period beginning before its field's
+   *  stamp: a zero there is the field not having existed, which is a different
+   *  claim from nothing having happened. */
+  measured_from?: Record<string, string>;
   /** How many runs landed in each one-wpm bucket, all time. The distribution
    *  behind the median — the SPEAKING rate since schema 2. */
   rate_buckets?: number[];
@@ -335,12 +407,18 @@ export function ledgerBuckets(ledger: ActivityLedger | null): Map<string, Activi
  * THE YEARS THE CALENDAR MAY OFFER, NEWEST FIRST (ADR 0183).
  *
  * DERIVED FROM THE DAY ROWS AND NOT FROM `started_on`, and the difference is the
- * whole point. The ledger keeps 800 day rows and RETIRES the rest into the
- * totals (ADR 0176): the figures survive, the days do not. A year offered on the
- * strength of an install date would therefore draw as a grid of unlit
+ * whole point. The ledger keeps `LEDGER_DAY_ROWS` day rows and folds the rest
+ * into their months (ADR 0176, ADR 0243): the figures survive, the SHAPE
+ * survives at month resolution, and the individual DAYS do not. A year offered
+ * on the strength of an install date would therefore draw as a grid of unlit
  * circles — which asserts *you dictated on none of these days* about days the
  * record can no longer speak for at all, and that is the one claim this display
  * is not allowed to make.
+ *
+ * **AND THE MONTH TIER IS NOT A SOURCE HERE.** A month row can say a year had
+ * 400 dictations and cannot say which days they fell on, so offering that year
+ * to a per-day grid would put the same unlit-circle claim back one tier up. The
+ * month grain answers that year on the metric views instead.
  *
  * A year with rows is a year with something to draw. A year with none is absent,
  * whether that is because it was pruned or because it never happened; the line
@@ -399,6 +477,43 @@ export interface ActivityMarker {
 }
 
 /**
+ * WHERE A NAMED DAY COMES FROM — a list, since ADR 0243, and it was two
+ * constants and a field until a third one was asked about.
+ *
+ * ADDING ONE IS A ROW HERE and nothing else: the map below fills itself from
+ * this, the legend counts what it produced, and the hover carries whatever the
+ * row is called. The open question this closes was *what happens when a third
+ * marker arrives* — a release, an anniversary, a day the reader names
+ * themselves — and the answer is that the shape stops being the obstacle.
+ *
+ * `of` reads the ledger rather than taking a date, because a marker either
+ * belongs to the PRODUCT and is the same on every machine, or belongs to THIS
+ * installation and has to be looked up. Both kinds live in one list so that the
+ * legend and the calendar cannot disagree about how many there are.
+ */
+export interface MarkerSource {
+  /** Stable, so a later session can find every use of one. */
+  kind: string;
+  label: string;
+  of: (ledger: ActivityLedger | null) => string | null | undefined;
+}
+
+export const MARKER_SOURCES: MarkerSource[] = [
+  {
+    kind: "publication",
+    label: PUBLICATION_LABEL,
+    /* HARDCODED, DELIBERATELY — a fact about the project rather than about this
+       installation, so there is nothing for the runtime to measure. */
+    of: () => PUBLICATION_DAY,
+  },
+  {
+    kind: "install",
+    label: INSTALL_LABEL,
+    of: (ledger) => ledger?.installed_on ?? null,
+  },
+];
+
+/**
  * THE DAYS THIS CALENDAR NAMES, keyed the way the cells are.
  *
  * Two of them at most: the publication, which every installation shares, and
@@ -428,9 +543,23 @@ export function activityMarkers(ledger: ActivityLedger | null): Map<string, Acti
     });
   };
 
-  add(PUBLICATION_DAY, PUBLICATION_LABEL);
-  add(ledger?.installed_on ?? null, INSTALL_LABEL);
+  for (const source of MARKER_SOURCES) add(source.of(ledger), source.label);
   return markers;
+}
+
+/** How many KINDS of named day this record actually produced (ADR 0243).
+ *
+ *  THE LEGEND'S ONE WORD IS ENOUGH FOR ONE KIND AND NOT FOR THREE. While every
+ *  marker on the grid means the same sort of thing, naming the sort is the whole
+ *  legend; past that, the word has to become the count and the names move to the
+ *  hover, which is where they already are. */
+export function markerKinds(ledger: ActivityLedger | null): number {
+  return MARKER_SOURCES.filter((source) => {
+    const stamp = source.of(ledger);
+    if (!stamp) return false;
+    const [year, month, day] = stamp.split("-").map(Number);
+    return Boolean(year && month && day);
+  }).length;
 }
 
 /** The years a marker falls in, so the picker can offer one the ledger has no
@@ -649,6 +778,49 @@ export function ledgerSpeaksFrom(ledger: ActivityLedger | null): number | null {
 }
 
 /**
+ * THE FIRST MONTH THE RECORD CAN SPEAK FOR, WHICH REACHES MUCH FURTHER BACK
+ * THAN THE FIRST DAY (ADR 0243).
+ *
+ * THIS IS THE FUNCTION THAT MAKES A METRIC INFINITE, and its absence is what
+ * made every chart on Home 2.2 years deep however long the product had been
+ * running: a retired day used to lose its shape, so `ledgerSpeaksFrom` was the
+ * horizon for every grain, the *Months* tab could never hold more than 26
+ * buckets and the *Years* tab could never hold more than three.
+ *
+ * A month row keeps its place in time and is never pruned, so a month grain
+ * starts at the oldest row of either tier — and stops short of exactly one
+ * month, the one the opaque `retired` blob is split across. See
+ * `prehistory_through`, which is that split's only record.
+ */
+export function ledgerMonthsSpeakFrom(ledger: ActivityLedger | null): number | null {
+  let earliest: number | null = null;
+  const consider = (key: string) => {
+    const [year, month] = key.split("-").map(Number);
+    if (!year || !month) return;
+    const at = new Date(year, month - 1, 1).getTime();
+    if (earliest === null || at < earliest) earliest = at;
+  };
+  for (const [key, row] of Object.entries(ledger?.months ?? {})) {
+    if (row && row.dictations > 0) consider(key);
+  }
+  for (const [key, row] of Object.entries(ledger?.days ?? {})) {
+    if (row && row.dictations > 0) consider(key.slice(0, 7));
+  }
+
+  /* THE SPLIT MONTH IS NOT DRAWN, and this is the only place that matters. The
+     blob holds its days up to the stamp and the month tier holds the rest, so
+     the row is real and partial — a column that would read low for a reason no
+     reader could see. Starting after it costs one month, once, on a record that
+     by then reaches back years. */
+  const prehistory = ledger?.prehistory_through;
+  if (!prehistory) return earliest;
+  const [year, month] = prehistory.split("-").map(Number);
+  if (!year || !month) return earliest;
+  const after = new Date(year, month, 1).getTime();
+  return earliest === null ? after : Math.max(earliest, after);
+}
+
+/**
  * HOW MANY DAYS OF THE FOUR-WEEK WINDOW THE RECORD ACTUALLY REACHES OVER
  * (ADR 0233).
  *
@@ -686,7 +858,23 @@ export function savedWindowSpan(
  * to prevent, reintroduced by the code that keeps the file small.
  */
 export function ledgerTotals(ledger: ActivityLedger | null): LedgerDay {
-  const total: LedgerDay = {
+  const total = emptyDay();
+  if (!ledger) return total;
+
+  /* THREE TIERS AND THEY ARE DISJOINT (ADR 0243): the prehistory blob, the
+     month rows a day is folded into when it ages out, and the live days. A day
+     is in exactly one of them, so this adds rather than picks — and leaving the
+     months out is how a lifetime total would start falling again, one tier
+     further along than the failure ADR 0176 fixed. */
+  absorbDay(total, ledger.retired);
+  for (const row of Object.values(ledger.months ?? {})) absorbDay(total, row);
+  for (const row of Object.values(ledger.days)) absorbDay(total, row);
+  return total;
+}
+
+/** A row with every accumulator at nothing. */
+export function emptyDay(): LedgerDay {
+  return {
     dictations: 0,
     words: 0,
     spoken_words: 0,
@@ -698,25 +886,100 @@ export function ledgerTotals(ledger: ActivityLedger | null): LedgerDay {
     saved_words: 0,
     saved_seconds: 0,
     longest_seconds: 0,
+    turnaround_runs: 0,
+    turnaround_ms_sum: 0,
+    turnaround_log: [],
+    languages: {},
+    language_refused: 0,
   };
-  if (!ledger) return total;
+}
 
-  const rows = [ledger.retired, ...Object.values(ledger.days)];
-  for (const row of rows) {
-    if (!row) continue;
-    total.dictations += row.dictations ?? 0;
-    total.words += row.words ?? 0;
-    total.spoken_words += row.spoken_words ?? 0;
-    total.recorded_seconds += row.recorded_seconds ?? 0;
-    total.speech_seconds += row.speech_seconds ?? 0;
-    total.timed += row.timed ?? 0;
-    total.voiced += row.voiced ?? 0;
-    total.saved_runs += row.saved_runs ?? 0;
-    total.saved_words += row.saved_words ?? 0;
-    total.saved_seconds += row.saved_seconds ?? 0;
-    total.longest_seconds = Math.max(total.longest_seconds, row.longest_seconds ?? 0);
+/**
+ * FOLD ONE ROW INTO ANOTHER — the merge rule, in one place, on this side of the
+ * bridge (ADR 0243).
+ *
+ * It is the same arithmetic `LedgerDay::absorb` performs in the runtime, and it
+ * has to stay the same arithmetic: a day becoming a week here and a day becoming
+ * a month there are the same operation, and two implementations of it are two
+ * definitions of what a period's figures are. Sums add, the maximum takes the
+ * larger, histograms add bucket by bucket, tallies add key by key.
+ */
+export function absorbDay(total: LedgerDay, row: LedgerDay | null | undefined): LedgerDay {
+  if (!row) return total;
+  total.dictations += row.dictations ?? 0;
+  total.words += row.words ?? 0;
+  total.spoken_words += row.spoken_words ?? 0;
+  total.recorded_seconds += row.recorded_seconds ?? 0;
+  total.speech_seconds += row.speech_seconds ?? 0;
+  total.timed += row.timed ?? 0;
+  total.voiced += row.voiced ?? 0;
+  total.saved_runs += row.saved_runs ?? 0;
+  total.saved_words += row.saved_words ?? 0;
+  total.saved_seconds += row.saved_seconds ?? 0;
+  total.longest_seconds = Math.max(total.longest_seconds, row.longest_seconds ?? 0);
+  total.turnaround_runs = (total.turnaround_runs ?? 0) + (row.turnaround_runs ?? 0);
+  total.turnaround_ms_sum = (total.turnaround_ms_sum ?? 0) + (row.turnaround_ms_sum ?? 0);
+  if (row.turnaround_log?.length) {
+    const own = total.turnaround_log ?? [];
+    for (let index = 0; index < row.turnaround_log.length; index += 1) {
+      own[index] = (own[index] ?? 0) + row.turnaround_log[index];
+    }
+    total.turnaround_log = own;
+  }
+  if (row.languages) {
+    const own = total.languages ?? {};
+    for (const [code, count] of Object.entries(row.languages)) {
+      own[code] = (own[code] ?? 0) + count;
+    }
+    total.languages = own;
+  }
+  total.language_refused = (total.language_refused ?? 0) + (row.language_refused ?? 0);
+  return total;
+}
+
+/**
+ * ONE CALENDAR MONTH'S FIGURES, WHICHEVER TIER THEY ARE SITTING IN (ADR 0243).
+ *
+ * THE ONLY PLACE THE TIER SUM IS WRITTEN on this side, and the reason it is a
+ * function rather than a line at three call sites: a caller that read `months`
+ * alone would report the CURRENT month as empty until the day it ages out —
+ * which is the one month the reader is most likely to be looking at.
+ */
+export function monthTotals(ledger: ActivityLedger | null, month: string): LedgerDay {
+  const total = emptyDay();
+  if (!ledger) return total;
+  absorbDay(total, ledger.months?.[month]);
+  for (const [key, row] of Object.entries(ledger.days)) {
+    if (key.slice(0, 7) === month) absorbDay(total, row);
   }
   return total;
+}
+
+/** The period's mean wait, in milliseconds, or `null` where it timed nothing.
+ *
+ *  A MEAN HERE AND A MEDIAN ON THE TILE, deliberately: the tile answers *what
+ *  does a dictation usually cost* over a distribution the ledger keeps whole,
+ *  and a period answers *did this week move*, where the exact sum of what was
+ *  actually waited is the more honest number and needs no binning at all. */
+export function dayMeanTurnaround(day: LedgerDay | null | undefined): number | null {
+  if (!day?.turnaround_runs) return null;
+  return (day.turnaround_ms_sum ?? 0) / day.turnaround_runs;
+}
+
+/** The period's middle wait, read off the log axis at the bucket's lower edge.
+ *  `null` where the period timed nothing — which is not a zero. */
+export function dayMedianTurnaround(day: LedgerDay | null | undefined): number | null {
+  const buckets = day?.turnaround_log;
+  if (!buckets?.length) return null;
+  const total = buckets.reduce((sum, count) => sum + count, 0);
+  if (total === 0) return null;
+  const midpoint = Math.floor(total / 2);
+  let seen = 0;
+  for (let index = 0; index < buckets.length; index += 1) {
+    seen += buckets[index];
+    if (seen > midpoint) return turnaroundLogEdge(index);
+  }
+  return null;
 }
 
 /**

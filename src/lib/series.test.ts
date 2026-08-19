@@ -205,3 +205,66 @@ describe("the wait, as bands and as a quantile", () => {
     expect(bucketQuantile(undefined, 25, 0.5)).toBeNull();
   });
 });
+
+/**
+ * THE PROPERTY THIS WHOLE TIER LADDER EXISTS FOR (ADR 0243): A CHART DOES NOT
+ * STOP LEARNING.
+ *
+ * Before the month tier, a retired day was folded into one opaque total and
+ * every grain shared the day horizon — so `Months` could never hold more than 26
+ * buckets and `Years` could never hold more than three, on an installation of
+ * any age. These cases are that ceiling, asserted from the other side.
+ */
+describe("how far back a grain can reach", () => {
+  /** A ledger holding nothing but month rows — the shape every installation
+   *  older than `LEDGER_DAY_ROWS` days ends up in. */
+  function aged(years: number): ActivityLedger {
+    const months: Record<string, LedgerDay> = {};
+    const start = new Date(NOW);
+    for (let back = 1; back <= years * 12; back += 1) {
+      const at = new Date(start.getFullYear(), start.getMonth() - back, 1);
+      months[`${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, "0")}`] = row();
+    }
+    return ledger({ [iso(0)]: row() }, { months, retired_through: iso(400) });
+  }
+
+  it("offers years on a record whose days have all aged out", () => {
+    const eight = aged(8);
+    /* THE ASSERTION THAT WOULD HAVE FAILED BEFORE THE MONTH TIER. `retired_through`
+       is 400 days back, so the day tier speaks for one day — and the year grain
+       reads the month tier instead, which reaches eight years. */
+    expect(offeredPeriods(eight, NOW)).toContain("year");
+    expect(offeredPeriods(eight, NOW)).toContain("month");
+
+    const yearly = savedSeries(eight, "year", 40, NOW);
+    expect(yearly.length).toBeGreaterThan(3);
+    /* AND IT IS CLIPPED BY THE CHART'S OWN SPAN, not by the record: ten year
+       buckets is `PERIOD_SPAN`, and a nine-year-old record fills nine of them. */
+    expect(yearly.length).toBeLessThanOrEqual(10);
+  });
+
+  it("keeps days and weeks on the day tier, which is the one that rolls", () => {
+    const eight = aged(8);
+    /* A DAY GRAIN MAY NOT BORROW A MONTH ROW. Eight years of months are behind
+       this record and the day tier holds one row, so the daily series draws that
+       one day and does not invent 2,900 of them. */
+    expect(savedSeries(eight, "day", 40, NOW).length).toBe(1);
+  });
+
+  it("adds the live days to the month they belong to, and counts nothing twice", () => {
+    /* THE TIER CONTRACT: a month row holds what has aged out and the day rows
+       hold the rest. The current month is both, and reading either alone is a
+       figure that is wrong in a direction nobody can see. */
+    const thisMonth = `${new Date(NOW).getFullYear()}-${String(
+      new Date(NOW).getMonth() + 1,
+    ).padStart(2, "0")}`;
+    const split = ledger(
+      { [iso(0)]: row({ dictations: 2, saved_words: 200, saved_seconds: 60, saved_runs: 2 }) },
+      { months: { [thisMonth]: row({ dictations: 5, saved_words: 500, saved_seconds: 150, saved_runs: 5 }) } },
+    );
+
+    const monthly = savedSeries(split, "month", 40, NOW);
+    const current = monthly[monthly.length - 1];
+    expect(current.runs).toBe(7);
+  });
+});

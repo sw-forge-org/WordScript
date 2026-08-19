@@ -6,6 +6,7 @@ import { HomeScreen } from "./Home";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
 import type {
   TranscriptionHistoryEntry,
+  TranscriptionHistoryQuery,
   TranscriptionHistorySummary,
 } from "@/types/history";
 
@@ -256,7 +257,26 @@ function mockRuntimeHistory(
     if (command === "resolve_current_processing_mode") {
       return { mode: "cleanup", auto_detected: false, detected_from: null };
     }
-    if (command === "transcription_history_summaries") return entries.map(summaryOf);
+    /* THE MOCK HONOURS THE QUERY, AND IT HAS TO SINCE ADR 0243. Home asks two
+       narrow questions of this command instead of one wide one — five rows, and
+       the fallbacks nobody has answered for — so a stub that ignored the query
+       would hand the owed list every record on the machine and the inbox would
+       draw for records that never fell back. Filtering here is what makes these
+       cases stand in for the runtime rather than for an old shape of it. */
+    if (command === "transcription_history_summaries") {
+      const query = (args as { query?: TranscriptionHistoryQuery } | undefined)?.query ?? {};
+      let rows = entries;
+      if (query.owed_fallback_only) {
+        rows = rows.filter(
+          (entry) =>
+            !entry.fallback_acknowledged &&
+            (entry.insert_mode === "clipboard_fallback" ||
+              entry.insert_mode === "scratchpad_fallback"),
+        );
+      }
+      if (query.limit !== undefined) rows = rows.slice(0, query.limit);
+      return rows.map(summaryOf);
+    }
     if (command === "read_activity_ledger") return ledgerFor(entries, languages);
     if (command === "transcription_history_storage_status") return { path: "/tmp/history.json" };
     if (command === "transcript_store_status") {
