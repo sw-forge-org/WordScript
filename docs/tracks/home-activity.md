@@ -1100,6 +1100,126 @@ stands as that. It is no longer the durable answer — see **Stage H** and
 [ADR 0241](../decisions/0241-a-bound-on-stored-dictations-is-a-bound-in-bytes-so-the-index-becomes-a-journal-and-both-collections-get-a-warning-and-a-ceiling.md),
 which delete the count ceiling rather than move it.
 
+## The record — Stage H, 2026-08-19
+
+**A different session from Stage G, and the only one on this page that inherited
+its stage rather than opening it.** Stage H was already written as a brief and
+[ADR 0241](../decisions/0241-a-bound-on-stored-dictations-is-a-bound-in-bytes-so-the-index-becomes-a-journal-and-both-collections-get-a-warning-and-a-ceiling.md)
+was already in the tree as *Accepted, and not built* — uncommitted, beside the
+finished G6 code. The mechanism is
+[ADR 0242](../decisions/0242-the-journal-replays-into-a-list-the-archive-counts-itself-by-day-stamps-and-the-byte-that-is-bounded-is-the-content-byte.md).
+
+**Suite: 953 → 955 frontend cases over 57 files, and 1006 → 1022 Rust cases.**
+The sixteen Rust cases are ten in `history.rs` and six in `transcript_store.rs`;
+a seventeenth is `#[ignore]`d and runs on demand, which is why the ignored count
+went 6 → 7. The frontend delta is four new cases in `Privacy.test.tsx` against
+two removed, so no new file and the count of files does not move. `npm run
+build` clean, `npx tsc --noEmit` clean, `cargo test` 1022 passed, 0 failed, 7
+ignored.
+
+**Read the start number, not the last record's close number.** Stage G's record
+closes at 949 frontend cases and this session started at 953: four cases arrived
+from other tracks in between, and counting them as Stage H's would have been the
+same mistake Stage F caught itself making.
+
+### The first job was to believe the tree, and it took a suite run to do it
+
+An inherited stage arrives as claims. The tree held two coherent blocks — the
+finished G6 code, and Stage H's brief with its ADR — and the previous session's
+numbers were quoted rather than reproducible. **Both suites were run before
+anything was touched**, which is what turned *the tree is clean* from an
+assumption into a measurement, and is what made the 953 above a real baseline.
+
+### The build order is a finding, not a preference
+
+**H1, H2, H4, H3, H5.** H4 moved ahead of H3 because ADR 0241 measures its own
+10 GB ceiling at roughly 15 million files and about 1.2 million per month
+directory. A byte ceiling laid over a layout that cannot hold those bytes is a
+number the product states on a screen and cannot honour, so the sharding is a
+precondition rather than a follow-up — the brief says so in its own row, and it
+is the kind of row that is easy to read as an optimisation and defer.
+
+### The tests that had to change, and the one that had to be inverted
+
+**A retention test used the deleted count cap to make something drop.** Pushing
+a record out with `history_limit` was the easy way to make the prune visible and
+was also the wrong rule to be testing: what sweeps this index is age. It cannot
+be written the obvious way either — `record_entry` stamps `now`, so nothing that
+goes through the funnel is ever old enough to be pruned. **The record is aged in
+the journal**, which is now the only way to have one older than the process that
+wrote it.
+
+**Two `#[ignore]`d harnesses read the developer's live store as an array.**
+`capture_integrity_measurement` and `transform_context_measurement` both print
+their record count as a finding, and after H1 both would have answered **zero**
+and somebody would have written that zero down. They go through the replay now,
+with the array as a fallback for a machine that has not yet run a build with the
+journal in it. A measurement harness that silently reads the wrong file is worse
+than one that fails.
+
+**One test exists only to prove the cache is used.** Every other test in the
+archive suite passes just as well if the tally is written and then ignored,
+because a full recount gives the same answer. That one plants a tally which
+disagrees with the tree under a stamp that matches it, and asserts the wrong
+number comes back — which nothing but a cache hit can produce.
+
+### Vitest was green while `tsc` was not, twice
+
+`history_limit` survived H2 in a `createAppConfig({...})` literal inside
+`Privacy.test.tsx`, and `tone="warn"` is not in the `StatusTone` union. Both are
+type errors in a test file, both were invisible to a passing `npx vitest run`,
+and both were found only by `npx tsc --noEmit`. **The frontend test run does not
+typecheck**, so on this track the typecheck is not a formality after the suite —
+it is the only reader of a test file's types.
+
+### The migration has no test, and it was watched on the real store twice
+
+There is one path no synthetic case covers: the reader's own `history.json`,
+read once, converted, deleted. At the close of the stage the live store held
+`history.jsonl` at **1,242,954 bytes, 511 lines, 511 puts, 0 unparseable, 511
+live records after replay**, no `history.json` left, and an archive tally of
+477 + 4 = **481** against exactly 481 `.md` files on disk.
+
+**Read again nine hours later, after the owner had gone on dictating into it:**
+515 lines, 515 puts, still not one tombstone, and 1,250,320 bytes — four
+dictations cost four appended lines and 7,366 bytes, and nothing rewrote the
+file.
+
+**And the shard cache was caught mid-lag, which is the best evidence it could
+have given.** `2026/08` carried a directory stamp identical to its tally, so its
+477 came from the cache without a single stat. `2026/08/19` did not:
+`1787137312448886267` on the directory against `1787137150570474992` recorded,
+tally saying seven files where the directory holds eight. 477 + 8 = **485**, and
+485 is every `.md` in the store. **A stale shard that says it is stale is the
+whole design** — the next read recounts that one directory and no other, and no
+reading in between was ever wrong, because the number was never taken from a
+tally whose stamp had moved.
+
+### Stage G's count of dropped fields was corrected, and one copy had been missed
+
+Stage G recorded *fifteen fields no screen reads*. Counted off the structs: the
+entry carries **40** fields and `TranscriptionHistorySummary` **25**, so 19 are
+not carried across — and three of those nineteen are carried in cut form rather
+than dropped, `raw_transcript` and `transformed_transcript` as 160-character
+previews and `work_mode` as `processing_mode`. That leaves **sixteen left off
+entirely.**
+
+`ARCHITECTURE.md` and `SPEC.md` were corrected when Stage H opened;
+`IMPLEMENTATION.md`'s row still said fifteen and is corrected with this record.
+**The Stage G section above keeps its own number**, because it is the record of
+what that session measured — the same reason the 7-versus-365 finding sits there
+rather than being edited away.
+
+### The trap this page documents, walked into with the shell's own state
+
+`cd src-tauri && cargo test` leaves a persistent shell inside `src-tauri`. A
+later `touch src/lib.rs`, meant for the frontend, was therefore
+`src-tauri/src/lib.rs`, and **the running dev host rebuilt and restarted.** No
+file content changed and git never saw it. Rule 3 under *Rules that still have
+teeth here* says to batch anything under `src-tauri/` and to say out loud that a
+rebuild is coming; what it did not say is that the path you type is not the path
+you touch once a command has moved the shell. Absolute paths, or a `cd` back.
+
 ## The sequence
 
 **Stage A — the surface, on what already reads.** Nothing here is blocked.
@@ -1426,10 +1546,11 @@ and the mechanism is
 [ADR 0242](../decisions/0242-the-journal-replays-into-a-list-the-archive-counts-itself-by-day-stamps-and-the-byte-that-is-bounded-is-the-content-byte.md).
 Read the record sections above before anything else, in
 particular the A3/A4/A5 one, *What the readings actually measure*, the Stage C
-one, the Stage D one, the Stage E one and the Stage G one: all six carry
-findings that are not in the tree's own comments — Stage G's include a premise
-of the owner's brief that was half wrong, and the correction is where the work
-went.
+one, the Stage D one, the Stage E one, the Stage G one and the Stage H one: all
+seven carry findings that are not in the tree's own comments — Stage G's include
+a premise of the owner's brief that was half wrong, and the correction is where
+the work went; Stage H's include the one path in this area that no test covers,
+watched on the live store instead.
 
 Work in the repo root on `main`. Do not create a branch. **Seven other tracks
 work in the same tree** — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so
