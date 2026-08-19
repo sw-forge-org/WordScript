@@ -1563,11 +1563,13 @@ table, and Stage H is what closed it.
 
 **Validation:** `npm test`, `npm run build`, and `cd src-tauri && cargo test` if
 Rust moved. Quote the counts as a delta against the baselines you measure at the
-start. Baselines at the close of Stage F: **945 frontend cases over 56 files**
-and **997 Rust cases** — three of the five new Rust cases and one of the three
-new frontend cases are another track's, landed in the tree during this session,
-so measure your own start rather than trusting these. Run `npm audit` if anything lands in `package.json`; the
-intent is that nothing does.
+start. Baselines at the close of Stage H: **955 frontend cases over 57 files**
+and **1022 Rust cases**, both measured on the commit that closed the stage.
+**They are a sanity check and not a baseline**, because seven other tracks write
+into this tree: Stage F closed with three of its five new Rust cases and one of
+its three new frontend cases belonging to one of them, counted as its own until
+the log said otherwise. Measure your own start. Run `npm audit` if anything
+lands in `package.json`; the intent is that nothing does.
 
 **Before you stop**, write your record into this page above the sequence, update
 the rows you closed, write the next ADR in the track's range, and write the next
