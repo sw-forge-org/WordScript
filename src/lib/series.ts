@@ -28,11 +28,11 @@
 import {
   ledgerSpeaksFrom,
   ledgerTotals,
+  TURNAROUND_BUCKET_MS,
   TYPING_BASELINE_WPM,
   type ActivityLedger,
   type LedgerDay,
 } from "./activity";
-import type { TranscriptionHistoryEntry } from "@/types/history";
 
 /** The four grains a series may be read at. Days for *this week*, years for
  *  *this product* — and everything in between, which is what the owner asked
@@ -435,71 +435,64 @@ export function turnaroundBands(
 }
 
 export interface CauseRow {
+  /** The ledger's own key, `provider/model`. Used as a React key and never
+   *  split back apart — a model id may contain a slash. */
   key: string;
-  /** The model as the record spells it, or the provider where a record kept no
+  /** The model as the record spelled it, or the provider where a record kept no
    *  model name. Never prettified: this is an id the reader can look up. */
   model: string;
   provider: string;
   runs: number;
-  /** Milliseconds, the exact middle of this group's own waits — not read off
-   *  the ledger's 25 ms buckets, because the records carry the real numbers. */
+  /** Milliseconds, at the bucket's lower edge — the SAME axis as the bands
+   *  drawn above the list, so a row can never disagree with the band it falls
+   *  in (ADR 0181, one structure further out). */
   median: number;
 }
 
 /**
- * WHAT THE WAIT CAME FROM, PER MODEL, OFF THE RECORDS THEMSELVES.
+ * WHAT THE WAIT CAME FROM, PER MODEL, OFF THE LEDGER.
  *
- * **THE LEDGER CANNOT ANSWER THIS AND WILL NOT LEARN TO.** Its histogram is
- * counts per 25 ms and nothing else — no model, no provider, no profile — so
- * *what causes it* has exactly one source in this product: the history records,
- * each of which carries `provider`, `model` and its own `turnaround_ms`.
+ * **THIS USED TO READ THE HISTORY RECORDS AND WAS THE ONE READING ON HOME THAT
+ * WAS NOT ALL-TIME.** The records are the only place `provider`, `model` and
+ * `turnaround_ms` ever sat together, so grouping them was the only way to answer
+ * *what causes it* — and history is capped, which at the reporting machine's
+ * rate of about 196 dictations a day is roughly five days. A lifetime median sat
+ * above a five-day list, the two disagreed, and the surface had to explain the
+ * discrepancy rather than remove it.
  *
- * **WHICH MAKES THIS THE ONE READING ON THE BLOCK THAT IS NOT ALL-TIME**, and
- * the caller has to say so. History is pruned by age and by count; the ledger is
- * not. The two figures WILL disagree — on the reporting machine the histogram
- * holds 346 timed runs and the records 347 — and a reader who is not told why is
- * looking at a defect.
- *
- * A RETRY IS NOT A RUN. It re-times a transform over words already spoken, and
- * counting it would credit the model twice for one dictation — the same rule the
- * ledger applies at its own funnel.
+ * **THE LEDGER LEARNED TO ANSWER IT (ADR 0240).** A distribution per recogniser
+ * is exactly what that file is for — counts, no text, no growth with use — and
+ * it costs about eight hundred bytes per model. The retry rule, the empty-model
+ * fallback and the "no clock, no row" rule all moved into the runtime funnel
+ * with it, which is why none of them appears here any more: this function now
+ * shapes a map for a list and decides nothing.
  *
  * Sorted by how much of the record each group is, not by how slow it is. The
  * slowest row is often one run: this machine's whole tail above five seconds is
  * a SINGLE dictation on a second vendor, and sorting by median would have put
  * that one run at the top as though it were the finding.
  */
-export function turnaroundCauses(
-  records: TranscriptionHistoryEntry[] | null | undefined,
-): CauseRow[] {
-  const groups = new Map<string, { model: string; provider: string; waits: number[] }>();
-  for (const record of records ?? []) {
-    if (record.retry_of) continue;
-    const wait = record.turnaround_ms;
-    if (wait === null || wait === undefined || !Number.isFinite(wait) || wait < 0) continue;
-    const provider = (record.provider ?? "").trim();
-    const model = (record.model ?? "").trim() || provider;
-    if (!model) continue;
-    const key = `${provider} / ${model}`;
-    const group = groups.get(key) ?? { model, provider, waits: [] };
-    group.waits.push(wait);
-    groups.set(key, group);
+export function turnaroundCauses(ledger: ActivityLedger | null | undefined): CauseRow[] {
+  const causes = ledger?.turnaround_causes;
+  if (!causes) return [];
+
+  const rows: CauseRow[] = [];
+  for (const [key, cause] of Object.entries(causes)) {
+    const buckets = cause?.buckets ?? [];
+    const runs = buckets.reduce((sum, count) => sum + (count ?? 0), 0);
+    if (runs === 0) continue;
+    const median = bucketQuantile(buckets, TURNAROUND_BUCKET_MS, 0.5);
+    if (median === null) continue;
+    rows.push({
+      key,
+      model: cause.model || cause.provider,
+      provider: cause.provider,
+      runs,
+      median,
+    });
   }
 
-  return [...groups.entries()]
-    .map(([key, group]) => {
-      const waits = [...group.waits].sort((left, right) => left - right);
-      const middle = Math.floor(waits.length / 2);
-      return {
-        key,
-        model: group.model,
-        provider: group.provider,
-        runs: waits.length,
-        median:
-          waits.length % 2 === 1 ? waits[middle] : (waits[middle - 1] + waits[middle]) / 2,
-      };
-    })
-    .sort((left, right) => right.runs - left.runs || right.median - left.median);
+  return rows.sort((left, right) => right.runs - left.runs || right.median - left.median);
 }
 
 /**

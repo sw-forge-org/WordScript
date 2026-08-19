@@ -26,7 +26,6 @@ import {
 } from "@/lib/series";
 import { CATALOGUE } from "@/lib/modelCatalogue";
 import { Icon } from "./Icon";
-import type { TranscriptionHistoryEntry } from "@/types/history";
 import { MetricChart, type ChartBar } from "./MetricChart";
 import { SegmentControl } from "./SegmentControl";
 
@@ -261,10 +260,13 @@ function RateDetail({
  * answer on this machine is worth the block on its own — one dictation on a
  * second vendor took 5.8 s and is the whole tail the bands above end in.
  *
- * IT COVERS LESS THAN EVERY FIGURE ABOVE IT AND SAYS SO IN ITS OWN HEAD. The
- * histogram is all-time; these are the records still on the machine, which
- * pruning by age and by count keeps shorter. Two numbers that must differ, with
- * the reason written where they meet (ADR 0172).
+ * IT COVERS EVERYTHING THE HISTOGRAM ABOVE IT DOES, AND THAT IS NEW (ADR 0240).
+ * The first build read the history records — the only place a wait and the model
+ * that produced it ever sat together — and history is capped at a thousand,
+ * which here is about five days. So a lifetime median stood above a five-day
+ * list, the two disagreed by design, and the head had to say so. The ledger now
+ * keeps the same distribution split by recogniser, the rows sum to the bands,
+ * and the sentence explaining the discrepancy could go rather than be reworded.
  */
 /**
  * A VENDOR'S WRITTEN NAME, and the raw id where the catalogue has never heard
@@ -279,12 +281,11 @@ function vendorName(id: string): string {
   return CATALOGUE.providers.find((entry) => entry.id === id)?.label ?? id;
 }
 
-function Causes({ records }: { records?: TranscriptionHistoryEntry[] }) {
-  const rows = useMemo(() => turnaroundCauses(records), [records]);
-  /* NOTHING WHILE IT IS LOADING, AND NOTHING WHERE THERE IS NOTHING. `undefined`
-     is the read that has not come back yet; an empty list is a machine whose
-     remaining records carry no wait. Neither is a table with no rows. */
-  if (records === undefined) return null;
+function Causes({ ledger }: { ledger: ActivityLedger | null }) {
+  const rows = useMemo(() => turnaroundCauses(ledger), [ledger]);
+  /* NOTHING WHERE THERE IS NOTHING. `null` is the ledger that has not been read
+     yet; an empty map is a machine that has dictated only on builds that never
+     recorded a pair. Neither is a table with no rows. */
   const timed = rows.reduce((sum, row) => sum + row.runs, 0);
   if (timed === 0) return null;
 
@@ -292,7 +293,9 @@ function Causes({ records }: { records?: TranscriptionHistoryEntry[] }) {
     <div className="ws-metric-causes">
       <p className="ws-metric-causes-head">
         <span>Which model heard it</span>
-        <span>{timed} records still on this machine</span>
+        <span>
+          {timed} {timed === 1 ? "run" : "runs"} all time
+        </span>
       </p>
       <ul>
         {rows.slice(0, 5).map((row) => (
@@ -324,13 +327,7 @@ function Causes({ records }: { records?: TranscriptionHistoryEntry[] }) {
   );
 }
 
-function TurnaroundDetail({
-  ledger,
-  records,
-}: {
-  ledger: ActivityLedger | null;
-  records?: TranscriptionHistoryEntry[];
-}) {
+function TurnaroundDetail({ ledger }: { ledger: ActivityLedger | null }) {
   const median = ledgerMedianTurnaround(ledger);
   const p90 = bucketQuantile(ledger?.turnaround_buckets, TURNAROUND_BUCKET_MS, 0.9);
   const runs = (ledger?.turnaround_buckets ?? []).reduce((sum, count) => sum + count, 0);
@@ -370,19 +367,24 @@ function TurnaroundDetail({
           { label: "Runs timed", value: String(runs) },
         ]}
       />
-      <Causes records={records} />
+      <Causes ledger={ledger} />
       {/* NO HISTORY, AND THE REASON IS THE RECORD RATHER THAN THE SCREEN — plus
           the one thing the list above cannot say for itself (ADR 0182). The
           clock stops when the TEXT exists, so a mode that rewrites what you said
           has a second model inside the same wait, and the record names only the
           one that heard you. The row is still where the wait is charged; it is
-          not always where all of it was spent. */}
+          not always where all of it was spent.
+
+          THE SECOND HALF OF THIS NOTE USED TO EXPLAIN A DISCREPANCY AND IS GONE
+          (ADR 0240). It said the list covered fewer runs than the spread because
+          it read the pruned records; the ledger answers it now, so there is
+          nothing left to excuse. A sentence apologising for a defect outlives
+          the defect unless somebody deletes it. */}
       <p className="ws-metric-note">
         The ledger keeps this one as a spread rather than a history — a day row
-        holds no wait — so the list above reads the records themselves, which
-        pruning keeps shorter than the spread. The wait runs from you stopping to
-        the text being ready, so where a mode rewrote the text a second model is
-        inside it that the record does not name.
+        holds no wait. The wait runs from you stopping to the text being ready,
+        so where a mode rewrote the text a second model is inside it that the
+        record does not name.
       </p>
     </>
   );
@@ -444,7 +446,6 @@ function LanguagesDetail({ ledger }: { ledger: ActivityLedger | null }) {
 export function MetricDetail({
   metric,
   ledger,
-  records,
   baseline,
   onBack,
   /** The moment the series ends at. A prop for the same reason the calendar has
@@ -454,11 +455,6 @@ export function MetricDetail({
 }: {
   metric: MetricKey;
   ledger: ActivityLedger | null;
-  /** The history records, for the one reading the ledger cannot produce: which
-   *  model each wait came from. `undefined` until the read comes back, and the
-   *  block that uses it draws nothing until then — it is the only prop on this
-   *  view that is not all-time, so only the view that needs it is given it. */
-  records?: TranscriptionHistoryEntry[];
   baseline: number;
   onBack: () => void;
   now?: number;
@@ -507,7 +503,7 @@ export function MetricDetail({
           now={now}
         />
       )}
-      {metric === "turnaround" && <TurnaroundDetail ledger={ledger} records={records} />}
+      {metric === "turnaround" && <TurnaroundDetail ledger={ledger} />}
       {metric === "languages" && <LanguagesDetail ledger={ledger} />}
     </div>
   );

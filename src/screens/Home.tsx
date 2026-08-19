@@ -253,9 +253,8 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      drill-down is a place the reader went, and a window that reopens three
      screens deep into a chart nobody asked for again is furniture. */
   const [metric, setMetric] = useState<MetricKey | null>(null);
-  const { entries, remove, retry, reveal, acknowledgeFallback } = useTranscriptionHistory(
-    Boolean(runtime?.active),
-  );
+  const { entries, deliveredText, remove, retry, reveal, acknowledgeFallback } =
+    useTranscriptionHistory(Boolean(runtime?.active));
   /* THE ALL-TIME FIGURES COME FROM THE LEDGER AND NEVER FROM `entries`. History
      is pruned by age and by count on every read, so a lifetime total summed from
      it grows, sticks at the limit and then runs backwards. The ledger keeps one
@@ -385,7 +384,6 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
         .filter((entry) => !trash.hides(entry.id))
         .slice(0, RECENT_LIMIT)
         .map((entry) => {
-        const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
         return {
           id: entry.id,
           /* HISTORY'S DERIVATION, NOT A SECOND ONE (ADR 0078). Home lists the
@@ -402,7 +400,7 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
           title: titleOf(entry, "title"),
           meta: [
             relativeTime(entry.created_at_ms),
-            PROCESSING_MODE_LABELS[entry.work_mode?.processing_mode ?? "auto"],
+            PROCESSING_MODE_LABELS[entry.processing_mode ?? "auto"],
             entry.active_profile ?? "No profile recorded",
           ],
           badges: badgesFor(entry),
@@ -422,14 +420,24 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
           /* The same six commands History's rows call. Home lists the same
              record on the same builder, so it acts the same way — one builder
              was the point of `TranscriptRow` existing. */
-          copy: () => void navigator.clipboard.writeText(text),
+          /* THE WHOLE TEXT, FETCHED ON THE PRESS (ADR 0240). The row carries a
+             160-character preview and copying that would copy a truncated
+             dictation — History's rule, for the same reason. */
+          copy: () =>
+            void deliveredText(entry.id).then((text) => {
+              if (text === null) return;
+              return navigator.clipboard.writeText(text);
+            }),
           revealFile: () => void reveal(entry.transcript_path),
           retry: () => void retry(entry.id),
           /* Held back, not carried out (ADR 0195). Same rule as History's. */
           remove: () => trash.request(entry.id, titleOf(entry, "title")),
           restore: () =>
-            void invoke("insert_text_native", {
-              request: { text, source: "history_restore", corrected: entry.corrected },
+            void deliveredText(entry.id).then((text) => {
+              if (text === null) return;
+              return invoke("insert_text_native", {
+                request: { text, source: "history_restore", corrected: entry.corrected },
+              });
             }),
         };
       })
@@ -549,15 +557,14 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                  the counter it was opened from. */
               <MetricDetail
                 metric={metric}
+                /* ONE SOURCE, AND IT USED TO BE TWO. The turnaround view also
+                   answers WHICH MODEL each wait came from, and until ADR 0240
+                   the only place a wait and a model sat together was a history
+                   record — so this block was handed `entries` as well, pruned,
+                   and had to say where it showed them. The ledger keeps that
+                   split itself now, so the detail view reads exactly what every
+                   other reading on this block reads. */
                 ledger={ledger}
-                /* THE RECORDS, FOR THE ONE READING THE LEDGER CANNOT PRODUCE.
-                   Everything else on this block is all-time and comes from the
-                   ledger for the reason two comments above; the turnaround view
-                   also answers WHICH MODEL each wait came from, and the ledger's
-                   histogram carries no model. These are the same `entries` the
-                   screen already holds — pruned, which the block says where it
-                   shows them (ADR 0236). */
-                records={entries}
                 baseline={baseline}
                 onBack={() => setMetric(null)}
               />
@@ -739,7 +746,6 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
           <Card>
             <OwedList>
               {owed.map((entry) => {
-                const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
                 const scratchpad = entry.insert_mode === "scratchpad_fallback";
                 return (
                   <Owed
@@ -770,8 +776,19 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
                         <Button
                           icon={<Icon name="restore" />}
                           onClick={() => {
-                            void invoke("insert_text_native", {
-                              request: { text, source: "home_owed", corrected: entry.corrected },
+                            /* The whole text, not the row's preview (ADR 0240).
+                               This is the button that PLACES it — a truncated
+                               restore would be the loss the panel exists to
+                               prevent. */
+                            void deliveredText(entry.id).then((text) => {
+                              if (text === null) return;
+                              return invoke("insert_text_native", {
+                                request: {
+                                  text,
+                                  source: "home_owed",
+                                  corrected: entry.corrected,
+                                },
+                              });
                             });
                             void acknowledgeFallback(entry.id);
                           }}

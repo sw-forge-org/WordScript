@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { HomeScreen } from "./Home";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
-import type { TranscriptionHistoryEntry } from "@/types/history";
+import type {
+  TranscriptionHistoryEntry,
+  TranscriptionHistorySummary,
+} from "@/types/history";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
@@ -41,7 +44,7 @@ beforeEach(() => {
     if (command === "resolve_current_processing_mode") {
       return { mode: "cleanup", auto_detected: false, detected_from: null };
     }
-    if (command === "transcription_history_entries") return [];
+    if (command === "transcription_history_summaries") return [];
     if (command === "read_activity_ledger") return { started_on: null, days: {} };
     if (command === "transcription_history_storage_status") return { path: "/tmp/history.json" };
     return undefined;
@@ -203,17 +206,57 @@ function wordsIn(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+/** THE RUNTIME'S OWN DERIVATION (ADR 0240). The cases here write records —
+ *  which is what the ledger is folded from — and the list is sent the summary
+ *  the runtime would have made of each. Building the row by hand instead would
+ *  let a case state a preview its own record could not produce. */
+function summaryOf(entry: TranscriptionHistoryEntry): TranscriptionHistorySummary {
+  const heard = entry.raw_transcript ?? "";
+  const written = entry.transformed_transcript ?? heard;
+  return {
+    id: entry.id,
+    created_at_ms: entry.created_at_ms,
+    status: entry.status,
+    source: entry.source,
+    retry_of: entry.retry_of,
+    provider: entry.provider,
+    model: entry.model,
+    active_profile: entry.active_profile,
+    processing_mode: entry.work_mode?.processing_mode ?? null,
+    title: entry.title,
+    transcript_path: entry.transcript_path,
+    corrected: entry.corrected,
+    applied_rules: entry.applied_rules,
+    transform_warning: entry.transform_warning,
+    insert_mode: entry.insert_mode,
+    pasted: entry.pasted,
+    fallback_reason: entry.fallback_reason,
+    fallback_acknowledged: entry.fallback_acknowledged,
+    error: entry.error,
+    audio_path: entry.audio_path,
+    capture_integrity: entry.capture_integrity,
+    capture_stop_reason: entry.capture_stop_reason ?? null,
+    heard_preview: heard.trim().slice(0, 160),
+    written_preview: written.trim().slice(0, 160),
+    transcripts_identical: heard === written,
+  };
+}
+
 /** The base mock with a chosen set of records behind it. */
 function mockRuntimeHistory(
   entries: TranscriptionHistoryEntry[],
   languages: Record<string, number> = {},
 ) {
-  invoked.mockImplementation(async (command: string) => {
+  invoked.mockImplementation(async (command: string, args?: unknown) => {
+    if (command === "transcription_history_record") {
+      const id = (args as { id?: string } | undefined)?.id;
+      return entries.find((entry) => entry.id === id) ?? null;
+    }
     if (command === "native_trigger_status") return TRIGGER;
     if (command === "resolve_current_processing_mode") {
       return { mode: "cleanup", auto_detected: false, detected_from: null };
     }
-    if (command === "transcription_history_entries") return entries;
+    if (command === "transcription_history_summaries") return entries.map(summaryOf);
     if (command === "read_activity_ledger") return ledgerFor(entries, languages);
     if (command === "transcription_history_storage_status") return { path: "/tmp/history.json" };
     if (command === "transcript_store_status") {

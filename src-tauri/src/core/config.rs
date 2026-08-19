@@ -399,9 +399,42 @@ pub const TYPING_BASELINE_RANGE: (u32, u32) = (10, 200);
 /// Nobody reasons about their own privacy in units of *the last two hundred
 /// dictations* — they reason in months. So the months stayed a setting, the
 /// count became the index's own limit, and the screen states it rather than
-/// offering it. A thousand transcripts is a few hundred kilobytes of text, so
-/// this bounds the index rather than the disk.
-pub const HISTORY_CEILING: usize = 1000;
+/// offering it.
+///
+/// **IT WAS A THOUSAND AND IT WAS SET AGAINST THE WRONG COST (ADR 0240).** The
+/// argument above ends "a thousand transcripts is a few hundred kilobytes of
+/// text, so this bounds the index rather than the disk" — and disk was never
+/// what bound it. The index was rewritten whole on every dictation, read whole
+/// every five seconds by a list showing ten rows, and carried every field of
+/// every record both ways. At the reporting machine's 196 dictations a day a
+/// thousand records is FIVE DAYS, and a reader who set ninety days got five.
+///
+/// THE NUMBER IS WHAT THE PER-DICTATION WRITE COSTS, and nothing else now
+/// depends on it: the all-time figures moved to the ledger (ADR 0176), the
+/// turnaround causes with them (ADR 0240), and the transcripts stopped being
+/// deleted with the index (ADR 0237) — so a record aging out of the index loses
+/// its metadata and its retry, never its text.
+///
+/// Measured on the reporting machine, release build, serialise plus atomic
+/// write, per dictation:
+///
+/// | records | index | per dictation |
+/// | --- | --- | --- |
+/// | 1,000 | 2.4 MB | 4.8 ms |
+/// | 2,000 | 4.8 MB | 9.2 ms |
+/// | 5,000 | 12.1 MB | 24.9 ms |
+/// | 10,000 | 24.3 MB | 59.4 ms |
+///
+/// FIVE THOUSAND. 25 ms against a 1,210 ms median turnaround is 2% — under the
+/// noise of the network call it follows — and it buys 25 days at 196 dictations
+/// a day, or eight months at twenty. Ten thousand doubles the cost to buy a
+/// reach nobody asked for.
+///
+/// PAST THAT THE FIX IS NOT A BIGGER NUMBER. Every term here is O(records) per
+/// dictation because the index is one JSON array rewritten whole; an append-only
+/// journal would make the write O(1) and delete this constant. That is a change
+/// to how the file works, not to a number in it.
+pub const HISTORY_CEILING: usize = 5000;
 
 /// The languages Translate offers, as ISO 639-1 codes paired with the English
 /// name the prompt uses.

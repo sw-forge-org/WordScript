@@ -19,7 +19,7 @@ use super::transform::{finalize_with_text_rules, NativeTransformConfig, NativeTr
 
 /// A capacity hint for the deque and the count the retention tests drive the
 /// policy with. NOT the product's cap: since ADR 0185 that is one value,
-/// `config::HISTORY_CEILING`, and it is not a setting. Allocating a thousand
+/// `config::HISTORY_CEILING`, and it is not a setting. Allocating five thousand
 /// records up front for a history that usually holds a handful is the reason
 /// this stays its own smaller number.
 const DEFAULT_HISTORY_LIMIT: usize = 200;
@@ -196,6 +196,134 @@ pub struct TranscriptionHistoryEntry {
     /// (2026-08-18).
     #[serde(default)]
     pub capture_stop_reason: Option<String>,
+}
+
+/// How much of a transcript the LIST is handed (ADR 0240).
+///
+/// A ROW SHOWS ONE LINE AND WAS SENT THE WHOLE DICTATION. The two transcripts
+/// are 667 bytes a record on the reporting machine — 27% of the index — and the
+/// longest single one is 4,192 characters, so the term is not merely large but
+/// UNBOUNDED: one long dictation costs the list four kilobytes for a heading it
+/// truncates anyway. That is the term that made a thousand-record ceiling feel
+/// necessary.
+///
+/// A hundred and sixty because the median delivered text is 135 characters, so
+/// most rows carry their whole text and read exactly as before; the ones that do
+/// not were being cut by the heading's own width regardless. The full text is
+/// one `transcription_history_record` away and every surface that needs it —
+/// the raw panel, Copy, Restore — asks for it by id.
+const PREVIEW_CHARS: usize = 160;
+
+/// The first `PREVIEW_CHARS` characters, cut on a CHARACTER and never on a byte.
+/// German dictation is most of this machine's corpus and `str::truncate` on a
+/// byte index inside `ü` panics.
+fn preview_of(text: Option<&str>) -> String {
+    let text = text.unwrap_or_default().trim();
+    if text.chars().count() <= PREVIEW_CHARS {
+        return text.to_string();
+    }
+    text.chars().take(PREVIEW_CHARS).collect()
+}
+
+/// ONE RECORD AS A LIST ROW NEEDS IT, WHICH IS NOT THE WHOLE RECORD (ADR 0240).
+///
+/// **THE LIST USED TO BE SENT EVERY FIELD OF EVERY RECORD.** 2,452 bytes a row
+/// on the reporting machine, of which the frontend read about a thousand: the
+/// microphone levels, the recovery status, the clipboard restore, the local
+/// decoding parameters, the provider profile and the spoken-language verdict are
+/// all read by the runtime and by NOTHING on a screen — they are stored because
+/// the record has to hold them and shipped because nobody had ever asked which
+/// half was wanted.
+///
+/// THE FIELDS STAY ON DISK. This is a wire shape, not a storage decision: the
+/// record keeps everything it kept, the export exports everything it exported,
+/// and a later screen that needs a dropped field adds it back here. Confusing
+/// the two would have thrown away measurements that took a release each to get
+/// right.
+///
+/// `work_mode` IS ONE FIELD HERE AND WAS A SNAPSHOT. The whole profile work mode
+/// travelled on every row — 362 bytes — and the two surfaces that read it read
+/// `processing_mode` and nothing else. Sixty bytes.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TranscriptionHistorySummary {
+    pub id: String,
+    pub created_at_ms: u64,
+    pub status: TranscriptionHistoryStatus,
+    pub source: TranscriptionHistorySource,
+    pub retry_of: Option<String>,
+    /// Which lane produced it. Not read by a surface today; kept because a list
+    /// that cannot say where a row came from is a list that needs changing
+    /// again, and the pair costs about forty bytes.
+    pub provider: String,
+    pub model: Option<String>,
+    pub active_profile: Option<String>,
+    /// `work_mode.processing_mode`, the only part of that snapshot any surface
+    /// reads.
+    pub processing_mode: Option<ProcessingMode>,
+    pub title: Option<String>,
+    pub transcript_path: Option<String>,
+    pub corrected: bool,
+    pub applied_rules: Vec<String>,
+    pub transform_warning: Option<String>,
+    pub insert_mode: Option<NativeInsertMode>,
+    pub pasted: Option<bool>,
+    pub fallback_reason: Option<String>,
+    pub fallback_acknowledged: bool,
+    pub error: Option<String>,
+    pub audio_path: Option<String>,
+    pub capture_integrity: Option<CaptureIntegrity>,
+    pub capture_stop_reason: Option<String>,
+    /// The recogniser's own text, cut to `PREVIEW_CHARS`. Empty where there was
+    /// none — which is also how a surface tells that there is nothing to retry
+    /// from and nothing to copy.
+    pub heard_preview: String,
+    /// The delivered text — transformed where a mode wrote one, otherwise the
+    /// same as `heard_preview`. Same cut.
+    pub written_preview: String,
+    /// Whether the two FULL texts are identical, decided here because a
+    /// comparison of two cut strings would call a record unchanged whose tails
+    /// differ. The raw panel's *the AI stage rewrote it* hangs off this.
+    pub transcripts_identical: bool,
+}
+
+impl TranscriptionHistorySummary {
+    fn of(entry: &TranscriptionHistoryEntry) -> Self {
+        let heard = entry.raw_transcript.as_deref().unwrap_or_default();
+        let written = entry
+            .transformed_transcript
+            .as_deref()
+            .unwrap_or(heard);
+        Self {
+            id: entry.id.clone(),
+            created_at_ms: entry.created_at_ms,
+            status: entry.status.clone(),
+            source: entry.source.clone(),
+            retry_of: entry.retry_of.clone(),
+            provider: entry.provider.clone(),
+            model: entry.model.clone(),
+            active_profile: entry.active_profile.clone(),
+            processing_mode: entry
+                .work_mode
+                .as_ref()
+                .map(|mode| mode.processing_mode.clone()),
+            title: entry.title.clone(),
+            transcript_path: entry.transcript_path.clone(),
+            corrected: entry.corrected,
+            applied_rules: entry.applied_rules.clone(),
+            transform_warning: entry.transform_warning.clone(),
+            insert_mode: entry.insert_mode.clone(),
+            pasted: entry.pasted,
+            fallback_reason: entry.fallback_reason.clone(),
+            fallback_acknowledged: entry.fallback_acknowledged,
+            error: entry.error.clone(),
+            audio_path: entry.audio_path.clone(),
+            capture_integrity: entry.capture_integrity.clone(),
+            capture_stop_reason: entry.capture_stop_reason.clone(),
+            heard_preview: preview_of(Some(heard)),
+            written_preview: preview_of(Some(written)),
+            transcripts_identical: heard == written,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -537,15 +665,40 @@ fn load_history_entries() -> VecDeque<TranscriptionHistoryEntry> {
     entries
 }
 
+/// The whole index, written on every dictation. Two things about that (ADR 0240).
+///
+/// **IT IS NOT PRETTY-PRINTED ANY MORE.** `to_string_pretty` cost this file 16%
+/// in indentation and newlines — 229 kB of the reporting machine's 1.4 MB — for
+/// a file nobody opens by hand. `activity.json` keeps its
+/// `BTreeMap` ordering precisely so a human CAN read it; this one is a machine
+/// index of several hundred records and the export command exists for the case
+/// where somebody wants to look.
+///
+/// **AND IT NO LONGER TEARS.** `fs::write` truncates the file and then writes
+/// into it, so a crash, a kill or a full disk between those two leaves a
+/// half-written index — which fails to parse, which loses every record on the
+/// machine. Writing a sibling and renaming it makes the replacement atomic on
+/// every filesystem this product runs on: a reader sees the old file or the new
+/// one and never a torn one. The temp file lives beside the target rather than
+/// in `/tmp`, because a rename across filesystems is a copy and is not atomic.
 fn save_history_entries(entries: &VecDeque<TranscriptionHistoryEntry>) -> Result<(), String> {
     let path = resolved_history_file_path();
-    let raw = serde_json::to_string_pretty(entries).map_err(|error| error.to_string())?;
+    let raw = serde_json::to_string(entries).map_err(|error| error.to_string())?;
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
 
-    std::fs::write(path, raw).map_err(|error| error.to_string())
+    let temporary = path.with_extension("json.tmp");
+    std::fs::write(&temporary, raw).map_err(|error| error.to_string())?;
+    std::fs::rename(&temporary, &path).map_err(|error| {
+        /* The rename is what makes it atomic, so a failure here leaves a stray
+           sibling rather than a torn index. Sweep it: the next write would
+           overwrite it anyway, and a leftover `.tmp` beside a data file is the
+           kind of thing a reader opens Privacy & Data to ask about. */
+        let _ = std::fs::remove_file(&temporary);
+        error.to_string()
+    })
 }
 
 fn next_history_id(created_at_ms: u64, entries_len: usize) -> String {
@@ -749,6 +902,13 @@ fn record_entry_with_work_mode(
                 .map(|integrity| integrity.recorded_seconds),
             speech_seconds: entry.speech_seconds,
             turnaround_ms: entry.turnaround_ms,
+            /* WHO ANSWERED, so the turnaround histogram can be split by the
+               thing that caused it (ADR 0240). The record already names both;
+               reading them here rather than re-resolving the active profile is
+               the same argument as `language` below — the funnel counts what
+               the record says happened, never what the config currently says. */
+            provider: entry.provider.clone(),
+            model: entry.model.clone(),
             credited: mode_credits_typing(entry.effective_mode.as_ref()),
             /* THE VERDICT THE RECORD ALREADY CARRIES, not a second reading of
                the same text (ADR 0236). It was decided at the top of this
@@ -797,12 +957,61 @@ fn entries_snapshot() -> Result<Vec<TranscriptionHistoryEntry>, String> {
     Ok(store.entries.iter().cloned().collect())
 }
 
+/// The list, as summaries, WITHOUT CLONING A SINGLE RECORD (ADR 0240).
+///
+/// The old path was `entries_snapshot()` — which clones every entry out of the
+/// store — followed by a filter that dropped most of them again, followed by
+/// serde over the whole set. Two copies of 1.2 MB to answer a question about ten
+/// rows. This one holds the lock, prunes, and maps the entries it keeps straight
+/// into the wire shape.
+fn summaries_snapshot(
+    query: &TranscriptionHistoryQuery,
+) -> Result<Vec<TranscriptionHistorySummary>, String> {
+    let mut store = history_store().lock().map_err(|error| error.to_string())?;
+    ensure_loaded(&mut store);
+    prune_entries_for_runtime(&mut store.entries);
+
+    let filter = HistoryFilter::of(query);
+    let limit = query_limit(query).unwrap_or(usize::MAX);
+    Ok(store
+        .entries
+        .iter()
+        .filter(|entry| filter.admits(entry, query))
+        .take(limit)
+        .map(TranscriptionHistorySummary::of)
+        .collect())
+}
+
+/// Every summary the store holds, for the paths that mutate and then hand the
+/// list back. Same shape as the query command with no query.
+fn all_summaries(store: &TranscriptionHistoryStore) -> Vec<TranscriptionHistorySummary> {
+    store.entries.iter().map(TranscriptionHistorySummary::of).collect()
+}
+
 #[tauri::command]
-pub fn transcription_history_entries(
+pub fn transcription_history_summaries(
     query: Option<TranscriptionHistoryQuery>,
-) -> Result<Vec<TranscriptionHistoryEntry>, String> {
-    let entries = entries_snapshot()?;
-    Ok(filter_history_entries(entries, &query.unwrap_or_default()))
+) -> Result<Vec<TranscriptionHistorySummary>, String> {
+    summaries_snapshot(&query.unwrap_or_default())
+}
+
+/// ONE WHOLE RECORD, BY ID (ADR 0240).
+///
+/// The other half of the split: the list carries a 160-character preview, and
+/// the three surfaces that need the actual text — the raw panel, Copy, Restore —
+/// ask for the one record they are about. At most one at a time, against a list
+/// that used to ship all of them on a five-second timer.
+///
+/// `None` rather than an error for an id the store does not hold: the record may
+/// have been deleted or pruned between a row being drawn and somebody pressing
+/// a button on it, and that is a stale surface rather than a fault.
+#[tauri::command]
+pub fn transcription_history_record(
+    id: String,
+) -> Result<Option<TranscriptionHistoryEntry>, String> {
+    let mut store = history_store().lock().map_err(|error| error.to_string())?;
+    ensure_loaded(&mut store);
+    Ok(store.entries.iter().find(|entry| entry.id == id).cloned())
 }
 
 #[tauri::command]
@@ -820,7 +1029,7 @@ pub fn transcription_history_storage_status() -> Result<TranscriptionHistoryStor
 #[tauri::command]
 pub fn acknowledge_transcription_fallback(
     request: AcknowledgeFallbackRequest,
-) -> Result<Vec<TranscriptionHistoryEntry>, String> {
+) -> Result<Vec<TranscriptionHistorySummary>, String> {
     let mut store = history_store().lock().map_err(|error| error.to_string())?;
     ensure_loaded(&mut store);
     for entry in store.entries.iter_mut() {
@@ -829,11 +1038,11 @@ pub fn acknowledge_transcription_fallback(
         }
     }
     save_history_entries(&store.entries)?;
-    Ok(store.entries.iter().cloned().collect())
+    Ok(all_summaries(&store))
 }
 
 #[tauri::command]
-pub fn clear_transcription_history_entries() -> Result<Vec<TranscriptionHistoryEntry>, String> {
+pub fn clear_transcription_history_entries() -> Result<Vec<TranscriptionHistorySummary>, String> {
     let mut store = history_store().lock().map_err(|error| error.to_string())?;
     ensure_loaded(&mut store);
     // The record is the entry AND its file since ADR 0074. Clearing one and
@@ -848,7 +1057,7 @@ pub fn clear_transcription_history_entries() -> Result<Vec<TranscriptionHistoryE
 #[tauri::command]
 pub fn delete_transcription_history_entry(
     request: DeleteTranscriptionHistoryEntryRequest,
-) -> Result<Vec<TranscriptionHistoryEntry>, String> {
+) -> Result<Vec<TranscriptionHistorySummary>, String> {
     let mut store = history_store().lock().map_err(|error| error.to_string())?;
     ensure_loaded(&mut store);
     let removed: Vec<TranscriptionHistoryEntry> = store
@@ -860,7 +1069,7 @@ pub fn delete_transcription_history_entry(
     store.entries.retain(|entry| entry.id != request.id);
     save_history_entries(&store.entries)?;
     remove_transcript_files(&removed);
-    Ok(store.entries.iter().cloned().collect())
+    Ok(all_summaries(&store))
 }
 
 #[tauri::command]
@@ -1699,45 +1908,80 @@ fn prune_entries(
     dropped
 }
 
+/// The query, resolved once instead of per entry.
+///
+/// It exists because the filter now runs over BORROWED entries as well as owned
+/// ones (ADR 0240): the list builds summaries straight off the store without
+/// cloning a record, and the export still walks a snapshot it owns. One
+/// predicate, two callers, and no second place for a filter rule to drift.
+struct HistoryFilter {
+    provider: Option<String>,
+    profile: Option<String>,
+    search: Option<String>,
+}
+
+impl HistoryFilter {
+    fn of(query: &TranscriptionHistoryQuery) -> Self {
+        Self {
+            provider: normalized_filter(&query.provider),
+            profile: normalized_filter(&query.active_profile),
+            search: normalized_filter(&query.search),
+        }
+    }
+
+    fn admits(&self, entry: &TranscriptionHistoryEntry, query: &TranscriptionHistoryQuery) -> bool {
+        if let Some(provider) = &self.provider {
+            if !entry.provider.eq_ignore_ascii_case(provider) {
+                return false;
+            }
+        }
+        if let Some(status) = &query.status {
+            if &entry.status != status {
+                return false;
+            }
+        }
+        if let Some(source) = &query.source {
+            if &entry.source != source {
+                return false;
+            }
+        }
+        if let Some(profile) = &self.profile {
+            if !entry
+                .active_profile
+                .as_deref()
+                .map(|value| value.eq_ignore_ascii_case(profile))
+                .unwrap_or(false)
+            {
+                return false;
+            }
+        }
+        if query.include_errors_only && entry.error.as_deref().is_none() {
+            return false;
+        }
+        if let Some(search) = &self.search {
+            if !history_entry_matches_search(entry, search) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+fn query_limit(query: &TranscriptionHistoryQuery) -> Option<usize> {
+    query.limit.map(|value| value.clamp(1, 1000))
+}
+
 fn filter_history_entries(
     entries: Vec<TranscriptionHistoryEntry>,
     query: &TranscriptionHistoryQuery,
 ) -> Vec<TranscriptionHistoryEntry> {
-    let provider_filter = normalized_filter(&query.provider);
-    let profile_filter = normalized_filter(&query.active_profile);
-    let search_filter = normalized_filter(&query.search);
-    let limit = query.limit.map(|value| value.clamp(1, 1000));
-
+    let filter = HistoryFilter::of(query);
     let mut filtered = entries
         .into_iter()
-        .filter(|entry| match &provider_filter {
-            Some(provider) => entry.provider.eq_ignore_ascii_case(provider),
-            None => true,
-        })
-        .filter(|entry| match &query.status {
-            Some(status) => &entry.status == status,
-            None => true,
-        })
-        .filter(|entry| match &query.source {
-            Some(source) => &entry.source == source,
-            None => true,
-        })
-        .filter(|entry| match &profile_filter {
-            Some(active_profile) => entry
-                .active_profile
-                .as_deref()
-                .map(|value| value.eq_ignore_ascii_case(active_profile))
-                .unwrap_or(false),
-            None => true,
-        })
-        .filter(|entry| !query.include_errors_only || entry.error.as_deref().is_some())
-        .filter(|entry| match &search_filter {
-            Some(search) => history_entry_matches_search(entry, search),
-            None => true,
-        })
+        .filter(|entry| filter.admits(entry, query))
         .collect::<Vec<_>>();
 
-    if let Some(limit) = limit {
+    if let Some(limit) = query_limit(query) {
         filtered.truncate(limit);
     }
 
@@ -1929,10 +2173,11 @@ mod tests {
             None,
         );
 
-        let read_back = transcription_history_entries(None)
-            .expect("history entries")
-            .into_iter()
-            .find(|item| item.id == entry.id)
+        /* THE WHOLE RECORD, because `spoken_language` is one of the fields the
+           list shape does not carry (ADR 0240) — the runtime reads it, no screen
+           does, and this case is about what was STORED. */
+        let read_back = transcription_history_record(entry.id.clone())
+            .expect("history record")
             .expect("the entry we just wrote");
         assert_eq!(read_back.spoken_language.as_deref(), Some("en"));
 
@@ -2022,14 +2267,12 @@ mod tests {
             .expect("record history entry");
         }
 
-        let entries = transcription_history_entries(None).expect("history entries");
+        let entries = transcription_history_summaries(None).expect("history entries");
 
         assert_eq!(entries.len(), DEFAULT_HISTORY_LIMIT);
         assert!(path.is_file());
         assert_eq!(
-            entries
-                .last()
-                .and_then(|entry| entry.raw_transcript.as_deref()),
+            entries.last().map(|entry| entry.heard_preview.as_str()),
             Some("raw-5")
         );
     }
@@ -2123,7 +2366,7 @@ mod tests {
             .expect("delete history entry");
 
         assert_eq!(remaining.len(), 1);
-        assert_eq!(remaining[0].raw_transcript.as_deref(), Some("zwei"));
+        assert_eq!(remaining[0].heard_preview, "zwei");
     }
 
     #[test]
@@ -2209,7 +2452,7 @@ mod tests {
         })
         .expect("local runtime history entry");
 
-        let filtered = transcription_history_entries(Some(TranscriptionHistoryQuery {
+        let filtered = transcription_history_summaries(Some(TranscriptionHistoryQuery {
             provider: Some("local".to_string()),
             status: Some(TranscriptionHistoryStatus::Failed),
             source: Some(TranscriptionHistorySource::Retry),
@@ -2222,10 +2465,12 @@ mod tests {
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].provider, "local");
         assert_eq!(filtered[0].active_profile.as_deref(), Some("support"));
-        assert_eq!(
-            filtered[0].provider_profile.as_deref(),
-            Some("local-base-quality")
-        );
+        /* `provider_profile` is stored and not listed (ADR 0240), so the check
+           that it survived the write goes to the record rather than the row. */
+        let whole = transcription_history_record(filtered[0].id.clone())
+            .expect("history record")
+            .expect("the row names a record that exists");
+        assert_eq!(whole.provider_profile.as_deref(), Some("local-base-quality"));
     }
 
     #[test]
@@ -2608,6 +2853,111 @@ mod tests {
         }
     }
 
+    /// ADR 0240. The list is a wire shape and the record is storage; a case that
+    /// only checked the row would let the cut become a data loss silently.
+    #[test]
+    fn a_long_transcript_reaches_the_row_as_a_preview_and_the_record_whole() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("summary-preview");
+
+        /* GERMAN, ON PURPOSE. It is most of this machine's corpus and every
+           umlaut is two bytes, so a cut at a byte index inside one panics —
+           `PREVIEW_CHARS` counts characters for exactly this reason. */
+        let long = "Über Größen und Maße: ".repeat(40);
+        assert!(long.chars().count() > PREVIEW_CHARS);
+        let mut request = completed_request(&long);
+        request.raw_transcript = Some(long.clone());
+        let recorded = record_entry_with_work_mode(
+            request,
+            Some(TextProfileWorkMode {
+                processing_mode: ProcessingMode::Cleanup,
+                ..TextProfileWorkMode::default()
+            }),
+            None,
+        )
+        .expect("history entry");
+
+        let row = transcription_history_summaries(None)
+            .expect("history entries")
+            .into_iter()
+            .find(|entry| entry.id == recorded.id)
+            .expect("the entry we just wrote");
+        assert_eq!(row.heard_preview.chars().count(), PREVIEW_CHARS);
+        assert!(long.starts_with(&row.heard_preview));
+        assert!(row.transcripts_identical, "one text written twice");
+        /* The whole profile work mode was 362 bytes a row and two surfaces read
+           one field of it. */
+        assert_eq!(row.processing_mode, Some(ProcessingMode::Cleanup));
+
+        let whole = transcription_history_record(recorded.id.clone())
+            .expect("history record")
+            .expect("the row names a record that exists");
+        assert_eq!(whole.raw_transcript.as_deref(), Some(long.as_str()));
+    }
+
+    /// A short one is not cut at all, and a row whose texts differ says so —
+    /// the raw panel's *the AI stage rewrote it* hangs off that flag, and two
+    /// cut strings could agree where the full ones do not.
+    #[test]
+    fn a_short_transcript_is_its_own_preview_and_a_rewrite_is_visible() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("summary-short");
+
+        let recorded = record_entry(completed_request("Kurz und knapp.")).expect("history entry");
+
+        let row = transcription_history_summaries(None)
+            .expect("history entries")
+            .into_iter()
+            .find(|entry| entry.id == recorded.id)
+            .expect("the entry we just wrote");
+        assert_eq!(row.heard_preview, "Kurz und knapp. uh");
+        assert_eq!(row.written_preview, "Kurz und knapp.");
+        assert!(!row.transcripts_identical);
+    }
+
+    /// The record may be gone by the time a button on its row is pressed — the
+    /// surface is stale, which is not a fault to report.
+    #[test]
+    fn a_record_the_store_does_not_hold_is_nothing_rather_than_an_error() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("summary-missing");
+
+        let answer =
+            transcription_history_record("history-0-0".to_string()).expect("no error either way");
+        assert!(answer.is_none());
+    }
+
+    /// ADR 0240. `fs::write` truncates before it writes, so a crash between the
+    /// two loses every record on the machine; the write goes to a sibling and is
+    /// renamed into place.
+    #[test]
+    fn the_index_is_replaced_by_a_rename_and_leaves_no_scratch_file() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = prepare_test_history_path("atomic-write");
+
+        record_entry(completed_request("Eins.")).expect("history entry");
+
+        assert!(path.is_file());
+        assert!(
+            !path.with_extension("json.tmp").exists(),
+            "the scratch file is renamed away, not left beside the index",
+        );
+        let raw = std::fs::read_to_string(&path).expect("the index reads back");
+        assert!(
+            !raw.contains("\n  "),
+            "the index is compact — pretty printing cost 16% of the file",
+        );
+        serde_json::from_str::<Vec<TranscriptionHistoryEntry>>(&raw).expect("and it parses");
+    }
+
     #[test]
     fn a_recorded_transcript_is_also_a_file_and_the_entry_names_it() {
         let _guard = test_lock()
@@ -2642,7 +2992,7 @@ mod tests {
         request.capture_integrity = Some(short_capture());
         let recorded = record_entry(request).expect("history entry");
 
-        let read_back = transcription_history_entries(None)
+        let read_back = transcription_history_summaries(None)
             .expect("history entries")
             .into_iter()
             .find(|entry| entry.id == recorded.id)
@@ -2713,10 +3063,10 @@ mod tests {
         request.input_level = Some(quiet_input());
         let recorded = record_entry(request).expect("history entry");
 
-        let read_back = transcription_history_entries(None)
-            .expect("history entries")
-            .into_iter()
-            .find(|entry| entry.id == recorded.id)
+        /* Stored, not listed (ADR 0240): the microphone levels are 161 bytes a
+           row and the frontend has never read one off a history entry. */
+        let read_back = transcription_history_record(recorded.id.clone())
+            .expect("history record")
             .expect("the entry we just wrote");
         let level = read_back.input_level.expect("a level on the record");
 

@@ -640,7 +640,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                 copy of the number here would be the one to go stale. */}
             <Row
               label="The index's ceiling"
-              hint="Beyond this the oldest drops out, whatever the rule above says. It bounds the index, not your privacy — a thousand transcripts is a few hundred kilobytes of text."
+              hint="Beyond this the oldest drops out, whatever the rule above says. It bounds the index, not your transcript files — those keep their own rule below, and a record that ages out of the index still has its file."
               control={
                 <StatusBadge tone="plan">Newest {runtime.config.history_limit}</StatusBadge>
               }

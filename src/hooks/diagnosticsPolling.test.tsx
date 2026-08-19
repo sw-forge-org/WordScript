@@ -137,7 +137,7 @@ describe("diagnostics polling hooks", () => {
         return Promise.resolve({ root: "/tmp/WordScript/transcripts", exists: true });
       }
 
-      if (command === "transcription_history_entries") {
+      if (command === "transcription_history_summaries") {
         return backgroundRefresh.promise;
       }
 
@@ -151,7 +151,7 @@ describe("diagnostics polling hooks", () => {
     rerender({ active: true });
 
     expect(invokeMock).toHaveBeenCalledWith("transcription_history_storage_status");
-    expect(invokeMock).toHaveBeenCalledWith("transcription_history_entries", { query: {} });
+    expect(invokeMock).toHaveBeenCalledWith("transcription_history_summaries", { query: {} });
     expect(result.current.isLoading).toBe(false);
 
     await act(async () => {
@@ -167,7 +167,7 @@ describe("diagnostics polling hooks", () => {
   it("uses loading state for manual history refresh", async () => {
     const manualRefresh = deferred<TranscriptionHistoryEntry[]>();
     invokeMock.mockImplementation((command: string) => {
-      if (command === "transcription_history_entries") {
+      if (command === "transcription_history_summaries") {
         return manualRefresh.promise;
       }
 

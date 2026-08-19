@@ -1,19 +1,69 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
+import type { BackendEvent } from "../types/ipc";
 import type {
   ExportTranscriptionHistoryResponse,
   TranscriptionHistoryEntry,
   TranscriptionHistoryQuery,
   TranscriptionHistoryStorageStatus,
+  TranscriptionHistorySummary,
   TranscriptStoreStatus,
 } from "../types/history";
 
-const REFRESH_INTERVAL_MS = 5000;
+/**
+ * THE INDEX IS READ WHEN IT CHANGES, NOT ON A TIMER (ADR 0240).
+ *
+ * This hook polled `transcription_history_entries` every five seconds, with no
+ * limit, and compared the answer to the last one by `JSON.stringify` per entry.
+ * On the reporting machine that is 435 records and 1.27 MB over the bridge and
+ * through two full serialisations, twelve times a minute, for a file that only
+ * changes when somebody dictates. Home hangs on the same hook and needs four
+ * figures and a three-row list.
+ *
+ * The runtime already says when a record lands, on the channel `useRuntime`
+ * has listened to since the beginning. The events below are the ones that write
+ * one; a refresh too many is free, and an event this list does not know about
+ * would show up as a stale row rather than as a wrong one.
+ *
+ * AND A LOST EVENT MAY NOT STRAND THE LIST. `visibilitychange` is the second
+ * trigger — coming back to the window re-reads — which covers a dropped emit
+ * without reintroducing a clock. Every mutation this hook performs itself
+ * (delete, clear, retry, acknowledge) already refreshes on its own answer.
+ */
+const RECORD_WRITING_EVENTS = new Set(["transcription", "error", "empty"]);
 
-function areHistoryEntriesEqual(current: TranscriptionHistoryEntry[], next: TranscriptionHistoryEntry[]) {
+/**
+ * WHETHER THE LIST CHANGED, WITHOUT SERIALISING IT TWICE (ADR 0240).
+ *
+ * This compared every row by `JSON.stringify(entry) === JSON.stringify(next)`,
+ * which on the reporting machine is two full serialisations of 1.2 MB on every
+ * read — done for no other purpose than to decide whether to call `setEntries`.
+ *
+ * A ROW IS ITS ID AND THE THREE THINGS THAT CAN CHANGE UNDER IT. An id is minted
+ * from the moment it was written and never reused, so a list whose ids match in
+ * order is the same list of records; `fallback_acknowledged` moves when somebody
+ * dismisses, `title` when the naming call lands after the record, and `status`
+ * on a retry. Everything else on a summary is written once with the record. A
+ * field this misses would show as a stale row until the next event, not as a
+ * wrong one — and the previous version paid 1.2 MB a read to catch a case that
+ * has never happened.
+ */
+function areHistoryEntriesEqual(
+  current: TranscriptionHistorySummary[],
+  next: TranscriptionHistorySummary[],
+) {
   if (current.length !== next.length) return false;
 
-  return current.every((entry, index) => JSON.stringify(entry) === JSON.stringify(next[index]));
+  return current.every((entry, index) => {
+    const other = next[index];
+    return (
+      entry.id === other.id &&
+      entry.status === other.status &&
+      entry.title === other.title &&
+      entry.fallback_acknowledged === other.fallback_acknowledged
+    );
+  });
 }
 
 interface RefreshOptions {
@@ -35,7 +85,7 @@ function sanitizeQuery(query?: TranscriptionHistoryQuery): TranscriptionHistoryQ
 }
 
 export function useTranscriptionHistory(isActive: boolean) {
-  const [entries, setEntries] = useState<TranscriptionHistoryEntry[]>([]);
+  const [entries, setEntries] = useState<TranscriptionHistorySummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [storagePath, setStoragePath] = useState<string | null>(null);
@@ -83,7 +133,7 @@ export function useTranscriptionHistory(isActive: boolean) {
     try {
       const nextQuery = sanitizeQuery(query ?? activeQueryRef.current);
       activeQueryRef.current = nextQuery;
-      const next = await invoke<TranscriptionHistoryEntry[]>("transcription_history_entries", {
+      const next = await invoke<TranscriptionHistorySummary[]>("transcription_history_summaries", {
         query: nextQuery,
       });
       /* A RUNTIME THAT ANSWERS WITH ANYTHING BUT A LIST HAS NOT ANSWERED, and
@@ -122,7 +172,7 @@ export function useTranscriptionHistory(isActive: boolean) {
   const clear = useCallback(async () => {
     setIsLoading(true);
     try {
-      await invoke<TranscriptionHistoryEntry[]>("clear_transcription_history_entries");
+      await invoke<TranscriptionHistorySummary[]>("clear_transcription_history_entries");
       const next = await refresh(undefined, { background: true });
       setError(null);
       return next;
@@ -137,7 +187,7 @@ export function useTranscriptionHistory(isActive: boolean) {
   const remove = useCallback(async (id: string) => {
     setIsLoading(true);
     try {
-      await invoke<TranscriptionHistoryEntry[]>("delete_transcription_history_entry", {
+      await invoke<TranscriptionHistorySummary[]>("delete_transcription_history_entry", {
         request: { id },
       });
       const next = await refresh(undefined, { background: true });
@@ -168,6 +218,43 @@ export function useTranscriptionHistory(isActive: boolean) {
     }
   }, [refresh]);
 
+  /**
+   * ONE WHOLE RECORD, BY ID (ADR 0240).
+   *
+   * The list carries a 160-character preview of each transcript; the three
+   * places that need the text itself — the raw panel, Copy, Restore — ask for
+   * the one record they are about, at the moment somebody asks for it. At most
+   * one record over the bridge at a time, against a list that used to ship all
+   * of them twelve times a minute.
+   *
+   * `null` where the store no longer holds it, which is a stale row rather than
+   * a fault: the record may have been deleted or pruned between the row being
+   * drawn and the button being pressed.
+   */
+  const record = useCallback(async (id: string) => {
+    try {
+      const found = await invoke<TranscriptionHistoryEntry | null>(
+        "transcription_history_record",
+        { id },
+      );
+      return found ?? null;
+    } catch (cause) {
+      setError(String(cause));
+      return null;
+    }
+  }, []);
+
+  /** The delivered text of one record, whole. What Copy puts on the clipboard
+   *  and what Restore places — never the preview, which is cut. */
+  const deliveredText = useCallback(
+    async (id: string) => {
+      const found = await record(id);
+      if (!found) return null;
+      return found.transformed_transcript ?? found.raw_transcript ?? "";
+    },
+    [record],
+  );
+
   const exportEntries = useCallback(async (path: string, query?: TranscriptionHistoryQuery) => {
     setIsLoading(true);
     try {
@@ -194,15 +281,34 @@ export function useTranscriptionHistory(isActive: boolean) {
 
     void refreshStorageStatus();
     void refresh(undefined, { background: true });
-    const timer = window.setInterval(() => {
-      void refresh(undefined, { background: true });
-    }, REFRESH_INTERVAL_MS);
 
-    return () => window.clearInterval(timer);
+    /* THE CATCH IS ATTACHED HERE, NOT IN THE CLEANUP. `listen` rejects
+       synchronously-ish wherever the Tauri bridge is absent — a browser preview,
+       a test that stubs `invoke` and nothing else — and a rejection first handled
+       on unmount is an unhandled rejection for as long as the component lives.
+       Resolving to a no-op unsubscribe keeps the cleanup path shapeless. */
+    const unlisten = listen<BackendEvent>("wordscript-event", ({ payload }) => {
+      if (!RECORD_WRITING_EVENTS.has(payload?.event)) return;
+      void refresh(undefined, { background: true });
+    }).catch(() => () => {});
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refresh(undefined, { background: true });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      void unlisten.then((off) => off());
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [isActive, refresh, refreshStorageStatus]);
 
   return {
     entries,
+    record,
+    deliveredText,
     storagePath,
     transcriptRoot,
     reveal,

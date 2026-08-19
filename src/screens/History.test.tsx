@@ -10,7 +10,10 @@ import {
   stoppedByRuntimeNote,
 } from "./History";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
-import type { TranscriptionHistoryEntry } from "@/types/history";
+import type {
+  TranscriptionHistoryEntry,
+  TranscriptionHistorySummary,
+} from "@/types/history";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
@@ -25,7 +28,31 @@ const invoked = vi.mocked(invoke);
  * controls act, and that the two that cannot are inert rather than absent.
  */
 
-function entry(overrides: Partial<TranscriptionHistoryEntry> = {}): TranscriptionHistoryEntry {
+const HEARD = "lets ship the settings restructure today";
+const WRITTEN = "Let's ship the settings restructure today.";
+
+/** How much of a transcript the runtime puts on a row. Mirrors `PREVIEW_CHARS`
+ *  in `core::history`; a case that needed the two to differ would be testing the
+ *  wrong thing. */
+const PREVIEW_CHARS = 160;
+
+/** A ROW AS THE RUNTIME SENDS IT (ADR 0240) — a summary, not a record.
+ *
+ *  It still takes the two TEXTS, because that is what a case is about, and
+ *  derives the previews the way `TranscriptionHistorySummary::of` does. Writing
+ *  `heard_preview` by hand at every call site would let a case state a preview
+ *  its own record could not have produced. */
+function entry(
+  overrides: Partial<TranscriptionHistorySummary> & {
+    raw_transcript?: string | null;
+    transformed_transcript?: string | null;
+  } = {},
+): TranscriptionHistorySummary {
+  const { raw_transcript, transformed_transcript, ...rest } = overrides;
+  const texts =
+    raw_transcript !== undefined || transformed_transcript !== undefined
+      ? previewsOf(raw_transcript ?? null, transformed_transcript ?? null)
+      : {};
   return {
     id: "e1",
     created_at_ms: Date.now(),
@@ -34,47 +61,73 @@ function entry(overrides: Partial<TranscriptionHistoryEntry> = {}): Transcriptio
     retry_of: null,
     provider: "groq",
     model: "whisper-large-v3",
-    language: null,
     active_profile: "General writing",
-    work_mode: {
-      rewrite_style: "clean",
-      insert_behavior: "auto_paste",
-      recovery_behavior: "standard",
-      processing_mode: "cleanup",
-    },
-    effective_mode: "cleanup",
+    processing_mode: "cleanup",
     title: "Die Umstrukturierung der Einstellungen",
     transcript_path: "/tmp/transcripts/2026/08/10-0942-e1.md",
     fallback_acknowledged: false,
     capture_integrity: null,
-    input_level: null,
+    capture_stop_reason: null,
+    heard_preview: HEARD,
+    written_preview: WRITTEN,
+    transcripts_identical: false,
+    corrected: true,
+    applied_rules: [],
+    transform_warning: null,
+    insert_mode: "direct_paste",
+    pasted: true,
+    fallback_reason: null,
+    error: null,
+    audio_path: null,
+    ...texts,
+    ...rest,
+  };
+}
+
+/** The runtime's own derivation, once. */
+function previewsOf(heard: string | null, written: string | null) {
+  const cut = (text: string) => text.trim().slice(0, PREVIEW_CHARS);
+  const heardText = heard ?? "";
+  const writtenText = written ?? heardText;
+  return {
+    heard_preview: cut(heardText),
+    written_preview: cut(writtenText),
+    transcripts_identical: heardText === writtenText,
+  };
+}
+
+/** The whole record behind a row, for the id fetch. Only the fields the screen
+ *  reads off it — the two texts. */
+function recordFor(row: TranscriptionHistorySummary): TranscriptionHistoryEntry {
+  return {
+    ...row,
+    language: null,
+    work_mode: null,
+    effective_mode: null,
     provider_profile: null,
     local_prompt_strength: null,
     local_prompt_carry: null,
     local_beam_size: null,
     local_best_of: null,
-    raw_transcript: "lets ship the settings restructure today",
-    transformed_transcript: "Let's ship the settings restructure today.",
-    corrected: true,
-    applied_rules: [],
-    transform_warning: null,
-    insert_mode: "direct_paste",
-    active_driver: "wl_copy",
-    pasted: true,
+    active_driver: null,
     fallback_available: null,
-    fallback_reason: null,
     recovery_action: null,
     recovery_message: null,
     clipboard_restore: null,
-    error: null,
-    audio_path: null,
-    ...overrides,
-  };
+    input_level: null,
+    raw_transcript: row.heard_preview || null,
+    transformed_transcript: row.transcripts_identical ? null : row.written_preview,
+  } as TranscriptionHistoryEntry;
 }
 
-function mockRuntimeHistory(entries: TranscriptionHistoryEntry[]) {
-  invoked.mockImplementation(async (command: string) => {
-    if (command === "transcription_history_entries") return entries;
+function mockRuntimeHistory(entries: TranscriptionHistorySummary[]) {
+  invoked.mockImplementation(async (command: string, args?: unknown) => {
+    if (command === "transcription_history_summaries") return entries;
+    if (command === "transcription_history_record") {
+      const id = (args as { id?: string } | undefined)?.id;
+      const found = entries.find((row) => row.id === id);
+      return found ? recordFor(found) : null;
+    }
     if (command === "transcription_history_storage_status") {
       return { path: "/home/f/.local/share/wordscript/history.json" };
     }
@@ -101,7 +154,7 @@ describe("History, wired", () => {
   it("lists this machine's records rather than the drawing's seven", async () => {
     render(<HistoryScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    await waitFor(() => expect(invoked).toHaveBeenCalledWith("transcription_history_entries", expect.anything()));
+    await waitFor(() => expect(invoked).toHaveBeenCalledWith("transcription_history_summaries", expect.anything()));
     /* The row opens with what the model named it (ADR 0078). */
     expect(await screen.findByText("Die Umstrukturierung der Einstellungen")).toBeInTheDocument();
     /* The drawing's rows are the gallery's and must not leak onto the product. */
@@ -382,7 +435,7 @@ describe("History, wired", () => {
 
     await userEvent.selectOptions(screen.getByLabelText("Status"), "failed");
     await waitFor(() =>
-      expect(invoked).toHaveBeenCalledWith("transcription_history_entries", {
+      expect(invoked).toHaveBeenCalledWith("transcription_history_summaries", {
         query: { status: "failed" },
       }),
     );

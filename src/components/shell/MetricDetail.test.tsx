@@ -1,8 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MetricDetail } from "./MetricDetail";
-import type { ActivityLedger, LedgerDay } from "@/lib/activity";
-import type { TranscriptionHistoryEntry } from "@/types/history";
+import type { ActivityLedger, LedgerCause, LedgerDay } from "@/lib/activity";
 
 /**
  * THE ONE RULE THIS VIEW CAN BREAK: DRAWING A HISTORY THAT DOES NOT EXIST.
@@ -54,31 +53,23 @@ function ledger(days: Record<string, LedgerDay>, extra: Partial<ActivityLedger> 
 function draw(
   metric: Parameters<typeof MetricDetail>[0]["metric"],
   source: ActivityLedger | null,
-  records?: TranscriptionHistoryEntry[],
 ) {
   return render(
-    <MetricDetail
-      metric={metric}
-      ledger={source}
-      records={records}
-      baseline={40}
-      onBack={vi.fn()}
-      now={NOW}
-    />,
+    <MetricDetail metric={metric} ledger={source} baseline={40} onBack={vi.fn()} now={NOW} />,
   );
 }
 
-/** A record with only the four fields the cause list reads. The model names are
- *  invented on purpose: a catalogued id spelled outside `shared/` fails its own
- *  test (ADR 0115), and this list only ever prints what the record holds. */
-function record(overrides: Partial<TranscriptionHistoryEntry>): TranscriptionHistoryEntry {
-  return {
-    provider: "vendor-one",
-    model: "fast-recogniser",
-    retry_of: null,
-    turnaround_ms: 1000,
-    ...overrides,
-  } as TranscriptionHistoryEntry;
+/** One recogniser's row in the ledger's cause map, spelled as waits in
+ *  milliseconds rather than as bucket indices — the arithmetic is the thing the
+ *  cases are about, so writing it out by hand would hide it.
+ *
+ *  The model names are invented on purpose: a catalogued id spelled outside
+ *  `shared/` fails its own test (ADR 0115), and this list only ever prints what
+ *  the ledger holds. */
+function cause(provider: string, model: string, waits: number[]): LedgerCause {
+  const buckets = new Array<number>(400).fill(0);
+  for (const wait of waits) buckets[Math.floor(wait / 25)] += 1;
+  return { provider, model, buckets };
 }
 
 describe("time saved, opened up", () => {
@@ -123,33 +114,43 @@ describe("the two metrics the record holds no history for", () => {
     expect(screen.getByText("3.0 s")).toBeInTheDocument();
   });
 
-  /* WHAT CAUSED IT IS THE QUESTION TURNAROUND IS OPENED WITH (ADR 0236), and the
-     ledger cannot answer it: its histogram is counts per 25 ms and carries no
-     model. The records do, so the list reads them — and says out loud that it
-     covers fewer runs than the spread above it, because pruning keeps history
-     shorter than the ledger and two figures that must differ need their reason
-     written where they meet. */
-  it("names the models the wait came from, off the records rather than the ledger", () => {
+  /* WHAT CAUSED IT IS THE QUESTION TURNAROUND IS OPENED WITH (ADR 0236), and
+     until ADR 0240 the ledger could not answer it: its histogram was counts per
+     25 ms and carried no model, so the list read the history records instead and
+     had to admit in its own head that it covered fewer runs than the spread
+     above it. The ledger keeps the same distribution per recogniser now — the
+     rows sum to the bands, the reach caveat is gone, and the retry and no-clock
+     rules moved to the runtime funnel where they are tested once. */
+  it("names the models the wait came from, all-time, off the ledger", () => {
     const buckets = new Array<number>(400).fill(0);
-    buckets[40] = 8;
-    draw("turnaround", ledger({ [iso(1)]: row() }, { turnaround_buckets: buckets }), [
-      record({ model: "fast-recogniser", turnaround_ms: 1000 }),
-      record({ model: "fast-recogniser", turnaround_ms: 1200 }),
-      record({ model: "slow-recogniser", provider: "groq", turnaround_ms: 5800 }),
-      /* A RETRY IS NOT A RUN — it re-times words already spoken, and counting it
-         would credit the model twice for one dictation. */
-      record({ model: "fast-recogniser", turnaround_ms: 9000, retry_of: "earlier" }),
-      /* And a record whose clock never ran is not a nought. */
-      record({ model: "fast-recogniser", turnaround_ms: null }),
-    ]);
+    buckets[40] = 3;
+    draw(
+      "turnaround",
+      ledger(
+        { [iso(1)]: row() },
+        {
+          turnaround_buckets: buckets,
+          turnaround_causes: {
+            "vendor-one/fast-recogniser": cause("vendor-one", "fast-recogniser", [1000, 1200]),
+            "groq/slow-recogniser": cause("groq", "slow-recogniser", [5800]),
+            /* A pair the runtime knows and never timed. It is not a nought. */
+            "groq/never-ran": cause("groq", "never-ran", []),
+          },
+        },
+      ),
+    );
 
     expect(screen.getByText("Which model heard it")).toBeInTheDocument();
-    expect(screen.getByText("3 records still on this machine")).toBeInTheDocument();
+    expect(screen.getByText("3 runs all time")).toBeInTheDocument();
     expect(screen.getByText("fast-recogniser")).toBeInTheDocument();
     expect(screen.getByText("2 runs")).toBeInTheDocument();
-    expect(screen.getByText("1.1 s")).toBeInTheDocument();
+    /* 1200 ms falls in bucket 48, whose lower edge is 1200 — the same axis the
+       bands above are drawn on, which is the point of reading the row off the
+       histogram rather than off the raw waits. */
+    expect(screen.getByText("1.2 s")).toBeInTheDocument();
     expect(screen.getByText("slow-recogniser")).toBeInTheDocument();
     expect(screen.getByText("5.8 s")).toBeInTheDocument();
+    expect(screen.queryByText("never-ran")).toBeNull();
 
     /* THE VENDOR IS SAID TO BE A VENDOR. `whisper-large-v3-turbo openai` was
        read by the owner as possibly the model's author, possibly the profile;
@@ -162,12 +163,17 @@ describe("the two metrics the record holds no history for", () => {
     expect(screen.getByText("via vendor-one")).toBeInTheDocument();
   });
 
-  it("draws no cause list where the records have not been read", () => {
+  /* A LEDGER WRITTEN BEFORE THE MAP EXISTED STILL DRAWS ITS BANDS. The seed
+     fills the causes on the next launch (ADR 0240); until then the block above
+     is complete and this one is simply absent, which is the honest shape of *no
+     reading* — not a table with no rows. */
+  it("draws no cause list where the ledger has no causes", () => {
     const buckets = new Array<number>(400).fill(0);
     buckets[40] = 8;
     draw("turnaround", ledger({ [iso(1)]: row() }, { turnaround_buckets: buckets }));
 
-    expect(screen.queryByText(/records still on this machine/)).toBeNull();
+    expect(screen.queryByText("Which model heard it")).toBeNull();
+    expect(screen.queryByText(/runs all time/)).toBeNull();
   });
 
   it("counts the dictations no language could be read off, rather than hiding them", () => {

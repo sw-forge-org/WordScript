@@ -250,6 +250,18 @@ export interface LedgerDay {
   longest_seconds: number;
 }
 
+/** One recogniser's own turnaround distribution (ADR 0240).
+ *
+ *  The pair is stored rather than parsed back out of the key: a model id may
+ *  contain a slash, so splitting one would be right on this machine and wrong
+ *  on somebody else's. */
+export interface LedgerCause {
+  provider: string;
+  model: string;
+  /** Counted at `TURNAROUND_BUCKET_MS`, the same axis as `turnaround_buckets`. */
+  buckets?: number[];
+}
+
 export interface ActivityLedger {
   /** `YYYY-MM-DD` of the first row ever written. NOT the install date — it is
    *  the first day somebody dictated, which on a machine installed in March and
@@ -274,6 +286,11 @@ export interface ActivityLedger {
   rate_buckets?: number[];
   /** How many runs landed in each twenty-five-millisecond bucket, all time. */
   turnaround_buckets?: number[];
+  /** The same distribution split by what produced it, keyed `provider/model`
+   *  (ADR 0240). The rows sum to `turnaround_buckets` for every run counted
+   *  since both existed; a ledger seeded after the fact can start a couple of
+   *  runs short, because it was filled from history and history is shallower. */
+  turnaround_causes?: Record<string, LedgerCause>;
   /** How many dictations came back in each language, keyed by ISO 639-1
    *  (ADR 0180). Measured on the delivered text, never read off the setting. */
   languages?: Record<string, number>;

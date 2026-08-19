@@ -103,6 +103,18 @@ const RATE_BUCKETS: usize = 400;
 const TURNAROUND_BUCKET_MS: f64 = 25.0;
 const TURNAROUND_BUCKETS: usize = 400;
 
+/// How many `provider/model` pairs the cause histogram will hold (ADR 0240).
+///
+/// A BOUND BECAUSE THE KEY COMES FROM THE WIRE. Every other structure in this
+/// file is fixed-width or keyed by something with a small closed range — a day,
+/// a language code, a bucket index. This one is keyed by whatever a provider
+/// called its model, so a vendor that renames on every release, or a reader
+/// working through a local model library, would grow the file without limit.
+/// Sixty-four is far above any real machine — the reporting one has three — and
+/// far below a size that matters. Past it, known pairs keep counting and a new
+/// one is dropped rather than evicting somebody else's history.
+const MAX_CAUSE_KEYS: usize = 64;
+
 /// One day, as counts. Everything here is summable and nothing here is text.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct LedgerDay {
@@ -293,6 +305,18 @@ pub struct ActivityLedger {
     /// counts — they are derived, and living another day rebuilds them.
     #[serde(default)]
     pub rate_bucket_wpm: f64,
+    /// The same turnaround distribution again, split by what produced it, keyed
+    /// `provider/model` (ADR 0240).
+    ///
+    /// **THIS USED TO BE READ OFF THE HISTORY RECORDS AND COULD NOT BE.** The
+    /// cause list under the turnaround view was the one reading on Home that was
+    /// not all-time: `history.json` is capped at a thousand records, which at the
+    /// reporting machine's rate is about five days, so a lifetime figure sat
+    /// above a five-day list and the surface had to explain the discrepancy. A
+    /// distribution per recogniser is what the ledger is FOR — counts, no text,
+    /// no growth with use — and it costs about eight hundred bytes per model.
+    #[serde(default)]
+    pub turnaround_causes: BTreeMap<String, LedgerCause>,
     /// How many dictations came back in each language, all time, keyed by the
     /// two-letter code (ADR 0180).
     ///
@@ -303,6 +327,25 @@ pub struct ActivityLedger {
     /// report one — Groq and the local runtime among them.
     #[serde(default)]
     pub languages: BTreeMap<String, u64>,
+}
+
+/// One recogniser's own turnaround distribution (ADR 0240).
+///
+/// The provider and the model are stored rather than parsed back out of the
+/// key. A model id may contain a slash — several vendors namespace theirs that
+/// way — so a reader splitting `provider/model` would be right on this machine
+/// and wrong on somebody else's, which is the class of bug that only shows up
+/// in the field.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct LedgerCause {
+    pub provider: String,
+    pub model: String,
+    /// Counted at `turnaround_bucket_ms`, the SAME axis as `turnaround_buckets`.
+    /// One width for both, so a median read off a row can never disagree with
+    /// the bands drawn above it — the failure ADR 0181 recorded, one structure
+    /// further out.
+    #[serde(default)]
+    pub buckets: Vec<u32>,
 }
 
 impl ActivityLedger {
@@ -333,6 +376,50 @@ impl ActivityLedger {
         let index =
             ((milliseconds as f64 / TURNAROUND_BUCKET_MS) as usize).min(TURNAROUND_BUCKETS - 1);
         self.turnaround_buckets[index] += 1;
+    }
+
+    /// Count one wait against the recogniser that produced it (ADR 0240).
+    ///
+    /// Called from the same funnel as `add_turnaround` and under the same
+    /// condition, so from the moment both exist the two describe the same set of
+    /// runs and the per-model counts sum to the all-time histogram.
+    ///
+    /// A LEDGER SEEDED AFTER THE FACT STARTS A LITTLE SHORT, and it is worth
+    /// naming rather than discovering. The histogram was already full on any
+    /// machine that dictated before this map existed, so the map is filled from
+    /// history — and history is the shallower record. On the reporting machine
+    /// that cost exactly two runs out of 422: the seed skips a record that
+    /// delivered no words, and the live funnel counts its wait. The gap is fixed
+    /// at seed time and never widens.
+    fn add_turnaround_cause(&mut self, provider: &str, model: Option<&str>, milliseconds: u64) {
+        let provider = provider.trim();
+        /* A RECORD WITH NO MODEL NAME IS FILED UNDER ITS PROVIDER, which is what
+           the frontend already did with the same records: the vendor is the
+           coarser true answer, and dropping the run instead would make the rows
+           stop summing to the histogram. With neither there is nothing to name,
+           and an "unknown" bucket is a row nobody can act on. */
+        let model = model.map(str::trim).filter(|name| !name.is_empty()).unwrap_or(provider);
+        if model.is_empty() {
+            return;
+        }
+        let key = format!("{provider}/{model}");
+        if !self.turnaround_causes.contains_key(&key)
+            && self.turnaround_causes.len() >= MAX_CAUSE_KEYS
+        {
+            return;
+        }
+
+        let cause = self.turnaround_causes.entry(key).or_insert_with(|| LedgerCause {
+            provider: provider.to_string(),
+            model: model.to_string(),
+            buckets: Vec::new(),
+        });
+        if cause.buckets.len() != TURNAROUND_BUCKETS {
+            cause.buckets = vec![0; TURNAROUND_BUCKETS];
+        }
+        let index =
+            ((milliseconds as f64 / TURNAROUND_BUCKET_MS) as usize).min(TURNAROUND_BUCKETS - 1);
+        cause.buckets[index] += 1;
     }
 
     /// The middle dictation's wait, in milliseconds.
@@ -413,6 +500,25 @@ impl ActivityLedger {
         for (code, count) in &other.languages {
             let own = self.languages.entry(code.clone()).or_insert(0);
             *own = (*own).max(*count);
+        }
+        /* THE SAME FIELD-WISE MAXIMUM, ONE LEVEL DOWN (ADR 0179, ADR 0240). A
+           pair the archive knows and this machine does not is taken whole; one
+           both know is raised bucket by bucket, so importing twice changes
+           nothing and importing once can only raise. The key cap applies here
+           too — an archive from a machine that saw more models than this one
+           may not push it past the bound. */
+        for (key, cause) in &other.turnaround_causes {
+            if !self.turnaround_causes.contains_key(key)
+                && self.turnaround_causes.len() >= MAX_CAUSE_KEYS
+            {
+                continue;
+            }
+            let own = self.turnaround_causes.entry(key.clone()).or_insert_with(|| LedgerCause {
+                provider: cause.provider.clone(),
+                model: cause.model.clone(),
+                buckets: Vec::new(),
+            });
+            raise_buckets(&mut own.buckets, &cause.buckets, TURNAROUND_BUCKETS);
         }
     }
 }
@@ -617,6 +723,9 @@ pub struct SeedRecord {
     pub spoken_words: u64,
     pub recorded_seconds: Option<f64>,
     pub turnaround_ms: Option<u64>,
+    /// The pair that produced it, for the cause histogram (ADR 0240).
+    pub provider: String,
+    pub model: Option<String>,
     /// Whether this record's mode may be credited against a typing baseline.
     pub credited: bool,
     /// The language this record was credited with — read off the record where
@@ -644,6 +753,11 @@ pub struct LedgerContribution {
     /// Milliseconds from the capture stopping to the text existing. `None` on
     /// every path that never ran that clock.
     pub turnaround_ms: Option<u64>,
+    /// Who produced the text, so the wait above can be filed under it
+    /// (ADR 0240). Read straight off the record being written, which is the
+    /// same pair the record itself names.
+    pub provider: String,
+    pub model: Option<String>,
     /// False for the modes that GENERATE text rather than tidy it — Agent and
     /// Prompt Enhance. Their output may not be credited against typing, because
     /// nobody would have typed it (ADR 0178).
@@ -719,6 +833,13 @@ pub fn record(contribution: LedgerContribution) -> Result<(), String> {
     }
     if let Some(milliseconds) = contribution.turnaround_ms {
         ledger.add_turnaround(milliseconds);
+        /* ONE CONDITION FOR BOTH, so no live run can ever land in one and not
+           the other (ADR 0240). */
+        ledger.add_turnaround_cause(
+            &contribution.provider,
+            contribution.model.as_deref(),
+            milliseconds,
+        );
     }
     if let Some(code) = contribution.language.as_deref() {
         let code = code.trim().to_lowercase();
@@ -834,6 +955,8 @@ pub fn read_activity_ledger() -> Result<ActivityLedger, String> {
                         .as_ref()
                         .map(|integrity| integrity.recorded_seconds),
                     turnaround_ms: entry.turnaround_ms,
+                    provider: entry.provider.clone(),
+                    model: entry.model.clone(),
                     credited: super::history::mode_credits_typing(entry.effective_mode.as_ref()),
                     /* THE ANSWER THE RECORD KEPT (ADR 0236), which is the only
                        way a rebuild can be as good as the live path was. The
@@ -941,6 +1064,13 @@ fn needs_seed(ledger: &ActivityLedger) -> bool {
     ledger.days.is_empty()
         || ledger.turnaround_buckets.iter().all(|count| *count == 0)
         || ledger.languages.is_empty()
+        /* ADR 0240, and the ONLY reason it is in this list. On the reporting
+           machine every other structure is full — days, buckets, languages — so
+           without this line the gate returns false, the seed never runs, and the
+           cause list would start empty on exactly the installation that has the
+           records sitting there to fill it from. It filled three rows and 420 of
+           422 runs there on the first launch after the change. */
+        || ledger.turnaround_causes.is_empty()
         || needs_credited_seed(ledger)
 }
 
@@ -981,13 +1111,18 @@ pub fn seed_from_history(records: &[SeedRecord]) -> Result<(), String> {
         return Ok(());
     }
 
-    /* THREE SEEDS, BECAUSE EACH ARRIVED AFTER THE DAYS DID. A ledger written
+    /* FOUR SEEDS, BECAUSE EACH ARRIVED AFTER THE DAYS DID. A ledger written
        before the turnaround existed has rows but no distribution, and re-folding
        its days would double every one of them — so each case fills its own
-       structure ALONE. All three are idempotent and none runs twice. */
+       structure ALONE. All four are idempotent and none runs twice. */
     let seed_days = ledger.days.is_empty();
     let seed_turnarounds = ledger.turnaround_buckets.iter().all(|count| *count == 0);
     let seed_languages = ledger.languages.is_empty();
+    /* ITS OWN FLAG, NOT `seed_turnarounds`. The two structures arrived in
+       different releases, so on any machine that dictated before ADR 0240 the
+       histogram is full and this map is empty — the exact state the shared flag
+       would skip. */
+    let seed_causes = ledger.turnaround_causes.is_empty();
     /* The one seed that runs over rows that already exist, so it CLEARS before
        it accumulates. Every other seed here fills a structure that is empty by
        definition and can simply add; this one would double what it found if it
@@ -1050,6 +1185,15 @@ pub fn seed_from_history(records: &[SeedRecord]) -> Result<(), String> {
                 ledger.add_turnaround(milliseconds);
             }
         }
+        if seed_causes {
+            if let Some(milliseconds) = record.turnaround_ms {
+                ledger.add_turnaround_cause(
+                    &record.provider,
+                    record.model.as_deref(),
+                    milliseconds,
+                );
+            }
+        }
         if seed_languages {
             if let Some(code) = record.language.as_deref() {
                 let code = code.trim().to_lowercase();
@@ -1109,6 +1253,8 @@ mod tests {
             recorded_seconds: seconds,
             speech_seconds: seconds,
             turnaround_ms: None,
+            provider: "groq".into(),
+            model: Some("whisper-large-v3-turbo".into()),
             credited: true,
             language: None,
         }
@@ -1218,8 +1364,8 @@ mod tests {
         reset_for_tests();
 
         let records = [
-            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: Some(1200), credited: true, language: Some("de".into()) },
-            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 50, recorded_seconds: None, turnaround_ms: None, credited: true, language: None },
+            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: Some(1200), provider: "groq".into(), model: Some("whisper-large-v3".into()), credited: true, language: Some("de".into()) },
+            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 50, recorded_seconds: None, turnaround_ms: None, provider: "groq".into(), model: None, credited: true, language: None },
         ];
         seed_from_history(&records).unwrap();
         /* Second call, same records: a ledger with rows in it is already seeded
@@ -1247,6 +1393,8 @@ mod tests {
             spoken_words: 100,
             recorded_seconds: Some(60.0),
             turnaround_ms: None,
+            provider: "groq".into(),
+            model: None,
             credited: true,
             language: None,
         }])
@@ -1278,10 +1426,10 @@ mod tests {
         std::fs::write(&path, raw).unwrap();
 
         seed_from_history(&[
-            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: None, credited: true, language: None },
+            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: None, provider: "groq".into(), model: None, credited: true, language: None },
             /* Generated prose. Its words are on the day and may not be credited
                against typing (ADR 0178). */
-            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 8, recorded_seconds: Some(30.0), turnaround_ms: None, credited: false, language: None },
+            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 8, recorded_seconds: Some(30.0), turnaround_ms: None, provider: "groq".into(), model: None, credited: false, language: None },
         ])
         .unwrap();
 
@@ -1320,6 +1468,8 @@ mod tests {
             spoken_words: 104,
             recorded_seconds: Some(60.0),
             turnaround_ms: None,
+            provider: "groq".into(),
+            model: None,
             credited: true,
             language: None,
         }];
@@ -1424,6 +1574,8 @@ mod tests {
             recorded_seconds: Some(60.0),
             speech_seconds: Some(40.0),
             turnaround_ms: None,
+            provider: "groq".into(),
+            model: Some("whisper-large-v3-turbo".into()),
             credited: false,
             language: None,
         })
@@ -1447,6 +1599,8 @@ mod tests {
             recorded_seconds: Some(60.0),
             speech_seconds: Some(40.0),
             turnaround_ms: None,
+            provider: "groq".into(),
+            model: Some("whisper-large-v3-turbo".into()),
             credited: false,
             language: None,
         })
@@ -1478,6 +1632,180 @@ mod tests {
         assert_eq!(day.words, 600);
         assert_eq!(day.saved_words, 100);
         assert_eq!(day.saved_runs, 1);
+    }
+
+
+    /// One timed run, from a named recogniser. ADR 0240.
+    fn timed(
+        created_at_ms: u64,
+        provider: &str,
+        model: Option<&str>,
+        turnaround_ms: u64,
+    ) -> LedgerContribution {
+        LedgerContribution {
+            created_at_ms,
+            words: 100,
+            spoken_words: 100,
+            recorded_seconds: Some(60.0),
+            speech_seconds: Some(40.0),
+            turnaround_ms: Some(turnaround_ms),
+            provider: provider.into(),
+            model: model.map(str::to_string),
+            credited: true,
+            language: None,
+        }
+    }
+
+    fn cause_runs(ledger: &ActivityLedger, key: &str) -> u64 {
+        ledger
+            .turnaround_causes
+            .get(key)
+            .map(|cause| cause.buckets.iter().map(|count| *count as u64).sum())
+            .unwrap_or_default()
+    }
+
+    /// ADR 0240. The two structures are written under one condition, so a reader
+    /// who adds the rows up gets the histogram back — not almost.
+    #[test]
+    fn every_wait_lands_in_its_recognisers_row_and_in_the_all_time_one() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(timed(AUG_16, "groq", Some("whisper-large-v3-turbo"), 800)).unwrap();
+        record(timed(AUG_16, "groq", Some("whisper-large-v3-turbo"), 900)).unwrap();
+        record(timed(AUG_16, "groq", Some("whisper-large-v3"), 5_800)).unwrap();
+        record(timed(AUG_16, "openai", Some("whisper-large-v3-turbo"), 1_100)).unwrap();
+        /* No clock, so it belongs in neither. */
+        record(dictation(AUG_16, 100, Some(60.0))).unwrap();
+
+        let ledger = snapshot().unwrap();
+        let histogram: u64 = ledger.turnaround_buckets.iter().map(|count| *count as u64).sum();
+        let rows: u64 = ledger
+            .turnaround_causes
+            .values()
+            .map(|cause| cause.buckets.iter().map(|count| *count as u64).sum::<u64>())
+            .sum();
+        assert_eq!(histogram, 4, "four runs carried a clock");
+        assert_eq!(rows, histogram, "the rows sum to the histogram");
+
+        assert_eq!(cause_runs(&ledger, "groq/whisper-large-v3-turbo"), 2);
+        assert_eq!(cause_runs(&ledger, "groq/whisper-large-v3"), 1);
+        /* THE SAME MODEL NAME UNDER TWO VENDORS IS TWO ROWS, which is the whole
+           reason the key carries the provider: the reporting machine really does
+           run `whisper-large-v3-turbo` on both, at 0.8 s and at 1.1 s. */
+        assert_eq!(cause_runs(&ledger, "openai/whisper-large-v3-turbo"), 1);
+
+        let slow = ledger.turnaround_causes.get("groq/whisper-large-v3").unwrap();
+        assert_eq!(
+            median_of(&slow.buckets, TURNAROUND_BUCKET_MS),
+            Some(5_800.0),
+            "the row is read on the same axis as the bands above it",
+        );
+    }
+
+    /// A lane that names no model still has a vendor, and the vendor is the
+    /// coarser true answer. Dropping the run instead would break the sum.
+    #[test]
+    fn a_run_with_no_model_name_is_filed_under_its_provider() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(timed(AUG_16, "local", None, 2_000)).unwrap();
+        record(timed(AUG_16, "local", Some("   "), 2_100)).unwrap();
+
+        let ledger = snapshot().unwrap();
+        assert_eq!(cause_runs(&ledger, "local/local"), 2, "both under the vendor");
+        let row = ledger.turnaround_causes.get("local/local").unwrap();
+        assert_eq!(row.provider, "local");
+        assert_eq!(row.model, "local");
+    }
+
+    /// The key comes off the wire, so the map is bounded. Past the bound the
+    /// pairs already known keep counting — a new name may not evict a history
+    /// somebody has.
+    #[test]
+    fn the_cause_map_stops_at_its_bound_and_keeps_counting_what_it_knows() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        for index in 0..(MAX_CAUSE_KEYS + 12) {
+            record(timed(AUG_16, "groq", Some(&format!("model-{index}")), 1_000)).unwrap();
+        }
+        record(timed(AUG_16, "groq", Some("model-0"), 1_000)).unwrap();
+
+        let ledger = snapshot().unwrap();
+        assert_eq!(ledger.turnaround_causes.len(), MAX_CAUSE_KEYS, "bounded");
+        assert_eq!(cause_runs(&ledger, "groq/model-0"), 2, "a known pair still counts");
+        assert!(
+            !ledger.turnaround_causes.contains_key("groq/model-70"),
+            "a pair that arrived past the bound is dropped, not swapped in",
+        );
+    }
+
+    /// ADR 0179 one level down. Importing the same archive twice may not double
+    /// a row, and importing one this machine has never seen takes it whole.
+    #[test]
+    fn a_merge_raises_a_recognisers_row_and_never_doubles_it() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(timed(AUG_16, "groq", Some("whisper-large-v3-turbo"), 800)).unwrap();
+        record(timed(AUG_16, "openai", Some("whisper-large-v3-turbo"), 1_100)).unwrap();
+        let archive = snapshot().unwrap();
+
+        reset_for_tests();
+        record(timed(AUG_16, "groq", Some("whisper-large-v3-turbo"), 800)).unwrap();
+        merge_from_archive(&archive).unwrap();
+        merge_from_archive(&archive).unwrap();
+
+        let ledger = snapshot().unwrap();
+        assert_eq!(
+            cause_runs(&ledger, "groq/whisper-large-v3-turbo"),
+            1,
+            "the same bucket at one on both sides raises to one, not two",
+        );
+        assert_eq!(
+            cause_runs(&ledger, "openai/whisper-large-v3-turbo"),
+            1,
+            "a pair only the archive had is taken whole",
+        );
+    }
+
+    /// ADR 0240. On every machine that dictated before the map existed the
+    /// histogram is already full, and the shared turnaround flag would skip the
+    /// seed on exactly those installations.
+    #[test]
+    fn the_seed_fills_the_causes_on_a_ledger_whose_histogram_is_already_full() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(timed(AUG_16, "groq", Some("whisper-large-v3-turbo"), 800)).unwrap();
+        {
+            let mut guard = ledger_store().lock().unwrap_or_else(|error| error.into_inner());
+            let ledger = guard.as_mut().expect("the run above wrote one");
+            ledger.turnaround_causes.clear();
+        }
+
+        seed_from_history(&[SeedRecord {
+            created_at_ms: AUG_16,
+            words: 100,
+            spoken_words: 100,
+            recorded_seconds: Some(60.0),
+            turnaround_ms: Some(1_200),
+            provider: "groq".into(),
+            model: Some("whisper-large-v3".into()),
+            credited: true,
+            language: Some("de".into()),
+        }])
+        .unwrap();
+
+        let ledger = snapshot().unwrap();
+        assert_eq!(cause_runs(&ledger, "groq/whisper-large-v3"), 1, "the causes seeded");
+        assert_eq!(
+            ledger.totals().dictations,
+            1,
+            "and the day rows it already had were not folded a second time",
+        );
     }
 
     /// ADR 0179. The ordinary reason to import is a restore, and the ordinary
@@ -1563,6 +1891,8 @@ mod tests {
             spoken_words: 100,
             recorded_seconds: Some(60.0),
             turnaround_ms: Some(900),
+            provider: "groq".into(),
+            model: Some("whisper-large-v3".into()),
             credited: true,
             language: Some("de".into()),
         }])

@@ -69,6 +69,58 @@ export interface TranscriptStoreStatus {
   bytes: number;
 }
 
+/**
+ * ONE RECORD AS A LIST ROW NEEDS IT, WHICH IS NOT THE WHOLE RECORD (ADR 0240).
+ *
+ * **THE LIST USED TO BE SENT EVERY FIELD OF EVERY RECORD**, on a five-second
+ * timer, with no limit: 2,452 bytes a row over the bridge on the reporting
+ * machine, of which a screen read about a thousand. The microphone levels, the
+ * recovery status, the clipboard restore, the local decoding parameters, the
+ * provider profile and the spoken-language verdict are read by the RUNTIME and
+ * by nothing on a screen.
+ *
+ * THE RECORD STILL HOLDS THEM ALL. This is the wire shape and not a storage
+ * decision — `TranscriptionHistoryEntry` is unchanged, the export exports
+ * everything it exported, and a screen that comes to need a field adds it back
+ * here. `transcription_history_record` fetches one whole record by id, which is
+ * how the raw panel, Copy and Restore get the text the previews below cut.
+ */
+export interface TranscriptionHistorySummary {
+  id: string;
+  created_at_ms: number;
+  status: TranscriptionHistoryStatus;
+  source: TranscriptionHistorySource;
+  retry_of: string | null;
+  provider: string;
+  model: string | null;
+  active_profile: string | null;
+  /** `work_mode.processing_mode` and nothing else. The whole snapshot was 362
+   *  bytes a row and the two surfaces that read it read this one field. */
+  processing_mode: ProcessingMode | null;
+  title: string | null;
+  transcript_path: string | null;
+  corrected: boolean;
+  applied_rules: string[];
+  transform_warning: string | null;
+  insert_mode: NativeInsertMode | null;
+  pasted: boolean | null;
+  fallback_reason: string | null;
+  fallback_acknowledged: boolean;
+  error: string | null;
+  audio_path: string | null;
+  capture_integrity: CaptureIntegrity | null;
+  capture_stop_reason: string | null;
+  /** The recogniser's own text, cut to 160 characters. Empty where there was
+   *  none — which is also how a surface tells there is nothing to retry from. */
+  heard_preview: string;
+  /** The delivered text under the same cut: transformed where a mode wrote one,
+   *  otherwise the same as `heard_preview`. */
+  written_preview: string;
+  /** Whether the two FULL texts are identical, decided in the runtime because
+   *  two cut strings can agree where the whole ones do not. */
+  transcripts_identical: boolean;
+}
+
 export interface TranscriptionHistoryEntry {
   id: string;
   created_at_ms: number;

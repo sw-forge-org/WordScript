@@ -23,7 +23,7 @@ import { useTranscriptionHistory } from "@/hooks/useTranscriptionHistory";
 import { useUndoableDelete } from "@/hooks/useUndoableDelete";
 import { PROCESSING_MODE_LABELS } from "@/lib/transformRules";
 import type {
-  TranscriptionHistoryEntry,
+  TranscriptionHistorySummary,
   TranscriptionHistoryStatus,
 } from "@/types/history";
 import type { WiredScreenProps } from "./props";
@@ -99,7 +99,7 @@ export function historyTime(ms: number, now = Date.now()): string {
 
 /**
  * WHICH BADGE FOLLOWS FROM WHICH FIELD. Decided by Leg 4c, from the fields
- * `TranscriptionHistoryEntry` already carries, and stated here rather than in a
+ * `TranscriptionHistorySummary` already carries, and stated here rather than in a
  * commit message because the next person to add a badge has to agree with it.
  *
  * The governing rule is §11.20's: **a badge is for a status that is NOT
@@ -144,7 +144,7 @@ export function historyTime(ms: number, now = Date.now()): string {
  *    content no downstream stage can see. It leads, because it is the only
  *    badge here that says the TEXT is wrong rather than that the delivery was.
  */
-export function badgesFor(entry: TranscriptionHistoryEntry): ListItemBadge[] {
+export function badgesFor(entry: TranscriptionHistorySummary): ListItemBadge[] {
   const badges: ListItemBadge[] = [];
 
   if (entry.capture_integrity?.verdict === "short") {
@@ -206,10 +206,15 @@ export function badgesFor(entry: TranscriptionHistoryEntry): ListItemBadge[] {
  * said which — `applied_rules` sat in this function, read one line above for
  * `stageRan` and never consulted for the sentence.
  */
-export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
-  const heard = entry.raw_transcript ?? "";
-  const written = entry.transformed_transcript ?? entry.raw_transcript ?? "";
-  const identical = heard === written;
+export function rawOf(entry: TranscriptionHistorySummary): RawTranscript {
+  /* THE PREVIEWS, AND `same` IS NOT DERIVED FROM THEM (ADR 0240). The row
+     carries 160 characters of each text; two cuts can agree where the whole
+     texts do not, so the comparison is made in the runtime against the full
+     ones and travels as a flag. The panel fills in the rest of the text when
+     the record arrives — see `openRecord` on the screen below. */
+  const heard = entry.heard_preview;
+  const written = entry.written_preview;
+  const identical = entry.transcripts_identical;
   const stageRan = entry.corrected || entry.applied_rules.length > 0;
 
   return {
@@ -257,7 +262,7 @@ export function rawOf(entry: TranscriptionHistoryEntry): RawTranscript {
  * not treated as one.
  */
 function changedTextNote(
-  entry: TranscriptionHistoryEntry,
+  entry: TranscriptionHistorySummary,
   heard: string,
   written: string,
 ): string | undefined {
@@ -325,7 +330,7 @@ function onlyRemovedWords(heard: string, written: string): boolean {
  * finding to report to the user; it is visible to a measurement reading the
  * field and that is where it belongs.
  */
-export function captureGapNote(entry: TranscriptionHistoryEntry): string | undefined {
+export function captureGapNote(entry: TranscriptionHistorySummary): string | undefined {
   const integrity = entry.capture_integrity;
   if (!integrity || integrity.verdict !== "short") return undefined;
 
@@ -348,7 +353,7 @@ export function captureGapNote(entry: TranscriptionHistoryEntry): string | undef
  * Nothing on an ordinary stop — the reader released the key and is the reason.
  */
 export function stoppedByRuntimeNote(
-  entry: TranscriptionHistoryEntry
+  entry: TranscriptionHistorySummary
 ): string | undefined {
   const reason = entry.capture_stop_reason?.trim();
   return reason ? `WordScript ended this recording: ${reason}` : undefined;
@@ -395,15 +400,12 @@ const SHOWN_TEXT_OPTIONS = [
  * put the AI's sentence behind a label promising the opposite, which is the
  * fake-readiness rule applied to a word instead of a state.
  */
-export function titleOf(entry: TranscriptionHistoryEntry, shows: ShownText): string {
+export function titleOf(entry: TranscriptionHistorySummary, shows: ShownText): string {
   if (shows === "title") {
     const named = (entry.title ?? "").trim();
     if (named) return named;
   }
-  const text =
-    shows === "heard"
-      ? (entry.raw_transcript ?? "").trim()
-      : (entry.transformed_transcript ?? entry.raw_transcript ?? "").trim();
+  const text = shows === "heard" ? entry.heard_preview.trim() : entry.written_preview.trim();
   if (text) return text;
   if (entry.status === "failed") return entry.error ?? "Transcription failed.";
   return "Nothing was heard in this capture.";
@@ -499,8 +501,10 @@ const SEARCH_DEBOUNCE_MS = 250;
  * after fixing a profile or changing a model, which since ADR 0075 re-runs in
  * the record's own mode.
  */
-export function retryDisabledReason(entry: TranscriptionHistoryEntry): string | undefined {
-  const hasTranscript = Boolean((entry.raw_transcript ?? "").trim());
+export function retryDisabledReason(entry: TranscriptionHistorySummary): string | undefined {
+  /* The preview is empty exactly where the transcript is (ADR 0240) — the cut
+     keeps 160 characters, so it can never empty a text that had one. */
+  const hasTranscript = Boolean(entry.heard_preview.trim());
   if (hasTranscript || entry.audio_path) return undefined;
   return "Retry — no transcript and no recording left to re-run";
 }
@@ -511,6 +515,8 @@ const REVEAL_HAS_NO_FILE =
 export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
   const {
     entries,
+    record,
+    deliveredText,
     reveal,
     error,
     refresh,
@@ -520,6 +526,21 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
   } = useTranscriptionHistory(runtime.active);
 
   const [openRaw, setOpenRaw] = useState<string | null>(null);
+  /**
+   * THE WHOLE TEXT OF THE ONE ROW THAT IS OPEN (ADR 0240).
+   *
+   * The list carries 160 characters of each transcript, which is the whole text
+   * for most records — the median delivered text on the reporting machine is 135
+   * characters. The panel opens on the preview IMMEDIATELY and fills in when the
+   * record arrives, rather than waiting on a round trip: a spinner over text
+   * that is already correct in half the cases is worse than a paragraph that
+   * grows once.
+   */
+  const [openText, setOpenText] = useState<{
+    id: string;
+    heard: string;
+    written: string;
+  } | null>(null);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"" | TranscriptionHistoryStatus>("");
   /* NOT A FILTER, WHICH IS WHY IT IS NOT A SELECT BESIDE THE ONE ABOVE IT: it
@@ -612,6 +633,29 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
     return trash.pending ? inMonth.filter((item) => !trash.hides(item.id)) : inMonth;
   }, [entries, month, trash.pending, trash.hides]);
 
+  useEffect(() => {
+    if (!openRaw) {
+      setOpenText(null);
+      return;
+    }
+    let live = true;
+    void record(openRaw).then((found) => {
+      if (!live) return;
+      /* A record the store no longer holds leaves the preview standing, which is
+         the honest thing: it is what the row was drawn from. */
+      if (!found) return;
+      const heard = found.raw_transcript ?? "";
+      setOpenText({
+        id: openRaw,
+        heard,
+        written: found.transformed_transcript ?? heard,
+      });
+    });
+    return () => {
+      live = false;
+    };
+  }, [openRaw, record]);
+
   const onExport = useCallback(async () => {
     const path = await save({
       defaultPath: "wordscript-history.json",
@@ -629,17 +673,20 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
   }, [exportEntries, query]);
 
   const rows: HistoryRow[] = visible.map((entry) => {
-        const text = entry.transformed_transcript ?? entry.raw_transcript ?? "";
+        /* The panel's own text where this is the open row and the record has
+           come back, the preview until then (ADR 0240). */
+        const whole = openText?.id === entry.id ? openText : null;
+        const raw = rawOf(entry);
         return {
           id: entry.id,
           title: titleOf(entry, shows),
           meta: [
             historyTime(entry.created_at_ms),
-            PROCESSING_MODE_LABELS[entry.work_mode?.processing_mode ?? "auto"],
+            PROCESSING_MODE_LABELS[entry.processing_mode ?? "auto"],
             entry.active_profile ?? "No profile recorded",
           ],
           badges: badgesFor(entry),
-          raw: rawOf(entry),
+          raw: whole ? { ...raw, heard: whole.heard, written: whole.written } : raw,
           retryDisabledReason: retryDisabledReason(entry),
           /* Offered where the text did not reach the cursor — the one case
              where placing it again is a thing to do. */
@@ -655,13 +702,23 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
             /* Not `remove` — the window is (ADR 0195). The row goes now and the
                runtime is told in six seconds. */
             remove: () => trash.request(entry.id, titleOf(entry, shows)),
+            /* THE WHOLE TEXT, FETCHED WHEN THE BUTTON IS PRESSED (ADR 0240).
+               Placing or copying a preview would place or copy a truncated
+               dictation — the one case where the cut would be a data loss
+               rather than a display. One record over the bridge, on a press. */
             restore: () =>
-              void act(entry.id, () =>
-                invoke("insert_text_native", {
+              void act(entry.id, async () => {
+                const text = await deliveredText(entry.id);
+                if (text === null) return;
+                await invoke("insert_text_native", {
                   request: { text, source: "history_restore", corrected: entry.corrected },
-                }),
-              ),
-            copy: () => void navigator.clipboard.writeText(text),
+                });
+              }),
+            copy: () =>
+              void deliveredText(entry.id).then((text) => {
+                if (text === null) return;
+                return navigator.clipboard.writeText(text);
+              }),
           },
         };
   });

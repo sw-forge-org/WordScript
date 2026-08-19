@@ -257,7 +257,7 @@ describe("OverlayWindow", () => {
             recovery_message: "Inserted at the cursor. No recovery action is needed.",
             clipboard_restore: "scheduled",
           });
-        case "transcription_history_entries":
+        case "transcription_history_summaries":
           return Promise.resolve([
             { id: "history-1", audio_path: "/tmp/wordscript/history-1.wav" },
           ]);
@@ -2302,7 +2302,7 @@ describe("OverlayWindow", () => {
       );
 
       await waitFor(() =>
-        expect(invokeMock).toHaveBeenCalledWith("transcription_history_entries", {
+        expect(invokeMock).toHaveBeenCalledWith("transcription_history_summaries", {
           query: { limit: 1, include_errors_only: true },
         }),
       );
