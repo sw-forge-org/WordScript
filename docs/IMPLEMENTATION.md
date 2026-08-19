@@ -642,6 +642,29 @@ learned the expensive way:
 - **A documentation stage that moves a test count has done something it did not
   say it would.** Prove the suite did not move rather than that it passes.
 
+## Local data on this machine is disposable
+
+**Do not write a migration for reader data, and do not spend a stage rescuing
+it.** This is a developer install; the stores under `~/.config/WordScript/` and
+`~/WordScript/` hold the owner's own dictations and the owner has said twice,
+in as many rounds, that they may be thrown away. A change to a file's format is
+allowed to discard what was there.
+
+- Read an old file only where reading it is trivial. Where it is not, drop it
+  and let the store rebuild itself.
+- Never let the shape of a stored file constrain the shape of a new one. A
+  format decision made to avoid a migration is a decision made for nobody.
+- **One exception, and it is the only one:** the activity ledger
+  (`activity.json`). Its `retired` totals speak for days whose records are gone,
+  so it is the single file here that cannot be rebuilt from anything else — see
+  [ADR 0179](decisions/0179-the-ledger-is-the-only-thing-in-an-archive-that-cannot-be-rebuilt-so-a-restore-raises-it-and-never-replaces-it.md)
+  and [ADR 0176](decisions/0176-a-lifetime-figure-that-can-fall-is-not-a-lifetime-figure-so-a-pruned-day-is-retired-and-only-a-button-clears-it.md).
+  Carry it forward. Everything else may go.
+
+This is a rule about **this machine's** stores, not about released builds. The
+day the product ships to somebody else, their data is not disposable and this
+section does not cover it.
+
 ## Where the sequence for a whole release lives
 
 The tracks are how work is done; they are not what the product owes. That is:

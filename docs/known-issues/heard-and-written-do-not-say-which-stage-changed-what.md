@@ -112,6 +112,18 @@ Left undone on purpose: every other rule id still lands in the panel's default,
 and no word is ever attributed to a stage — the panel holds two texts and a rule
 list, not the text between the stages.
 
+**The evidence was taken away and put back, 2026-08-19.** ADR 0240 made a list
+row carry a 160-character preview of each transcript instead of the whole text,
+and the diff above was then being computed on the two cuts — so on any dictation
+longer than that, the sentence was a claim about the whole text made from its
+first paragraph. A pair whose opening merely dropped fillers and whose tail the
+model rewrote would have been exonerated by the very sentence written to stop a
+misattribution. The panel fetches the record when a row is opened (both screens
+do, since the same day), and the claim is withheld until it has one; the default
+*The AI stage rewrote it* stands in the meantime and is true either way. **The
+general form is worth carrying: a derivation moved onto a smaller payload keeps
+its wording and quietly loses its evidence.**
+
 ## Related
 
 - [stt-prompt-leaks-into-the-transcript.md](stt-prompt-leaks-into-the-transcript.md)

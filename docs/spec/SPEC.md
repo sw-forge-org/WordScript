@@ -349,6 +349,14 @@ Rust core modules in `src-tauri/src/core/`:
   does not hold rather than erroring. `acknowledge_transcription_fallback`,
   `clear_transcription_history_entries` and `delete_transcription_history_entry`
   answer in the summary shape too, because they answer with the list.
+  **A preview is for drawing a row and never for a claim about the dictation.**
+  Every surface that places, copies or reasons about the TEXT fetches the record
+  first: Copy and Restore on the press, and the raw panel on both list screens
+  when a row is opened. A derivation about the whole text -- the raw panel's
+  *the AI stage removed words and added none* -- is withheld until the record is
+  in hand, because a rewrite past the cut is invisible to both previews.
+  `transcripts_identical` is the exception and is why it exists: the runtime
+  decides it against the full pair and sends the answer.
   **Nothing polls this.** The frontend re-reads on the three `wordscript-event`
   payloads that write a record — `transcription`, `error`, `empty` — and on
   `visibilitychange`; the five-second interval was removed with the same ADR.
@@ -947,7 +955,7 @@ no account. Entities:
   recorded (ADR 0225), and an empty language means auto-detect.
   **The record holds every field; the wire does not** (ADR 0240). The entry is
   the storage shape and nothing was dropped from it. What reaches a list is
-  `TranscriptionHistorySummary`, and fifteen stored fields no screen reads --
+  `TranscriptionHistorySummary`, and sixteen stored fields no screen reads --
   among them `spoken_language`, `provider_profile`, the four `local_*` decoding
   parameters, `recovery_message` and `input_level` -- are simply not on it.
   **The index is one JSON array, written whole on every dictation**, compact

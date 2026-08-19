@@ -53,6 +53,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — the row's cut reached two surfaces it should not have
+
+- **The raw panel showed the whole dictation on History and 160 characters of it
+  on Home.** ADR 0240 made a list row a summary carrying a preview of each
+  transcript, and wired the whole-record fetch into History's disclosure only.
+  Home draws the same rows on the same builder, so opening one there showed a
+  truncated transcript with nothing saying it had been cut. Both screens now go
+  through `useWholeTranscript`, which is one fetch rule rather than two.
+- **The raw panel's *the AI stage removed words and added none* was read off two
+  cuts.** It is a claim about the WHOLE dictation — every word of the delivered
+  text appearing in the heard text, in order — and a rewrite past the preview is
+  invisible to both previews, so a pair whose first line merely dropped fillers
+  could exonerate a stage that invented the rest. The claim is withheld until the
+  record is in hand, which is exactly when the panel is drawn; the panel's own
+  *the AI stage rewrote it* stands in the meantime and is true either way.
+- **`query_limit` still clamped a caller's limit to the old ceiling.** It carried
+  the literal `1000` after ADR 0240 took `HISTORY_CEILING` to 5,000. It is the
+  ceiling itself now, so the two move together.
+
+### Changed — the list stopped building five thousand rows to draw twenty-five
+
+- **History builds its rows for the page rather than for the whole set.** The
+  runtime hands over every matching summary, which ADR 0240 took from at most a
+  thousand to at most five thousand, and the screen minted a title, a badge list
+  and six closures for every one of them on every render — including every
+  keystroke in the search box. The count over the pager is read off the filtered
+  set, so the pager still counts what it counted.
+- **Three numbers ADR 0240 stated loosely are corrected in the living docs.** The
+  summary carries 25 fields, not 24, and 16 stored fields no longer reach a
+  screen, not 15 — both counted off the two structs. The ADR keeps its own
+  wording, because an ADR is append-only.
+
 ### Fixed
 
 - **The capture shortcut stops arriving, and this is why.** A modifier-only

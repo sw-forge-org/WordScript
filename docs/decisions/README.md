@@ -1560,6 +1560,8 @@ that is what a record is for (ADR 0123: one list per fact).
   A registered binding is not a delivering one, so the loop beats and the screen stops saying *Registered*.
 - [0240](0240-the-index-is-read-when-it-changes-carries-what-a-row-needs-and-the-turnaround-causes-move-into-the-ledger.md):
   The index is read when it changes, carries what a row needs, and the turnaround causes move into the ledger.
+- [0241](0241-a-bound-on-stored-dictations-is-a-bound-in-bytes-so-the-index-becomes-a-journal-and-both-collections-get-a-warning-and-a-ceiling.md):
+  A bound on stored dictations is a bound in bytes, so the index becomes a journal and both collections get a warning and a ceiling.
 
 ## Resolved: the number 0011 was used twice
 

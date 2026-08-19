@@ -220,7 +220,7 @@ The active product core lives in `src-tauri/src/core/`.
   both written from it rather than from their callers.
   **The record is the storage shape and it is not the wire shape** (ADR 0240): a
   list answers in `TranscriptionHistorySummary`, with the two transcripts cut to
-  160 characters and fifteen stored fields no screen reads left off entirely;
+  160 characters and sixteen stored fields no screen reads left off entirely;
   the whole entry is fetched one at a time by `transcription_history_record`.
   The index is one JSON array, compact, replaced through a temporary file and a
   rename on every record — so every term here is O(records) per dictation, which
