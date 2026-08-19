@@ -222,15 +222,22 @@ The active product core lives in `src-tauri/src/core/`.
   list answers in `TranscriptionHistorySummary`, with the two transcripts cut to
   160 characters and sixteen stored fields no screen reads left off entirely;
   the whole entry is fetched one at a time by `transcription_history_record`.
-  The index is one JSON array, compact, replaced through a temporary file and a
-  rename on every record — so every term here is O(records) per dictation, which
-  is what `HISTORY_CEILING` (5,000) exists to bound.
+  **The index is an append-only journal** (ADR 0241): `history.jsonl`, one line
+  per operation — a record put, a delete tombstoned, an edit put again. A
+  dictation appends one line and costs the same at every index size (measured
+  0.006–0.012 ms from 1,000 to 10,000 records, against 3.5–38.3 ms for the whole
+  -file write it replaced). Compaction is the O(records) write, kept for
+  activation, a wholesale replacement and a doubling of dead weight, and never on
+  the dictation path. There is no record ceiling; what governs the index is
+  `history_retention_days` and a 10 GB backstop.
 - `activity_ledger.rs`: the all-time figures behind Home's counters — one row per
   DAY of counts and durations, never text, plus two fixed-width histograms for
   the medians and a bounded `provider/model` map of turnaround histograms on the
   same axis (`turnaround_causes`, at most 64 keys, ADR 0240) so the cause list
-  under the turnaround bands is all-time like everything beside it. It exists because `history.json` is pruned by age and by count, so
-  a total summed from it grows, sticks at the limit and then runs backwards.
+  under the turnaround bands is all-time like everything beside it. It exists
+  because the index is pruned by age, so a total summed from it grows and then
+  runs backwards as the oldest records pass the window — deleting the record
+  count (ADR 0241) did not change that and could not.
   **Nothing in it subtracts**: a day row past the 800-day horizon is folded into
   `retired` on its way out, so a lifetime figure is monotone by construction and
   not by care (ADR 0176). It travels in the full backup and an import raises it

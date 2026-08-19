@@ -1215,6 +1215,8 @@ cause list still reaches about five days, because `HISTORY_CEILING` is unchanged
 at 1000 and history is what it reads. Raising the ceiling was offered as one of
 four repairs and is not the one that was chosen; it stays open. **Closed by
 Stage G**, and not by raising the ceiling: the list stopped reading history.
+(**And the ceiling itself is gone as of Stage H** — the sentence above is kept in
+its own tense because it is the record of what this stage knew.)
 
 ### Stage G — the index stopped being read on a clock and stopped carrying ballast
 
@@ -1233,11 +1235,14 @@ gets only what it really needs. Durable form is
 | **G5 · done** | **`HISTORY_CEILING` is 5,000.** Raised on a release-build measurement of serialise and write at five sizes, with the table in the constant's own doc block and the note that past 5,000 the answer is an append-only journal | The index reaches about twenty-five days at this machine's rate, and the constant carries the number that justifies it rather than a preference |
 | **G6 · done** | **The review of G1–G5, and the two things the cut had taken with it.** Home's *View raw* drew the 160-character preview and never fetched the record, so the same disclosure showed the whole dictation on History and a silent truncation of it on Home; and the raw panel's shape claim — *the AI stage removed words and added none* — was being read off two cuts on both screens. `useWholeTranscript` is now the one fetch rule for both, `rawOf` takes the whole pair as a second argument, and the claim is withheld until it has one. History's rows are also built for the PAGE rather than for the set, which the ceiling at 5,000 made worth doing | Opening a long record on Home shows the whole text in both columns; a pair whose first line only drops fillers and whose tail the model invented gets the panel's own default rather than an exoneration; `npx vitest run` 953/953, `cargo test` 1006/0 |
 
-**What this does NOT fix, and it is in the ADR too:** every term here is still
-O(records) per dictation, because the index is one JSON array rewritten whole.
-The write got 54.6% cheaper and atomic; it did not stop being linear. An
-append-only journal would make it O(1) and would remove the cost basis the
-ceiling exists to bound — that is a change to the file format, not to a number.
+**What this did NOT fix — and Stage H did, the same day.** Every term here was
+still O(records) per dictation, because the index was one JSON array rewritten
+whole; the write got 54.6% cheaper and atomic without ceasing to be linear. The
+sentence that stood here said an append-only journal would make it O(1) and would
+remove the cost basis the ceiling exists to bound. That is what H1 built and what
+H2 then deleted: **0.006 ms to append at 10,000 records against 38.3 ms to
+rewrite.** Kept rather than replaced, because the finding and its fix reading one
+after the other is the shortest account of why the ceiling was the wrong lever.
 
 **Three numbers this stage stated and the review corrected.** The summary carries
 **25** fields rather than 24, and **16** stored fields no longer reach a screen
@@ -1249,16 +1254,19 @@ caller's limit to the OLD ceiling's literal `1000` after G5 moved the ceiling to
 5,000; nothing asks for more today, which is exactly why it would have been found
 late.
 
-### Stage H — the bound stops being a number of dictations, and nothing is built yet
+### Stage H — the bound stops being a number of dictations, and all of it is built
 
-**Opened 2026-08-19, immediately after the G6 review, and this is a brief rather
-than a record: no step below is done.** The owner read G6's answer, rejected the
-unit rather than the number, and settled it in one line — *5000 Diktate macht
+**Opened 2026-08-19 immediately after the G6 review, and closed the same day: H1
+to H5 are landed.** The owner read G6's answer, rejected the unit rather than the
+number, and settled it in one line — *5000 Diktate macht
 keinen Sinn. Das überhaupt auf die Dateien zu fokussieren, statt auf den
 Speicher.* Durable form is
 [ADR 0241](../decisions/0241-a-bound-on-stored-dictations-is-a-bound-in-bytes-so-the-index-becomes-a-journal-and-both-collections-get-a-warning-and-a-ceiling.md),
 which carries the measurements, the premise that had to be corrected first, and
-the reasoning. Read it before H1; this table is only the sequence.
+the reasoning;
+[ADR 0242](../decisions/0242-the-journal-replays-into-a-list-the-archive-counts-itself-by-day-stamps-and-the-byte-that-is-bounded-is-the-content-byte.md)
+is the mechanism and answers the four things 0241 handed forward. Read both
+before touching this area; the table below is only the sequence.
 
 **The premise the stage rests on, because it is the thing most likely to be
 re-derived wrongly:** the index does NOT carry the statistics and has not since
@@ -1269,13 +1277,18 @@ per-record detail, and costs no tile, no calendar and no histogram. Anyone who
 reads the ceiling as a bound on the product's memory has the same wrong premise
 the owner opened with, and will build the wrong thing.
 
+**Built in the order H1, H2, H4, H3, H5** — H4 moved ahead of H3 because the
+brief below says in its own row that it is a precondition, and a 10 GB ceiling
+laid over a directory layout that cannot hold 10 GB is a number the product
+states and cannot honour.
+
 | Step | What | Done means |
 |---|---|---|
-| **H1** | **The index becomes an append-only journal.** One record is one line appended; deletes and edits are tombstones; compaction rewrites on activation or past a tombstone fraction, never on the dictation path. **No migration** — an existing `history.json` may be read if trivial and discarded if not (ADR 0241 section 5) | The per-dictation write is flat across index size where ADR 0240's table showed 4.8 / 9.2 / 24.9 / 59.4 ms at 1,000 / 2,000 / 5,000 / 10,000 records, measured the same way on a release build |
-| **H2** | **`HISTORY_CEILING` is deleted**, with its measurement table, its `query_limit` clamp and the sentence on Privacy & Data that states a number of dictations | No constant in `config.rs` bounds the index in records, and no screen names one |
-| **H3** | **Both collections get a byte budget: warning 5 GB, ceiling 10 GB, independently.** At the ceiling the oldest records evict, in the collection that hit it and only there. ADR 0237's separation of lifetimes stands; the archive's lifetime stops being infinite | Two readings, two thresholds, and a synthetic store past each threshold evicts oldest-first without touching the other collection |
-| **H4** | **The archive stops being walked whole.** A sidecar count and size beside the archive, invalidated on write, replaces `store_transcript_files`' full walk with a `metadata()` per file — and the `YYYY/MM/` layout shards to day level. **This is a precondition for H3, not a follow-up:** 10 GB at the measured 684 B mean is ~15 million files and ~1.2 million per month directory, which no `readdir` survives | `transcript_store_status` is O(1) on workspace activation and on a Privacy visit, and the ceiling in H3 is one the layout can actually reach |
-| **H5** | **Privacy & Data reads both figures live.** The archive's already comes from `transcript_store_status`; the index gains the same. The 5 GB notice is the backstop's voice, not the reader's instrument — at 217 dictations a day neither threshold arrives this decade, and a warning wired only to a threshold nobody reaches is not a feature | Both collections show a current size on the screen, and the reader's `history_retention_days` is the only number that governs what they lose |
+| **H1 · done** | **The index is an append-only journal.** `history.jsonl`, one line per operation: a put for a record written or edited, a tombstone for one deleted. Oldest first in the file and newest first in the store, and a put of a held id replaces it IN PLACE so an edit never moves a record up the list. A torn last line costs that one record. Compaction runs on activation, on a wholesale replacement and past a doubling of dead weight, never on the dictation path. An existing `history.json` is read once, converted and deleted | Measured on a release build, both writes in one pass: **0.012 / 0.012 / 0.006 / 0.006 ms** to append at 1,000 / 2,000 / 5,000 / 10,000 records, against **3.5 / 7.5 / 19.3 / 38.3 ms** for the whole-file write it replaced. Flat against a line, and `measure_the_index_write_against_index_size` keeps both columns so the claim is never read against a number from another day |
+| **H2 · done** | **`HISTORY_CEILING` is deleted** with its measurement table, its `query_limit` clamp and the row on Privacy & Data. `history_limit` went with it — out of `AppConfig`, out of `src/types/ipc.ts`, out of the export document and out of `prune_entries`, which now takes only a retention | No constant bounds the index in records and no screen names one. A config or export from any earlier build carries a field this one has no name for and loses it without losing the retention rule beside it |
+| **H4 · done** | **The archive stops being walked whole.** `YYYY/MM/` shards to `YYYY/MM/DD/`, and a sidecar records a tally PER SHARD beside that shard's directory stamp — not one cached total, because a total is invalidated by what this product writes and by nothing the reader does. Files written before the shard are not moved and their month stays a shard of its own | `transcript_store_status` reads ~600 `read_dir` calls and one stat per day shard where it used to stat every file in the archive, on activation and on every Privacy visit. A reader deleting files by hand moves one stamp and only that shard recounts — asserted, along with one test that plants a disagreeing tally under a matching stamp, because every other test here would pass with the cache ignored |
+| **H3 · done** | **Both collections have a byte budget: warning 5 GB, ceiling 10 GB, independently.** Content bytes rather than disk occupancy — occupancy is a property of the reader's block size, not of this product. Enforced at startup beside `prune_retained_captures`, never on the dictation path. A compaction is tried first, because a journal over its ceiling on dead weight must not answer by deleting live history; eviction is oldest first and goes to 90% rather than to the ceiling | A synthetic store past each threshold evicts oldest-first, stops at the target, leaves the other collection alone and leaves files the reader put in the folder where they are. Archive order is read off the path and the filename, never off `mtime` |
+| **H5 · done** | **Privacy & Data reads both figures live.** The index gains the reading the archive already had, both warn past 5 GB, and the transcript card stops saying *Nothing prunes them* — true when ADR 0237 wrote it, and exactly the gap ADR 0241 closed | Both collections state a current size. `formatStoredSize` learned GB, because a ceiling stated in gigabytes read against `10240.0 MB` is the same number failing to answer the question the row asks |
 
 **What this stage does NOT do:** it does not touch the ledger, and it must not.
 `activity.json` is the one file here that cannot be rebuilt from anything else —
@@ -1284,10 +1297,22 @@ carried forward across every change above. Everything else on this machine is
 disposable; the standing rule is in
 [`IMPLEMENTATION.md`](../IMPLEMENTATION.md#local-data-on-this-machine-is-disposable).
 
-**The one number to re-measure before H3, not to inherit:** 684 bytes mean and
-392 median per transcript, 2,432 bytes per index record, 217 dictations a day.
-All three are from one 2.3-day window on one machine. They are enough to reject
-a count ceiling and not enough to size a budget twice over.
+**The one number that was not re-measured, and it is the open item this stage
+leaves:** 684 bytes mean and 392 median per transcript, 2,432 bytes per index
+record, 217 dictations a day. All three are from one 2.3-day window on one
+machine. They were enough to reject a count ceiling and they are NOT enough to
+have sized the budget — 5 GB and 10 GB are round numbers chosen so far above any
+plausible use that being wrong about the rate by a factor of ten changes nothing.
+That is a defensible way to pick a backstop and it is not a measurement. If the
+thresholds ever have to be defended rather than merely stated, this is where the
+work starts.
+
+**And one consequence recorded rather than hidden:** the bounded byte is the
+content byte, so on a 4 KB-block filesystem the archive's real disk cost at the
+ceiling is several times the ceiling. ADR 0241 measured that slack at 86% of the
+archive's footprint. The reasoning for choosing content anyway is in ADR 0242
+section 3; the point here is that the number the product states and the number a
+file manager shows are different, on purpose, and neither is wrong.
 
 ## Traps
 
@@ -1392,13 +1417,14 @@ absence — a streak, a gap, a "you haven't dictated since" — has to pass thro
 
 ## The prompt for the next session
 
-**Stage A, Stage C, Stage D, Stage E, Stage F and Stage G are all closed** — A1
-to A11, C1 to C11, D1 to D4, E1 to E5, F1 to F4 and G1 to G6 are landed, C12
-stays withdrawn. **Stage H is open and is entirely unbuilt**, which no earlier
-stage on this page was when it was written down: H1 to H5 are a brief, and
+**Stage A, Stage C, Stage D, Stage E, Stage F, Stage G and Stage H are all
+closed** — A1 to A11, C1 to C11, D1 to D4, E1 to E5, F1 to F4, G1 to G6 and H1 to
+H5 are landed, C12 stays withdrawn. Stage H was written as a brief and built the
+same day; the reasoning is
 [ADR 0241](../decisions/0241-a-bound-on-stored-dictations-is-a-bound-in-bytes-so-the-index-becomes-a-journal-and-both-collections-get-a-warning-and-a-ceiling.md)
-is the reasoning behind them. Read the record sections above before anything
-else, in
+and the mechanism is
+[ADR 0242](../decisions/0242-the-journal-replays-into-a-list-the-archive-counts-itself-by-day-stamps-and-the-byte-that-is-bounded-is-the-content-byte.md).
+Read the record sections above before anything else, in
 particular the A3/A4/A5 one, *What the readings actually measure*, the Stage C
 one, the Stage D one, the Stage E one and the Stage G one: all six carry
 findings that are not in the tree's own comments — Stage G's include a premise
@@ -1408,10 +1434,10 @@ went.
 Work in the repo root on `main`. Do not create a branch. **Seven other tracks
 work in the same tree** — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so
 run `git status` and `git log --oneline -5` before you start, and stage your own
-paths. Never `git add -A`. **0242 is the next free ADR number unless the tree
+paths. Never `git add -A`. **0243 is the next free ADR number unless the tree
 says otherwise — grep, and grep again immediately before you write the file**
-(0241 went to Stage H, written the moment the number was known, which is the
-rule below rather than an exception to it).
+(0241 and 0242 both went to Stage H, each written the moment the number was
+known, which is the rule below rather than an exception to it).
 Stage D cited 0234 twelve times in source and lost the number to another track
 while the session was running; Stage E and Stage F both wrote the ADR file first
 and scattered the citations after, which is what that trap actually asks for.
@@ -1421,7 +1447,7 @@ insert-delivery track along with 0239 by the time the file was due. Renumbering
 to 0240 cost a `sed` over 14 files. The rule is not *grep first*, it is **write
 the file the moment you know you need a number.**
 
-### Stage H is open and none of it is built. Stage B is still not yours to start
+### Stage H is closed. What is left is Stage B, and it is not yours to start
 
 Every remaining row waits on another track's data, and the table under *What can
 be wired today* is the authority on which is which. **Do not build the surface
@@ -1434,22 +1460,25 @@ the thing this track spent Stage A making impossible.
 | **B2** | The target application on the record, plus the privacy decision that names the new collection. `Apps` is RETIRED rather than deferred (ADR 0175) — do not bring the tile back without re-opening that ADR |
 | **B4** | Meetings and uploads as calendar origins — [`context-objects.md`](context-objects.md). The tooltip already holds their line, unwired and tagged |
 
-**That happened on 2026-08-19: the owner read the G6 review and opened Stage H.**
-It is the first stage on this page that is a brief rather than a record — H1 to
-H5 are written and none of them is built. A session opening this page should
-start there, and should read
-[ADR 0241](../decisions/0241-a-bound-on-stored-dictations-is-a-bound-in-bytes-so-the-index-becomes-a-journal-and-both-collections-get-a-warning-and-a-ceiling.md)
-before H1 rather than the table alone.
+**That happened on 2026-08-19: the owner read the G6 review, opened Stage H, and
+it was built the same day.** It is the only stage on this page that was written
+as a brief before it was built, and the brief is kept in that shape — the rows
+now say what landed, and the *Done means* column carries the measurement rather
+than the intention.
 
-Stage D through Stage G were each opened the same way, by one evening's use of
-what the session before it landed. The questions below are what is left when
-Stage H closes, and every one of them is a PROPOSAL rather than a task.
+Stage D through Stage H were each opened the same way, by one evening's use of
+what the session before it landed. **So a session opening this page should
+probably not be a home-activity session.** If the owner brings new readings they
+open a Stage I and this page is where it goes. If they do not, the questions
+below are what this track still has to say, and every one of them is a PROPOSAL
+rather than a task.
 
-### Eight things to raise, and none of them is a row yet
+### Eight things to raise, and only one of them has been answered
 
-The linear index write is not in this list because it already has a home:
-the block under the Stage G table, and ADR 0240. Items 7 and 8 came out of
-the G6 review and are recorded here first.
+Items 7 and 8 came out of the G6 review. **Item 7 was answered the same day and
+item 8 is still open**; the six above them are untouched. The linear index write
+is not in this list and never was — it had a home in the block under the Stage G
+table, and Stage H is what closed it.
 
 1. **`Words per minute` is throughput, not articulation — and this is the one
    that has been open longest.** ADR 0177 fixed the numerator and the
@@ -1492,14 +1521,16 @@ the G6 review and are recorded here first.
    the record that it was made, put to the owner, and decided against. The
    reasoning is in
    [ADR 0241](../decisions/0241-a-bound-on-stored-dictations-is-a-bound-in-bytes-so-the-index-becomes-a-journal-and-both-collections-get-a-warning-and-a-ceiling.md).
-8. **Home's all-time tiles reload on a count that can fail to move.**
+8. **STILL OPEN. Home's all-time tiles reload on a count that can fail to move.**
    `useActivityLedger(active, entries.length)` in `src/screens/Home.tsx` uses the
    number of index rows as its reload key. A dictation that lands in the same
-   moment retention or the ceiling drops one leaves the length unchanged, so the
-   ledger is not re-read and the tiles keep the previous answer until the next
-   activation. Pre-existing, not a G6 regression, and invisible at any normal
-   rate — it needs the index to be exactly at its bound. **A monotonic counter,
-   or the newest record's id, is a key that cannot stand still.**
+   moment retention drops one leaves the length unchanged, so the ledger is not
+   re-read and the tiles keep the previous answer until the next activation.
+   Pre-existing, not a G6 regression. **Stage H made it rarer rather than
+   fixing it:** the ceiling used to fire every 23 days on this machine and the
+   retention window fires at 365, so the collision it needs is now a year apart
+   instead of three weeks. **A monotonic counter, or the newest record's id, is a
+   key that cannot stand still.**
 
 ### Rules that still have teeth here
 

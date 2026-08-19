@@ -103,11 +103,12 @@ Status: 2026-08-19
   (ADR 0074), written at the moment its record is, with the frontmatter §11.23
   specifies. `history.json` stays the index and carries the path; Delete and
   Clear take the file with the entry, and the runtime removes only paths an entry
-  named. **The retention sweep no longer does** (ADR 0237, 2026-08-19): the
-  index is capped so a list stays fast — five thousand records since ADR 0240,
-  about twenty-five days of writing at the reporting machine's rate — and that
-  cap is not a lifetime anybody chose for the reader's own files, so the archive
-  is kept until it is deleted. Its consequence is stated rather than hidden: a file whose entry has
+  named. **The retention sweep no longer does** (ADR 0237, 2026-08-19): the index
+  is swept by an age rule the reader sets in months, and that is not a lifetime
+  anybody chose for their own files. **The archive has a lifetime of its own
+  since ADR 0241** — the reader's retention, or a 10 GB backstop, whichever comes
+  first — where it previously had none at all. Its consequence is stated rather
+  than hidden: a file whose entry has
   been pruned is an orphan no History row can reach, so `Transcript files` on
   Privacy & Data states how many files and how many bytes are on the machine and
   carries the one door that removes them — a walk bounded by the store's own
@@ -128,11 +129,13 @@ Status: 2026-08-19
   is expanded, restored or copied. Measured on the reporting machine's 478
   records: 2,453 bytes a row became 1,113, a 54.6% cut, and what remains is paid
   once per dictation while the workspace is open rather than twelve times a
-  minute regardless. The index write is compact and lands through a rename, and
-  `HISTORY_CEILING` is 5,000 — a release build serialises that index in 22.7 ms
-  and writes it in 2.2 ms. **What is not fixed:** every term is still
-  O(records) per dictation, because the index is one JSON array rewritten whole;
-  past 5,000 the answer is an append-only journal, not a larger number.
+  minute regardless. **And the index is an append-only journal** (ADR 0241),
+  which is what the line above used to name as the open item: a dictation
+  appends one line, measured on a release build at 0.006–0.012 ms from 1,000 to
+  10,000 records against 3.5–38.3 ms for the whole-file write it replaced.
+  `HISTORY_CEILING` is deleted rather than raised a third time, and no number of
+  dictations bounds this store — `history_retention_days` does, with a 10 GB
+  backstop behind it and a live figure for both collections on Privacy & Data.
 - **Full export, Full import and Reset all settings act** (`core::backup`). The
   archive is the config, the history index and the transcript files; import and
   reset copy the config aside first and answer with where it went. The API key

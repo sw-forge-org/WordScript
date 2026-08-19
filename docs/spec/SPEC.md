@@ -1,7 +1,11 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-19 (the history index's
-two shapes: **the list shape is not the record** -- `TranscriptionHistorySummary`
+Status: created 2026-07-24, last drift check 2026-08-19 (**a bound on stored
+dictations is a bound in bytes**: the index is an append-only journal, the record
+ceiling is deleted rather than raised, both collections get a 5 GB warning and a
+10 GB ceiling of their own, and the archive shards to day level so a ceiling
+stated in bytes is one the layout can reach (ADR 0241, ADR 0242); before it the
+history index's two shapes: **the list shape is not the record** -- `TranscriptionHistorySummary`
 carries what a row draws with the two transcripts cut to 160 characters, the
 whole entry is fetched by id, nothing polls either, and the turnaround causes
 moved into the activity ledger as an all-time term (ADR 0240); before it the
@@ -868,13 +872,24 @@ no account. Entities:
   file once, never edits one, and deletes only paths a history entry named** --
   with the one exception ADR 0237 names, `purge_transcript_archive`, which walks
   the store's own layout behind a button on Privacy & Data.
-  **The archive is its own collection with its own lifetime (ADR 0237).** The
-  index retention (`history_limit`, `history_retention_days`) drops entries and
+  **The archive is its own collection with its own lifetime (ADR 0237, amended by
+  ADR 0241).** The index retention (`history_retention_days`) drops entries and
   leaves their files where they are; an intentional delete -- one record, the
   whole history, or the purge -- still takes the file. So a file whose entry has
   been pruned is an orphan by design: History cannot list, reveal or retry it,
   and the count on Privacy & Data (`transcript_store_status`, which reports
   `files` and `bytes`) is the only surface that states it exists.
+  **That lifetime stopped being infinite.** ADR 0237 decoupled the files and left
+  the answer to *when do they go* as *never*; the archive now has the same byte
+  budget the index has, independently -- warning at 5 GB, ceiling at 10 GB,
+  oldest first, enforced at startup and in the collection that hit it only. The
+  layout is `<root>/<YYYY>/<MM>/<DD>/<DD-HHMM>-<slug>.md` (ADR 0241): a 10 GB
+  ceiling under the old `YYYY/MM/` would be about 1.2 million files in one
+  directory. Files written before the shard are NOT moved and a month directory
+  holding them stays a shard of its own. `transcript_store_status` reads a
+  directory stamp per day against a sidecar tally rather than stat-ing every
+  file, so a reader deleting files by hand moves exactly one stamp and only that
+  shard is recounted.
 - **AppConfig** (`config.rs`): persisted app config. Holds global settings,
   the text-profile collection, active mirrors for profile-bound settings,
   provider selection, seven mode shortcuts (picker plus six direct modes),
@@ -958,12 +973,24 @@ no account. Entities:
   `TranscriptionHistorySummary`, and sixteen stored fields no screen reads --
   among them `spoken_language`, `provider_profile`, the four `local_*` decoding
   parameters, `recovery_message` and `input_level` -- are simply not on it.
-  **The index is one JSON array, written whole on every dictation**, compact
-  rather than pretty-printed and landed through a temporary file plus a rename.
-  `HISTORY_CEILING` is 5,000 records; on a release build that index serialises
-  in 22.7 ms and reaches the disk in 2.2 ms. Past that the answer is an
-  append-only journal, not a larger constant -- every term here is still
-  O(records) per dictation.
+  **The index is an append-only journal** (ADR 0241). `history.jsonl`, one line
+  per operation: `{"put": <entry>}` for a record written or edited,
+  `{"tombstone": {"id": ...}}` for one deleted. The file is oldest first and the
+  store is newest first; a put of an id already held replaces it IN PLACE, so an
+  edit never moves a record up the list. A line that will not parse is skipped
+  and costs that one record, because an interrupted append leaves a torn last
+  line and refusing the file over it would lose every record on the machine.
+  A dictation appends one line and the cost does not depend on how many are
+  already there -- measured on a release build at 0.006 to 0.012 ms from 1,000
+  to 10,000 records, against 3.5 to 38.3 ms for the whole-file write it
+  replaced. Compaction rewrites the file compactly through a temporary plus a
+  rename, and runs on activation, on a wholesale replacement and past a doubling
+  of dead weight -- **never on the dictation path**.
+  **There is no ceiling on how many dictations are kept.** `HISTORY_CEILING` and
+  `history_limit` are deleted (ADR 0241): a bound on stored dictations is a bound
+  in BYTES, and what governs the index is `history_retention_days` with a
+  10 GB backstop behind it. An existing `history.json` is read once, converted
+  and deleted.
 - **ActivityLedger** (`activity_ledger.rs`): the all-time counts Home reads,
   in `activity.json` beside the index. Counts only -- no text, no ids -- so it
   survives every retention rule the index obeys (ADR 0176). It holds per-day

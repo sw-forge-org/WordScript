@@ -1562,6 +1562,8 @@ that is what a record is for (ADR 0123: one list per fact).
   The index is read when it changes, carries what a row needs, and the turnaround causes move into the ledger.
 - [0241](0241-a-bound-on-stored-dictations-is-a-bound-in-bytes-so-the-index-becomes-a-journal-and-both-collections-get-a-warning-and-a-ceiling.md):
   A bound on stored dictations is a bound in bytes, so the index becomes a journal and both collections get a warning and a ceiling.
+- [0242](0242-the-journal-replays-into-a-list-the-archive-counts-itself-by-day-stamps-and-the-byte-that-is-bounded-is-the-content-byte.md):
+  The journal replays into a list, the archive counts itself by day stamps, and the byte that is bounded is the content byte.
 
 ## Resolved: the number 0011 was used twice
 

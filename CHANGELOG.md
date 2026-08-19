@@ -53,6 +53,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the index stops being rewritten, and the bound stops being a number of dictations
+
+- **`history.json` is `history.jsonl`, and it is an append-only journal.** One
+  line is one operation: a record put, a delete tombstoned, an edit put again.
+  The whole-file write it replaces cost more the more records were in the file,
+  and `HISTORY_CEILING` existed to bound that curve. Measured on a release build
+  at the four sizes ADR 0240 used — 1,000 / 2,000 / 5,000 / 10,000 records — an
+  append costs **0.012 / 0.012 / 0.006 / 0.006 ms** against **3.5 / 7.5 / 19.3 /
+  38.3 ms** to rewrite. Compaction is kept for activation, a wholesale
+  replacement and a doubling of dead weight, and never runs on the dictation
+  path. A torn last line from an interrupted append costs that one record rather
+  than the file.
+- **`HISTORY_CEILING` is deleted rather than raised a third time**, and
+  `history_limit` with it — out of `AppConfig`, out of the IPC contract, out of
+  the export document and out of `prune_entries`. What governs the index is
+  `history_retention_days`, in months, which is what a reader setting it always
+  thought it was: at 217 dictations a day the ceiling arrived in 23 days while
+  their setting said 365.
+- **An existing `history.json` is read once, converted and deleted.** The only
+  migration ADR 0241 allows itself, and it is there because the parse was
+  already written.
+
+### Added — two collections, two byte budgets, and both say what they weigh
+
+- **The index and the transcript archive each get a 5 GB warning and a 10 GB
+  ceiling, independently.** At the ceiling the oldest go, in the collection that
+  reached it and only there — pooling them would put back the coupling ADR 0237
+  broke. Enforced at startup, not on the dictation path: it is a backstop
+  against a runaway, and at any real rate neither threshold arrives this decade.
+- **The transcript archive has a lifetime at all, which it did not.** ADR 0237
+  decoupled the files from the index retention and left the answer to *when do
+  they go* as *never, unless you press the button*. Privacy & Data stops saying
+  `Nothing prunes them` and names the backstop.
+- **Privacy & Data states what the index weighs**, the reading the archive card
+  already had. The figure is the instrument and the threshold is the backstop's
+  voice — a row wired only to 5 GB would never say anything.
+
+### Changed — the archive counts itself without being walked
+
+- **`transcript_store_status` stopped stat-ing every file in the archive.** It
+  runs on workspace activation and on every visit to Privacy & Data. A sidecar
+  beside the archive now records a tally per day shard beside that shard's
+  directory modification time, and only shards whose stamp moved are recounted.
+  It is a tally per shard rather than one cached total precisely because a total
+  is invalidated by what the product writes and by nothing the reader does: a
+  reader emptying half of last March in their file manager moves exactly one
+  stamp.
+- **The layout shards to `YYYY/MM/DD/`.** A 10 GB ceiling under `YYYY/MM/` would
+  be about 1.2 million files in one directory, so this is a precondition for the
+  ceiling rather than tidiness. **Files written before the shard are not moved** —
+  that folder is the reader's (ADR 0237) — and a month directory holding them
+  stays a shard of its own.
+- **Two ignored measurement harnesses stopped reading a file shape that no
+  longer exists.** Both read the developer's live store and both print their
+  record count as a finding; parsing the old array would have answered zero, and
+  somebody writes a zero like that down.
+
 ### Fixed — the row's cut reached two surfaces it should not have
 
 - **The raw panel showed the whole dictation on History and 160 characters of it
