@@ -1,11 +1,11 @@
 //! THE ONE THING HISTORY CANNOT BE: A RECORD THAT DOES NOT FORGET.
 //!
-//! `history.json` is pruned on every read, by age (`history_retention_days`) and
-//! by count (`history_limit`). That is correct for what it is — a list of
-//! records you can open, retry and delete, which has to stay a size a person can
-//! live with. It is also why nothing built on top of it can be lifetime-scoped:
-//! a total summed from a pruned list grows, sticks at the limit, and then runs
-//! BACKWARDS as the oldest records fall off. A counter that goes down is a
+//! The index is pruned on every read, by age (`history_retention_days`) — and
+//! until ADR 0241 by a record count as well. That is correct for what it is: a
+//! list of records you can open, retry and delete. It is also why nothing built
+//! on top of it can be lifetime-scoped, and deleting the count did not change
+//! that one bit — a total summed from a list swept by AGE still runs BACKWARDS
+//! the day the oldest records pass the window. A counter that goes down is a
 //! counter nobody believes again.
 //!
 //! So the all-time figures do not come from history. They come from here.
@@ -310,9 +310,11 @@ pub struct ActivityLedger {
     ///
     /// **THIS USED TO BE READ OFF THE HISTORY RECORDS AND COULD NOT BE.** The
     /// cause list under the turnaround view was the one reading on Home that was
-    /// not all-time: `history.json` is capped at a thousand records, which at the
-    /// reporting machine's rate is about five days, so a lifetime figure sat
-    /// above a five-day list and the surface had to explain the discrepancy. A
+    /// not all-time: the index was capped at a thousand records, which at the
+    /// reporting machine's rate was about five days, so a lifetime figure sat
+    /// above a five-day list and the surface had to explain the discrepancy.
+    /// ADR 0241 has since deleted the cap, and the retention window that
+    /// replaces it is just a longer list — still not all time. A
     /// distribution per recogniser is what the ledger is FOR — counts, no text,
     /// no growth with use — and it costs about eight hundred bytes per model.
     #[serde(default)]

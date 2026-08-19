@@ -6,22 +6,30 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
 use super::capture::{CaptureIntegrity, InputLevelSummary};
-use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode, HISTORY_CEILING};
+use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode};
 use super::insertion::{
     insert_transcription_from_legacy, NativeClipboardRestoreStatus, NativeInsertDriver,
     NativeInsertMode, NativeInsertRecoveryAction, NativeInsertResult,
 };
-use super::paths::history_file_path;
+use super::paths::{history_file_path, legacy_history_index_path};
 use super::providers::JobKey;
 use super::runtime_log;
 use super::sessions::now_ms;
 use super::transform::{finalize_with_text_rules, NativeTransformConfig, NativeTransformResult};
 
-/// A capacity hint for the deque and the count the retention tests drive the
-/// policy with. NOT the product's cap: since ADR 0185 that is one value,
-/// `config::HISTORY_CEILING`, and it is not a setting. Allocating five thousand
-/// records up front for a history that usually holds a handful is the reason
-/// this stays its own smaller number.
+/// A capacity hint for the deque, and nothing else.
+///
+/// **THE PRODUCT HAS NO CAP ON HOW MANY DICTATIONS IT KEEPS** (ADR 0241). It had
+/// one — a picker until ADR 0185, then a pinned `HISTORY_CEILING` — and both
+/// were bounding the per-dictation write rather than the disk, because the index
+/// was one JSON array rewritten whole. The journal made that write flat, so the
+/// number bounding it was deleted rather than raised for a third time. What
+/// bounds the store now is `history_retention_days`, in months, and a byte
+/// budget behind it.
+///
+/// This is what `VecDeque::with_capacity` is told on a cold load. Allocating for
+/// a year of dictation up front to hold the handful most installs have is the
+/// reason it is small and is not derived from anything.
 const DEFAULT_HISTORY_LIMIT: usize = 200;
 const MS_PER_DAY: u64 = 86_400_000;
 
@@ -517,7 +525,9 @@ pub struct TranscriptionHistoryStorageStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TranscriptionHistoryExportDocument {
     exported_at_ms: u64,
-    history_limit: usize,
+    /// The rule the export was taken under, which since ADR 0241 is the only
+    /// one there is. A document written by an older build also carries a
+    /// `history_limit`; serde drops it, and so does this product.
     history_retention_days: u32,
     count: usize,
     entries: Vec<TranscriptionHistoryEntry>,
@@ -611,7 +621,58 @@ impl SpeechAttribution {
 struct TranscriptionHistoryStore {
     loaded: bool,
     entries: VecDeque<TranscriptionHistoryEntry>,
+    /// HOW MANY LINES THE JOURNAL ON DISK HOLDS, which is not how many records
+    /// the store does (ADR 0241). Every put and every tombstone ever appended
+    /// is still in the file until a compaction; the gap between this and
+    /// `entries.len()` is the dead weight, and it is the whole input to the
+    /// decision to rewrite.
+    ops: usize,
 }
+
+/// One line of the index, which is what the index now is (ADR 0241).
+///
+/// **THE FILE IS A LOG OF WHAT HAPPENED, NOT A PICTURE OF WHAT IS.** A record
+/// is appended; a delete appends a tombstone; an edit appends the record again.
+/// Writing dictation number 80,000 therefore costs what dictation number 1 cost,
+/// which is the entire reason the count ceiling could be deleted rather than
+/// raised for a third time.
+///
+/// The order in the file is oldest first, because that is the direction append
+/// goes; the order in the store is newest first, because that is the direction
+/// a list reads. `replay_journal` is the one place those two meet.
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum JournalOp {
+    /// The record as it now stands. Boxed because an entry is some hundreds of
+    /// bytes and a tombstone is one string, and an enum is as large as its
+    /// largest variant.
+    Put(Box<TranscriptionHistoryEntry>),
+    Tombstone { id: String },
+}
+
+/// The same two operations, borrowed, for the writing half.
+///
+/// It is a second type rather than a lifetime on the first because the reading
+/// half must own what it parses and the writing half must not clone what it
+/// already holds — an owned `Put` on the write path would copy every field of
+/// the record onto the dictation path to serialise it.
+#[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum JournalWrite<'a> {
+    Put(&'a TranscriptionHistoryEntry),
+    Tombstone { id: &'a str },
+}
+
+/// Rewrite the journal when the operations behind it outnumber the records in
+/// front of it, and never before 256 lines.
+///
+/// THE FLOOR IS WHAT KEEPS A SMALL STORE FROM COMPACTING CONSTANTLY. Without it
+/// a machine holding four records rewrites the file on the ninth operation, and
+/// again on the thirteenth — a rewrite is cheap there, but it is also pointless,
+/// and a rule that fires on every install from the first week is a rule nobody
+/// can reason about. Above the floor the test is a doubling: half the file being
+/// dead is the point at which reading it costs twice what it should.
+const JOURNAL_COMPACT_FLOOR: usize = 256;
 
 fn history_store() -> &'static Mutex<TranscriptionHistoryStore> {
     static STORE: OnceLock<Mutex<TranscriptionHistoryStore>> = OnceLock::new();
@@ -625,8 +686,8 @@ fn history_path_override() -> &'static Mutex<Option<PathBuf>> {
 }
 
 #[cfg(test)]
-fn history_policy_override() -> &'static Mutex<Option<(usize, u32)>> {
-    static OVERRIDE: OnceLock<Mutex<Option<(usize, u32)>>> = OnceLock::new();
+fn history_policy_override() -> &'static Mutex<Option<u32>> {
+    static OVERRIDE: OnceLock<Mutex<Option<u32>>> = OnceLock::new();
     OVERRIDE.get_or_init(|| Mutex::new(None))
 }
 
@@ -641,55 +702,248 @@ fn resolved_history_file_path() -> PathBuf {
     history_file_path()
 }
 
+/// The array this store used to be, beside wherever the journal resolved to.
+///
+/// A test points the journal at a directory of its own, and the file it is
+/// converting from has to be in that same directory — otherwise the migration
+/// test would read the developer's real history.
+fn resolved_legacy_index_path() -> PathBuf {
+    #[cfg(test)]
+    if let Ok(guard) = history_path_override().lock() {
+        if let Some(path) = guard.clone() {
+            return path.with_extension("json");
+        }
+    }
+
+    legacy_history_index_path()
+}
+
+/// Load once per process, then rewrite the file if it has gone slack.
+///
+/// **THIS IS THE "ON ACTIVATION" HALF OF COMPACTION (ADR 0241)**, and it is here
+/// rather than on a timer or a command because it is the one moment the whole
+/// journal has just been read anyway: the records are in hand, the cost of
+/// writing them out is paid against a launch rather than against a dictation,
+/// and a store that was pruned by retention on the way in sheds those lines
+/// immediately instead of carrying them to the next launch.
 fn ensure_loaded(store: &mut TranscriptionHistoryStore) {
     if store.loaded {
         return;
     }
 
-    store.entries = load_history_entries();
+    let (entries, ops) = load_history_entries();
+    store.entries = entries;
+    store.ops = ops;
     store.loaded = true;
+    compact_if_slack(store);
 }
 
-fn load_history_entries() -> VecDeque<TranscriptionHistoryEntry> {
+/// Replay the journal, or convert the array that preceded it.
+///
+/// Answers the records AND how many lines produced them, because the second
+/// number is what decides whether the file gets rewritten and cannot be derived
+/// from the first: a thousand records that were each edited twice are three
+/// thousand lines.
+fn load_history_entries() -> (VecDeque<TranscriptionHistoryEntry>, usize) {
     let path = resolved_history_file_path();
-    let Ok(raw) = std::fs::read_to_string(path) else {
+    if let Ok(raw) = std::fs::read_to_string(&path) {
+        let (mut entries, ops) = replay_journal(&raw);
+        prune_entries_for_runtime(&mut entries);
+        return (entries, ops);
+    }
+
+    /* NO JOURNAL, SO THE FILE THAT CAME BEFORE IT (ADR 0241 section 5). This is
+       the whole of the migration the record allows itself, and it is here
+       because the parse was already written: `history.json` is one JSON array
+       and reading it once costs the six lines below. It is converted and then
+       deleted, so this branch runs exactly once per install and never again. */
+    let mut entries = load_legacy_index();
+    prune_entries_for_runtime(&mut entries);
+    if !entries.is_empty() && compact_journal(&entries).is_ok() {
+        let _ = std::fs::remove_file(resolved_legacy_index_path());
+    }
+    let ops = entries.len();
+    (entries, ops)
+}
+
+/// The one JSON array this index was until ADR 0241, parsed for conversion.
+fn load_legacy_index() -> VecDeque<TranscriptionHistoryEntry> {
+    let Ok(raw) = std::fs::read_to_string(resolved_legacy_index_path()) else {
         return VecDeque::with_capacity(DEFAULT_HISTORY_LIMIT);
     };
 
-    let mut entries = serde_json::from_str::<VecDeque<TranscriptionHistoryEntry>>(&raw)
+    serde_json::from_str::<VecDeque<TranscriptionHistoryEntry>>(&raw)
         .or_else(|_| {
             serde_json::from_str::<Vec<TranscriptionHistoryEntry>>(&raw).map(VecDeque::from)
         })
-        .unwrap_or_else(|_| VecDeque::with_capacity(DEFAULT_HISTORY_LIMIT));
-    prune_entries_for_runtime(&mut entries);
-    entries
+        .unwrap_or_else(|_| VecDeque::with_capacity(DEFAULT_HISTORY_LIMIT))
 }
 
-/// The whole index, written on every dictation. Two things about that (ADR 0240).
+/// Fold the log back into the set it describes.
 ///
-/// **IT IS NOT PRETTY-PRINTED ANY MORE.** `to_string_pretty` cost this file 16%
-/// in indentation and newlines — 229 kB of the reporting machine's 1.4 MB — for
-/// a file nobody opens by hand. `activity.json` keeps its
-/// `BTreeMap` ordering precisely so a human CAN read it; this one is a machine
-/// index of several hundred records and the export command exists for the case
-/// where somebody wants to look.
+/// **ONE PASS AND A MAP, NOT A SCAN PER LINE.** A put of an id already held
+/// replaces it IN PLACE rather than moving it to the end, because an edit is not
+/// a re-arrival: acknowledging a fallback on the oldest record must not shuffle
+/// it to the top of the reader's list. Slots are emptied rather than removed so
+/// that every other id keeps its index, and the emptied ones are dropped in the
+/// single collect at the bottom.
 ///
-/// **AND IT NO LONGER TEARS.** `fs::write` truncates the file and then writes
-/// into it, so a crash, a kill or a full disk between those two leaves a
-/// half-written index — which fails to parse, which loses every record on the
-/// machine. Writing a sibling and renaming it makes the replacement atomic on
-/// every filesystem this product runs on: a reader sees the old file or the new
-/// one and never a torn one. The temp file lives beside the target rather than
-/// in `/tmp`, because a rename across filesystems is a copy and is not atomic.
-fn save_history_entries(entries: &VecDeque<TranscriptionHistoryEntry>) -> Result<(), String> {
+/// A LINE THAT WILL NOT PARSE IS SKIPPED AND COSTS THAT ONE RECORD. Appending
+/// can be interrupted — a kill, a full disk — and what that leaves is a torn
+/// last line rather than a torn file, which is the property the old whole-file
+/// write did not have at all before ADR 0240 gave it a rename. Refusing to parse
+/// the file for it would throw away every record on the machine to report a
+/// half-written one.
+fn replay_journal(raw: &str) -> (VecDeque<TranscriptionHistoryEntry>, usize) {
+    let mut slots: Vec<Option<TranscriptionHistoryEntry>> = Vec::new();
+    let mut at: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut ops = 0usize;
+
+    for line in raw.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(op) = serde_json::from_str::<JournalOp>(line) else {
+            continue;
+        };
+        ops += 1;
+        match op {
+            JournalOp::Put(entry) => match at.get(&entry.id) {
+                Some(&index) => slots[index] = Some(*entry),
+                None => {
+                    at.insert(entry.id.clone(), slots.len());
+                    slots.push(Some(*entry));
+                }
+            },
+            JournalOp::Tombstone { id } => {
+                if let Some(index) = at.remove(&id) {
+                    slots[index] = None;
+                }
+            }
+        }
+    }
+
+    /* OLDEST FIRST IN THE FILE, NEWEST FIRST IN THE STORE. Append only ever adds
+       at the end, and a list only ever reads from the top. */
+    (slots.into_iter().flatten().rev().collect(), ops)
+}
+
+/// The records a stored index holds, as loose JSON, for the measurement
+/// harnesses that read the developer's LIVE store rather than the runtime's.
+///
+/// **THEY READ THE FILE AND THEY MUST NOT REIMPLEMENT THE REPLAY.** Both of them
+/// parsed `history.json` as one array, which after ADR 0241 matches nothing and
+/// yields zero records — and each of them then prints that zero as a finding. A
+/// measurement that silently answers *no data* is worse than one that fails,
+/// because somebody writes the zero down.
+///
+/// It takes the journal where there is one and the array otherwise, because a
+/// machine that has not yet run a build with the journal in it still has a
+/// history worth measuring.
+#[cfg(test)]
+pub fn stored_index_values(directory: &std::path::Path) -> Vec<serde_json::Value> {
+    let entries = match std::fs::read_to_string(directory.join("history.jsonl")) {
+        Ok(raw) => replay_journal(&raw).0,
+        Err(_) => match std::fs::read_to_string(directory.join("history.json")) {
+            Ok(raw) => serde_json::from_str::<VecDeque<TranscriptionHistoryEntry>>(&raw)
+                .unwrap_or_default(),
+            Err(_) => VecDeque::new(),
+        },
+    };
+
+    entries
+        .iter()
+        .filter_map(|entry| serde_json::to_value(entry).ok())
+        .collect()
+}
+
+/// Add lines to the end of the journal. **THIS IS THE DICTATION PATH** (ADR 0241).
+///
+/// One record is one line and the cost does not depend on how many lines are
+/// already there — which is the whole change. ADR 0240 measured the write it
+/// replaces at 4.8 ms over a thousand records, 24.9 over five thousand and 59.4
+/// over ten thousand, because the file was one JSON array serialised and
+/// replaced in full every time somebody spoke a sentence. `HISTORY_CEILING`
+/// existed to bound that curve and there is now no curve to bound.
+///
+/// IT DOES NOT USE A TEMPORARY AND A RENAME, and that is not an oversight. The
+/// rename was what made a whole-file replacement atomic; an append has nothing
+/// to be atomic about — it cannot damage a byte that is already in the file, and
+/// the worst an interrupted one leaves is a partial last line that
+/// `replay_journal` skips.
+fn append_journal(
+    store: &mut TranscriptionHistoryStore,
+    ops: &[JournalWrite<'_>],
+) -> Result<(), String> {
+    if ops.is_empty() {
+        return Ok(());
+    }
+
     let path = resolved_history_file_path();
-    let raw = serde_json::to_string(entries).map_err(|error| error.to_string())?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+
+    let mut raw = String::new();
+    for op in ops {
+        raw.push_str(&serde_json::to_string(op).map_err(|error| error.to_string())?);
+        raw.push('\n');
+    }
+
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|error| error.to_string())?;
+    file.write_all(raw.as_bytes())
+        .map_err(|error| error.to_string())?;
+
+    store.ops += ops.len();
+    Ok(())
+}
+
+/// Write the journal out as exactly the records the store holds. **NEVER ON THE
+/// DICTATION PATH** (ADR 0241).
+///
+/// This is the O(records) write the append replaced, kept for the two moments
+/// that are allowed to pay it: activation, and a set replaced wholesale. It is
+/// what drops tombstoned records, superseded puts and everything retention
+/// pruned out of memory — none of which leave the file any other way.
+///
+/// **IT IS NOT PRETTY-PRINTED** (ADR 0240). Indentation cost this file 16% —
+/// 229 kB of the reporting machine's 1.4 MB — for a file nobody opens by hand;
+/// `activity.json` keeps its `BTreeMap` ordering precisely so a human can read
+/// it, and the export command exists for the case where somebody wants to look
+/// at this one.
+///
+/// **AND IT DOES NOT TEAR.** Truncating and then writing leaves a half-written
+/// index if a crash, a kill or a full disk lands between the two, and a
+/// half-written index is every record on the machine. Writing a sibling and
+/// renaming it makes the replacement atomic on every filesystem this product
+/// runs on. The temporary lives beside the target rather than in `/tmp`, because
+/// a rename across filesystems is a copy and is not atomic.
+fn compact_journal(entries: &VecDeque<TranscriptionHistoryEntry>) -> Result<(), String> {
+    let path = resolved_history_file_path();
+
+    let mut raw = String::new();
+    /* OLDEST FIRST, which is the direction the file grows and therefore the
+       direction `replay_journal` reverses back out of it. Writing the store's
+       own newest-first order here would silently invert the list on the next
+       launch. */
+    for entry in entries.iter().rev() {
+        raw.push_str(
+            &serde_json::to_string(&JournalWrite::Put(entry)).map_err(|error| error.to_string())?,
+        );
+        raw.push('\n');
+    }
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
 
-    let temporary = path.with_extension("json.tmp");
+    let temporary = path.with_extension("jsonl.tmp");
     std::fs::write(&temporary, raw).map_err(|error| error.to_string())?;
     std::fs::rename(&temporary, &path).map_err(|error| {
         /* The rename is what makes it atomic, so a failure here leaves a stray
@@ -699,6 +953,22 @@ fn save_history_entries(entries: &VecDeque<TranscriptionHistoryEntry>) -> Result
         let _ = std::fs::remove_file(&temporary);
         error.to_string()
     })
+}
+
+/// Compact when at least half the file is dead weight, above a floor.
+///
+/// A FAILED REWRITE IS NOT AN ERROR ANYBODY CAN ACT ON. The records are already
+/// in memory and already on disk; all a failure here means is that the file
+/// stays longer than it needed to be, and the next activation tries again. It is
+/// therefore silent by design, and the callers that must report a write — the
+/// ones that changed what the store holds — do their own.
+fn compact_if_slack(store: &mut TranscriptionHistoryStore) {
+    if store.ops <= JOURNAL_COMPACT_FLOOR || store.ops < store.entries.len().saturating_mul(2) {
+        return;
+    }
+    if compact_journal(&store.entries).is_ok() {
+        store.ops = store.entries.len();
+    }
 }
 
 fn next_history_id(created_at_ms: u64, entries_len: usize) -> String {
@@ -861,9 +1131,15 @@ fn record_entry_with_work_mode(
     };
 
     store.entries.push_front(entry.clone());
-    prune_entries_for_runtime(&mut store.entries);
 
-    save_history_entries(&store.entries)?;
+    /* ONE LINE, APPENDED, AND THE COST IS THE SAME AT EVERY INDEX SIZE
+       (ADR 0241). The prune runs after it and only in memory: what retention
+       drops leaves the FILE at the next compaction, which is a launch away and
+       is not this reader's problem right now. Appending before pruning also
+       means the record just written can never be the one dropped by a policy
+       read a microsecond later. */
+    append_journal(&mut store, &[JournalWrite::Put(&entry)])?;
+    prune_entries_for_runtime(&mut store.entries);
 
     /* THE ALL-TIME LEDGER, FOLDED HERE BECAUSE THIS IS THE ONE FUNNEL EVERY PATH
        ARRIVES AT — the same argument ADR 0074 used to put the transcript file on
@@ -947,7 +1223,15 @@ pub fn replace_entries_from_backup(
     let mut store = history_store().lock().map_err(|error| error.to_string())?;
     ensure_loaded(&mut store);
     store.entries = entries.into_iter().collect();
-    save_history_entries(&store.entries)
+    /* A SET REPLACED WHOLESALE IS A COMPACTION, not a run of appends: every
+       record in the journal is being superseded at once, and appending the
+       archive's copies on top of the ones they replace would double the file to
+       say so. This is one of the two moments allowed to pay the O(records)
+       write (ADR 0241), and an import is as far from the dictation path as this
+       module gets. */
+    compact_journal(&store.entries)?;
+    store.ops = store.entries.len();
+    Ok(())
 }
 
 fn entries_snapshot() -> Result<Vec<TranscriptionHistoryEntry>, String> {
@@ -1032,12 +1316,22 @@ pub fn acknowledge_transcription_fallback(
 ) -> Result<Vec<TranscriptionHistorySummary>, String> {
     let mut store = history_store().lock().map_err(|error| error.to_string())?;
     ensure_loaded(&mut store);
+    /* AN EDIT IS THE RECORD APPENDED AGAIN (ADR 0241), and `replay_journal`
+       replaces it in place rather than moving it — acknowledging a fallback on
+       last month's record must not shuffle that record to the top of the list.
+       Nothing is written for an id the store does not hold, so a Dismiss on a
+       row whose record was pruned adds no line. */
+    let mut acknowledged: Option<TranscriptionHistoryEntry> = None;
     for entry in store.entries.iter_mut() {
         if entry.id == request.id {
             entry.fallback_acknowledged = true;
+            acknowledged = Some(entry.clone());
         }
     }
-    save_history_entries(&store.entries)?;
+    if let Some(entry) = acknowledged {
+        append_journal(&mut store, &[JournalWrite::Put(&entry)])?;
+        compact_if_slack(&mut store);
+    }
     Ok(all_summaries(&store))
 }
 
@@ -1049,7 +1343,11 @@ pub fn clear_transcription_history_entries() -> Result<Vec<TranscriptionHistoryS
     // leaving the other is the drift the ADR exists to prevent, and on this
     // command it is also what the button says it does.
     let cleared: Vec<TranscriptionHistoryEntry> = store.entries.drain(..).collect();
-    save_history_entries(&store.entries)?;
+    /* CLEARING IS A COMPACTION TO NOTHING, which is one empty file rather than a
+       tombstone per record — the reader asked for the index to be gone, and a
+       journal of five thousand tombstones is not gone. */
+    compact_journal(&store.entries)?;
+    store.ops = 0;
     remove_transcript_files(&cleared);
     Ok(Vec::new())
 }
@@ -1067,7 +1365,14 @@ pub fn delete_transcription_history_entry(
         .cloned()
         .collect();
     store.entries.retain(|entry| entry.id != request.id);
-    save_history_entries(&store.entries)?;
+    /* A TOMBSTONE, and only where something was actually removed (ADR 0241).
+       The record itself stays in the file until a compaction; what the line says
+       is that it is no longer part of the set, which is what a replay needs to
+       know and is one string rather than a rewrite of everything else. */
+    if !removed.is_empty() {
+        append_journal(&mut store, &[JournalWrite::Tombstone { id: &request.id }])?;
+        compact_if_slack(&mut store);
+    }
     remove_transcript_files(&removed);
     Ok(all_summaries(&store))
 }
@@ -1082,11 +1387,9 @@ pub fn export_transcription_history(
         return Err("Choose a file path for the history export.".to_string());
     }
 
-    let (history_limit, history_retention_days) = runtime_history_policy();
     let document = TranscriptionHistoryExportDocument {
         exported_at_ms: now_ms(),
-        history_limit,
-        history_retention_days,
+        history_retention_days: runtime_history_retention_days(),
         count: entries.len(),
         entries,
     };
@@ -1755,29 +2058,22 @@ fn optional_non_empty(value: &str) -> Option<String> {
     (!trimmed.is_empty()).then(|| trimmed.to_string())
 }
 
-fn runtime_history_policy() -> (usize, u32) {
+/// The one rule that governs the index, in days (ADR 0241).
+///
+/// IT USED TO BE A PAIR, and the second half was the binding one without ever
+/// saying so: at 217 dictations a day the ceiling of 5,000 arrived in 23 days
+/// while the reader's own setting said 365, so the number they chose on Privacy
+/// & Data was the number that never applied. Deleting the count leaves the
+/// setting alone in charge, which is what it always read as.
+fn runtime_history_retention_days() -> u32 {
     #[cfg(test)]
     if let Ok(guard) = history_policy_override().lock() {
-        if let Some((history_limit, history_retention_days)) = *guard {
-            return (
-                history_limit.clamp(25, HISTORY_CEILING),
-                history_retention_days.min(3650),
-            );
+        if let Some(history_retention_days) = *guard {
+            return history_retention_days.min(3650);
         }
     }
 
-    let app_config = AppConfig::load_from_disk();
-    (
-        configured_history_limit(&app_config),
-        configured_history_retention_days(&app_config),
-    )
-}
-
-/// The ceiling, whatever the file says. `normalize_for_runtime` already pins
-/// the field (ADR 0185); this is the second lock, because the sweep that drops
-/// a record must not be the place a stale value gets one last say.
-fn configured_history_limit(config: &AppConfig) -> usize {
-    config.history_limit.clamp(25, HISTORY_CEILING)
+    configured_history_retention_days(&AppConfig::load_from_disk())
 }
 
 fn configured_history_retention_days(config: &AppConfig) -> u32 {
@@ -1845,9 +2141,9 @@ fn resolve_retry_mode(entry: &TranscriptionHistoryEntry, app_config: &AppConfig)
 /// which stores it governs: the index is a surface — what History lists, what
 /// the cause list groups, what a filter reaches — and the archive is the
 /// reader's writing, in a folder in their home directory, in a format made to
-/// outlive this product. `history_limit` is pinned at a thousand so a list
-/// stays fast, which on the reporting machine is about five days of dictation;
-/// it has no business deleting a year of somebody's transcripts on the way past.
+/// outlive this product. The index is swept by a retention rule measured in
+/// months; it has no business deleting a year of somebody's transcripts on the
+/// way past.
 ///
 /// So this is housekeeping and it acts like it, the same cut ADR 0176 made for
 /// the activity ledger. Wanting the writing gone is a separate intention and
@@ -1859,8 +2155,7 @@ fn resolve_retry_mode(entry: &TranscriptionHistoryEntry, app_config: &AppConfig)
 /// path in the runtime. `purge_transcript_archive` is the answer to that and
 /// the reason it may walk the directory at all.
 fn prune_entries_for_runtime(entries: &mut VecDeque<TranscriptionHistoryEntry>) {
-    let (history_limit, history_retention_days) = runtime_history_policy();
-    prune_entries(entries, history_limit, history_retention_days, now_ms());
+    prune_entries(entries, runtime_history_retention_days(), now_ms());
 }
 
 /// The files of records that are going away, and nothing else. Never a
@@ -1879,7 +2174,6 @@ fn remove_transcript_files(entries: &[TranscriptionHistoryEntry]) {
 /// an argument: the retention tests drive it directly.
 fn prune_entries(
     entries: &mut VecDeque<TranscriptionHistoryEntry>,
-    history_limit: usize,
     history_retention_days: u32,
     reference_now_ms: u64,
 ) -> Vec<TranscriptionHistoryEntry> {
@@ -1897,12 +2191,6 @@ fn prune_entries(
             }
         }
         *entries = kept;
-    }
-
-    while entries.len() > history_limit {
-        if let Some(entry) = entries.pop_back() {
-            dropped.push(entry);
-        }
     }
 
     dropped
@@ -1967,15 +2255,17 @@ impl HistoryFilter {
     }
 }
 
-/// A caller's own window on the set, bounded by what the store can hold.
+/// A caller's own window on the set.
 ///
-/// THE UPPER BOUND WAS THE LITERAL `1000` AND WAS THE OLD CEILING WEARING A
-/// DIFFERENT NAME. ADR 0240 took `HISTORY_CEILING` to 5,000 and left this
-/// behind, so a query asking for more than a thousand rows was silently handed a
-/// thousand — a number that had stopped meaning anything. It is the ceiling
-/// itself now, and it moves with it.
+/// **THE UPPER BOUND IS GONE WITH THE CEILING THAT SET IT** (ADR 0241). It was
+/// the literal `1000`, which was the old ceiling wearing a different name; ADR
+/// 0240 moved the ceiling to 5,000 and left this behind, so a query asking for
+/// more rows than that was silently handed a number that had stopped meaning
+/// anything. Clamping to a store with no cap would mean inventing one here,
+/// which is the one place a limit must never be invented — the caller asked for
+/// a window and the floor of 1 is the only thing wrong with asking for zero.
 fn query_limit(query: &TranscriptionHistoryQuery) -> Option<usize> {
-    query.limit.map(|value| value.clamp(1, HISTORY_CEILING))
+    query.limit.map(|value| value.max(1))
 }
 
 fn filter_history_entries(
@@ -2050,9 +2340,9 @@ fn set_history_path_override_for_tests(path: PathBuf) {
 }
 
 #[cfg(test)]
-fn set_history_policy_override_for_tests(history_limit: usize, history_retention_days: u32) {
+fn set_history_policy_override_for_tests(history_retention_days: u32) {
     if let Ok(mut guard) = history_policy_override().lock() {
-        *guard = Some((history_limit, history_retention_days));
+        *guard = Some(history_retention_days);
     }
 }
 
@@ -2061,6 +2351,7 @@ fn reset_store_for_tests() {
     if let Ok(mut store) = history_store().lock() {
         store.loaded = false;
         store.entries.clear();
+        store.ops = 0;
     }
 }
 
@@ -2079,14 +2370,17 @@ mod tests {
     fn test_history_path(test_name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("wordscript-history-tests-{test_name}"));
         let _ = std::fs::create_dir_all(&dir);
-        dir.join("history.json")
+        dir.join("history.jsonl")
     }
 
     fn prepare_test_history_path(test_name: &str) -> PathBuf {
         let path = test_history_path(test_name);
         let _ = std::fs::remove_file(&path);
+        // The array a migration would convert. A test that does not write one
+        // must not inherit the previous test's.
+        let _ = std::fs::remove_file(path.with_extension("json"));
         set_history_path_override_for_tests(path.clone());
-        set_history_policy_override_for_tests(DEFAULT_HISTORY_LIMIT, 90);
+        set_history_policy_override_for_tests(90);
         reset_store_for_tests();
         path
     }
@@ -2276,11 +2570,18 @@ mod tests {
 
         let entries = transcription_history_summaries(None).expect("history entries");
 
-        assert_eq!(entries.len(), DEFAULT_HISTORY_LIMIT);
+        /* NOTHING IS DROPPED BY COUNT ANY MORE (ADR 0241), and this test is
+           where that shows: it writes past the old cap on purpose and used to
+           assert that the oldest five had been swept, with `raw-5` standing at
+           the bottom of the list as the proof. All of them are here, oldest
+           included, because the rule that governs this store is measured in
+           months. */
+        assert_eq!(entries.len(), DEFAULT_HISTORY_LIMIT + 5);
         assert!(path.is_file());
         assert_eq!(
             entries.last().map(|entry| entry.heard_preview.as_str()),
-            Some("raw-5")
+            Some("raw-0"),
+            "the oldest record was swept by a cap that no longer exists",
         );
     }
 
@@ -2579,13 +2880,12 @@ mod tests {
 
         assert_eq!(response.exported_count, 1);
         assert_eq!(document.count, 1);
-        assert_eq!(document.history_limit, DEFAULT_HISTORY_LIMIT);
         assert_eq!(document.history_retention_days, 90);
         assert_eq!(document.entries[0].provider, "groq");
     }
 
     #[test]
-    fn prune_entries_drops_old_entries_before_limit_is_applied() {
+    fn prune_entries_drops_entries_past_the_retention_window() {
         let cutoff_reference = 10 * MS_PER_DAY;
         let mut entries = VecDeque::from(vec![
             TranscriptionHistoryEntry {
@@ -2716,9 +3016,18 @@ mod tests {
             },
         ]);
 
-        prune_entries(&mut entries, 1, 3, cutoff_reference);
+        prune_entries(&mut entries, 3, cutoff_reference);
 
-        assert_eq!(entries.len(), 1);
+        /* AGE IS THE ONLY RULE LEFT (ADR 0241). This used to be called
+           `..._before_limit_is_applied` and passed a limit of 1, so the second
+           surviving record was cut by the count rather than kept by the
+           retention window — which made the assertion below read as evidence for
+           a rule it was not testing. */
+        assert_eq!(entries.len(), 2, "a record inside the window was dropped");
+        assert!(
+            !entries.iter().any(|entry| entry.id == "old"),
+            "the record past the window survived",
+        );
         assert_eq!(entries[0].id, "fresh-a");
     }
 
@@ -2940,29 +3249,306 @@ mod tests {
         assert!(answer.is_none());
     }
 
-    /// ADR 0240. `fs::write` truncates before it writes, so a crash between the
-    /// two loses every record on the machine; the write goes to a sibling and is
-    /// renamed into place.
+    /// **THE MEASUREMENT H1 IS ACCEPTED ON** (ADR 0241), against ADR 0240's own.
+    ///
+    /// That record measured the write it replaced on a release build at four
+    /// index sizes -- 4.8 ms at 1,000 records, 9.2 at 2,000, 24.9 at 5,000 and
+    /// 59.4 at 10,000 -- and the curve is the reason `HISTORY_CEILING` existed.
+    /// This runs both writes at the same four sizes in one pass, so the claim
+    /// *the append does not depend on how many records are already there* is
+    /// read off two columns rather than against a number from another day and
+    /// another build.
+    ///
+    /// ```text
+    /// cargo test --release measure_the_index_write_against_index_size -- --ignored --nocapture
+    /// ```
+    ///
+    /// Debug figures are 15 to 20 times worse and are not what ships; run it
+    /// released or do not quote it.
     #[test]
-    fn the_index_is_replaced_by_a_rename_and_leaves_no_scratch_file() {
+    #[ignore = "a measurement, not an assertion; run explicitly with --ignored"]
+    fn measure_the_index_write_against_index_size() {
         let _guard = test_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let path = prepare_test_history_path("atomic-write");
+
+        const SIZES: [usize; 4] = [1_000, 2_000, 5_000, 10_000];
+        const RUNS: usize = 200;
+
+        println!("\n=== The index write against index size (ADR 0241) ===");
+        println!("{:>8}  {:>14}  {:>14}", "records", "append (ms)", "rewrite (ms)");
+
+        for size in SIZES {
+            let path = prepare_test_history_path("write-cost");
+
+            /* A store of `size` records, built once and not through the funnel:
+               what is being measured is the write, not the transcript file or
+               the ledger beside it. */
+            let mut entries: VecDeque<TranscriptionHistoryEntry> = VecDeque::with_capacity(size);
+            for index in 0..size {
+                let mut entry = sample_entry_for_mode(None, ProcessingMode::Auto);
+                entry.id = format!("history-{index}-0");
+                entry.created_at_ms = now_ms();
+                entry.raw_transcript = Some("Ein Satz mittlerer Laenge, wie er hier steht.".repeat(3));
+                entry.transformed_transcript = entry.raw_transcript.clone();
+                entries.push_front(entry);
+            }
+            compact_journal(&entries).expect("the journal is written");
+
+            let mut store = TranscriptionHistoryStore {
+                loaded: true,
+                entries,
+                ops: size,
+            };
+
+            /* THE APPEND: one line at the end of a file of `size` lines. */
+            let one = sample_entry_for_mode(None, ProcessingMode::Auto);
+            let started = std::time::Instant::now();
+            for _ in 0..RUNS {
+                append_journal(&mut store, &[JournalWrite::Put(&one)]).expect("the append lands");
+            }
+            let append_ms = started.elapsed().as_secs_f64() * 1_000.0 / RUNS as f64;
+
+            /* THE WRITE IT REPLACED: the whole set serialised and renamed into
+               place, which is what every dictation used to cost. */
+            let started = std::time::Instant::now();
+            for _ in 0..RUNS {
+                compact_journal(&store.entries).expect("the rewrite lands");
+            }
+            let rewrite_ms = started.elapsed().as_secs_f64() * 1_000.0 / RUNS as f64;
+
+            println!("{size:>8}  {append_ms:>14.3}  {rewrite_ms:>14.3}");
+            let _ = std::fs::remove_file(&path);
+        }
+        println!();
+    }
+
+    /// ADR 0241. The dictation path appends and does not rewrite, which is what
+    /// makes the write cost the same at every index size.
+    #[test]
+    fn a_dictation_appends_one_line_and_leaves_the_lines_before_it_alone() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = prepare_test_history_path("journal-append");
+
+        let first = record_entry(completed_request("Eins.")).expect("history entry");
+        let after_one = std::fs::read_to_string(&path).expect("the journal reads back");
+        record_entry(completed_request("Zwei.")).expect("history entry");
+        record_entry(completed_request("Drei.")).expect("history entry");
+
+        let raw = std::fs::read_to_string(&path).expect("the journal reads back");
+        let lines: Vec<&str> = raw.lines().collect();
+        assert_eq!(lines.len(), 3, "one dictation is one line");
+        assert!(
+            raw.starts_with(&after_one),
+            "the two later records were appended; the first line was rewritten",
+        );
+        assert!(
+            !raw.contains("\n  "),
+            "the journal is compact — pretty printing cost 16% of the file",
+        );
+
+        /* OLDEST FIRST IN THE FILE. The reader sees the newest at the top, and
+           the append can only ever add at the bottom, so the two orders are
+           opposites and the replay is where they meet. */
+        let opening = serde_json::from_str::<JournalOp>(lines[0]).expect("a journal line");
+        match opening {
+            JournalOp::Put(entry) => assert_eq!(entry.id, first.id),
+            JournalOp::Tombstone { .. } => panic!("a record was written as a tombstone"),
+        }
+    }
+
+    /// The store's newest-first order survives a round trip through a file that
+    /// only grows at the end.
+    #[test]
+    fn the_journal_replays_into_the_order_the_list_reads() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("journal-order");
 
         record_entry(completed_request("Eins.")).expect("history entry");
+        record_entry(completed_request("Zwei.")).expect("history entry");
+        let newest = record_entry(completed_request("Drei.")).expect("history entry");
+
+        reset_store_for_tests();
+        let (entries, ops) = load_history_entries();
+        assert_eq!(ops, 3);
+        assert_eq!(entries.front().map(|entry| entry.id.clone()), Some(newest.id));
+    }
+
+    /// A delete is one appended string, and the replay honours it.
+    #[test]
+    fn a_delete_appends_a_tombstone_rather_than_rewriting_the_set() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = prepare_test_history_path("journal-tombstone");
+
+        let first = record_entry(completed_request("Eins.")).expect("history entry");
+        record_entry(completed_request("Zwei.")).expect("history entry");
+
+        delete_transcription_history_entry(DeleteTranscriptionHistoryEntryRequest {
+            id: first.id.clone(),
+        })
+        .expect("the delete lands");
+
+        let raw = std::fs::read_to_string(&path).expect("the journal reads back");
+        assert_eq!(raw.lines().count(), 3, "two puts and a tombstone");
+
+        reset_store_for_tests();
+        let (entries, _ops) = load_history_entries();
+        assert!(
+            !entries.iter().any(|entry| entry.id == first.id),
+            "the tombstoned record came back on replay",
+        );
+    }
+
+    /// An edit is the record appended again, and it must not move.
+    #[test]
+    fn acknowledging_a_fallback_rewrites_the_record_in_place_on_replay() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("journal-edit");
+
+        let oldest = record_entry(completed_request("Eins.")).expect("history entry");
+        record_entry(completed_request("Zwei.")).expect("history entry");
+        let newest = record_entry(completed_request("Drei.")).expect("history entry");
+
+        acknowledge_transcription_fallback(AcknowledgeFallbackRequest {
+            id: oldest.id.clone(),
+        })
+        .expect("the acknowledgement lands");
+
+        reset_store_for_tests();
+        let (entries, _ops) = load_history_entries();
+        assert_eq!(
+            entries.front().map(|entry| entry.id.clone()),
+            Some(newest.id),
+            "an edit on the oldest record moved it to the top of the list",
+        );
+        assert!(
+            entries
+                .iter()
+                .find(|entry| entry.id == oldest.id)
+                .expect("the edited record")
+                .fallback_acknowledged,
+            "the appended record did not supersede the one before it",
+        );
+    }
+
+    /// ADR 0241 section 5. The one migration this record allows itself.
+    #[test]
+    fn the_array_this_index_used_to_be_is_read_once_and_then_deleted() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = prepare_test_history_path("journal-migration");
+        let legacy = path.with_extension("json");
+
+        let mut entry = sample_entry_for_mode(None, ProcessingMode::Auto);
+        // Inside the retention window, or the conversion would correctly drop it
+        // and the test would be measuring the prune instead of the migration.
+        entry.created_at_ms = now_ms();
+        std::fs::write(
+            &legacy,
+            serde_json::to_string(&vec![entry.clone()]).expect("the old shape serialises"),
+        )
+        .expect("the old index is written");
+
+        reset_store_for_tests();
+        let (entries, ops) = load_history_entries();
+
+        assert_eq!(ops, 1);
+        assert_eq!(entries.front().map(|held| held.id.clone()), Some(entry.id));
+        assert!(path.is_file(), "the journal was not written");
+        assert!(
+            !legacy.exists(),
+            "the converted array is deleted, or it would be converted again",
+        );
+    }
+
+    /// An interrupted append leaves a partial last line. It costs that one
+    /// record and never the file.
+    #[test]
+    fn a_torn_last_line_costs_one_record_and_not_the_index() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = prepare_test_history_path("journal-torn");
+
+        let first = record_entry(completed_request("Eins.")).expect("history entry");
+        record_entry(completed_request("Zwei.")).expect("history entry");
+
+        let raw = std::fs::read_to_string(&path).expect("the journal reads back");
+        let mut lines: Vec<&str> = raw.lines().collect();
+        let torn = lines.pop().expect("a last line");
+        let mut wounded = lines.join("\n");
+        wounded.push('\n');
+        wounded.push_str(&torn[..torn.len() / 2]);
+        std::fs::write(&path, wounded).expect("the torn journal is written");
+
+        reset_store_for_tests();
+        let (entries, _ops) = load_history_entries();
+        assert_eq!(entries.len(), 1, "the whole index went with the torn line");
+        assert_eq!(entries.front().map(|entry| entry.id.clone()), Some(first.id));
+    }
+
+    /// ADR 0240's rename, on the write that still replaces the whole file.
+    #[test]
+    fn a_compaction_is_replaced_by_a_rename_and_leaves_no_scratch_file() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = prepare_test_history_path("journal-compaction");
+
+        record_entry(completed_request("Eins.")).expect("history entry");
+        clear_transcription_history_entries().expect("the clear lands");
 
         assert!(path.is_file());
         assert!(
-            !path.with_extension("json.tmp").exists(),
-            "the scratch file is renamed away, not left beside the index",
+            !path.with_extension("jsonl.tmp").exists(),
+            "the scratch file is renamed away, not left beside the journal",
         );
-        let raw = std::fs::read_to_string(&path).expect("the index reads back");
-        assert!(
-            !raw.contains("\n  "),
-            "the index is compact — pretty printing cost 16% of the file",
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("the journal reads back"),
+            "",
+            "clearing writes an empty journal, not a file of tombstones",
         );
-        serde_json::from_str::<Vec<TranscriptionHistoryEntry>>(&raw).expect("and it parses");
+    }
+
+    /// The rewrite runs where it is allowed to and not on the dictation path.
+    #[test]
+    fn the_journal_is_rewritten_when_half_of_it_is_dead_weight() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let path = prepare_test_history_path("journal-slack");
+
+        let kept = record_entry(completed_request("Bleibt.")).expect("history entry");
+        /* Past the floor, and every one of them deleted again, so the file is
+           almost entirely dead by the time the last tombstone lands. */
+        for index in 0..JOURNAL_COMPACT_FLOOR {
+            let entry =
+                record_entry(completed_request(&format!("Geht wieder {index}."))).expect("entry");
+            delete_transcription_history_entry(DeleteTranscriptionHistoryEntryRequest {
+                id: entry.id,
+            })
+            .expect("the delete lands");
+        }
+
+        let lines = std::fs::read_to_string(&path)
+            .expect("the journal reads back")
+            .lines()
+            .count();
+        assert_eq!(lines, 1, "the journal kept its dead weight");
+
+        reset_store_for_tests();
+        let (entries, _ops) = load_history_entries();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries.front().map(|entry| entry.id.clone()), Some(kept.id));
     }
 
     #[test]
@@ -3171,49 +3757,66 @@ mod tests {
     }
 
     /// ADR 0237 reverses what this test used to assert. The index prune is
-    /// housekeeping over a list with a thousand-record ceiling; the file is the
-    /// reader's writing and outlives it. Every intentional delete still takes
-    /// the file — the two tests above this one are those, and they are the
+    /// housekeeping over a list swept by a retention rule in months; the file is
+    /// the reader's writing and outlives it. Every intentional delete still
+    /// takes the file — the two tests above this one are those, and they are the
     /// reason this one is a decision rather than an oversight.
+    ///
+    /// **IT USED TO PUSH A RECORD OUT WITH THE COUNT CAP** (ADR 0241 deleted
+    /// it), which was the easy way to make something drop and was also the wrong
+    /// rule to be testing: what sweeps this index is age. The record is aged in
+    /// the journal instead, which is the only way to have one older than the
+    /// process that wrote it.
     #[test]
     fn retention_drops_the_entry_and_leaves_its_file_alone() {
         let _guard = test_lock()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        prepare_test_history_path("transcript-file-retention");
-        // 25 is the floor `runtime_history_policy` clamps to, so the oldest of
-        // 26 is the one the limit pushes out.
-        const LIMIT: usize = 25;
-        set_history_policy_override_for_tests(LIMIT, 90);
+        let path = prepare_test_history_path("transcript-file-retention");
+        set_history_policy_override_for_tests(30);
 
-        let first = record_entry(completed_request("Faellt aus dem Limit.")).expect("first");
+        let first = record_entry(completed_request("Faellt aus der Aufbewahrung.")).expect("first");
         let dropped = first.transcript_path.clone().expect("a transcript path");
-        let kept: Vec<String> = (0..LIMIT)
-            .map(|index| {
-                record_entry(completed_request(&format!("Satz Nummer {index}.")))
-                    .expect("entry")
-                    .transcript_path
-                    .expect("a transcript path")
+        let second = record_entry(completed_request("Bleibt.")).expect("second");
+        let kept = second.transcript_path.clone().expect("a transcript path");
+
+        /* AGE THE FIRST RECORD IN THE FILE. `record_entry` stamps `now`, so
+           nothing written through the funnel can be old enough for a retention
+           rule to reach; rewriting the line is what a machine that has been
+           running for two months has, and the replay is what reads it. */
+        let raw = std::fs::read_to_string(&path).expect("the journal reads back");
+        let aged: Vec<String> = raw
+            .lines()
+            .map(|line| {
+                let mut op: serde_json::Value =
+                    serde_json::from_str(line).expect("a journal line");
+                if op["put"]["id"] == serde_json::json!(first.id) {
+                    op["put"]["created_at_ms"] =
+                        serde_json::json!(now_ms() - 60 * MS_PER_DAY);
+                }
+                serde_json::to_string(&op).expect("the line serialises")
             })
             .collect();
+        std::fs::write(&path, format!("{}\n", aged.join("\n"))).expect("the aged journal");
 
+        reset_store_for_tests();
+        let (indexed, _ops) = load_history_entries();
+
+        assert!(
+            !indexed.iter().any(|entry| entry.id == first.id),
+            "the record outlived a retention window it is twice as old as",
+        );
+        assert!(
+            indexed.iter().any(|entry| entry.id == second.id),
+            "the prune took a record inside the window with it",
+        );
         assert!(
             PathBuf::from(&dropped).exists(),
             "the index prune deleted a transcript the reader still owns",
         );
-        /* And the entry itself is gone, or the test would prove nothing about
-           the prune having run at all. */
-        let indexed = load_history_entries();
-        assert!(
-            !indexed.iter().any(|entry| entry.id == first.id),
-            "the pruned entry survived in the index",
-        );
 
         super::super::transcript_store::remove_transcript(&dropped);
-        for path in kept {
-            assert!(PathBuf::from(&path).exists());
-            super::super::transcript_store::remove_transcript(&path);
-        }
+        super::super::transcript_store::remove_transcript(&kept);
     }
 
     /// ADR 0075's precedence, and the reason the field exists: an `Auto` record

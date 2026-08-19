@@ -43,8 +43,8 @@ import type { WiredScreenProps } from "./props";
  * Four rows under one heading made the cap read as covering everything above a
  * horizon it never touched: `Stored transcripts` sat two rows above
  * `Context objects`, and a meeting produces a transcript, so the natural reading
- * was that the picker capped meetings too. It never did — `history_limit` and
- * `history_retention_days` govern the DICTATION history and nothing else, on
+ * was that the picker capped meetings too. It never did —
+ * `history_retention_days` governs the DICTATION history and nothing else, on
  * every one of the seven modes, because every path commits through the one
  * funnel `record_entry_with_work_mode` and the mode is a field on the record
  * rather than a second store (ADR 0074). One card per collection is what makes
@@ -632,17 +632,6 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                       </option>
                     ))}
                   </Select>
-              }
-            />
-            {/* THE COUNT, STATED RATHER THAN OFFERED (ADR 0185). It is drawn
-                from `history_limit` rather than from a constant of this
-                screen's own, because the runtime pins that field and a second
-                copy of the number here would be the one to go stale. */}
-            <Row
-              label="The index's ceiling"
-              hint="Beyond this the oldest drops out, whatever the rule above says. It bounds the index, not your transcript files — those keep their own rule below, and a record that ages out of the index still has its file."
-              control={
-                <StatusBadge tone="plan">Newest {runtime.config.history_limit}</StatusBadge>
               }
             />
           </CardRows>

@@ -175,7 +175,9 @@ fn correction_request(
 async fn measure_profile_context_width() {
     let config_dir = wordscript_config_dir();
     let app_config = read_json(config_dir.join("config.json"));
-    let history = read_json(config_dir.join("history.json"));
+    /* The index is a journal since ADR 0241; `read_json` would panic on
+       the first line of it. */
+    let history = super::super::history::stored_index_values(&config_dir);
     let profile = measurement_profile(&app_config);
 
     let profile_prompt = profile["prompt"].as_str().unwrap_or_default().to_string();
@@ -249,8 +251,6 @@ async fn measure_profile_context_width() {
     eprintln!("control arm  = no context line");
 
     let entries: Vec<&serde_json::Value> = history
-        .as_array()
-        .expect("history array")
         .iter()
         .filter(|entry| {
             entry["raw_transcript"]
@@ -859,7 +859,9 @@ fn the_split_is_answerable_only_with_a_short_capture_on_the_record() {
 fn measure_invented_tokens_in_shipped_corrections() {
     let config_dir = wordscript_config_dir();
     let app_config = read_json(config_dir.join("config.json"));
-    let history = read_json(config_dir.join("history.json"));
+    /* The index is a journal since ADR 0241; `read_json` would panic on
+       the first line of it. */
+    let history = super::super::history::stored_index_values(&config_dir);
     let profile = measurement_profile(&app_config);
 
     let profile_prompt = profile["prompt"].as_str().unwrap_or_default().to_string();
@@ -903,8 +905,6 @@ fn measure_invented_tokens_in_shipped_corrections() {
     );
 
     let all: Vec<&serde_json::Value> = history
-        .as_array()
-        .expect("history array")
         .iter()
         .filter(|entry| {
             let has_raw = entry["raw_transcript"]

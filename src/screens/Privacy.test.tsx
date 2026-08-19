@@ -72,7 +72,7 @@ describe("Privacy & Data, wired", () => {
     const patch = vi.fn();
     const runtime = createWorkspaceRuntime({
       active: true,
-      config: createAppConfig({ history_limit: 1000, history_retention_days: 30 }),
+      config: createAppConfig({ history_retention_days: 30 }),
       patch,
     });
     render(<PrivacyScreen runtime={runtime} />);
@@ -86,29 +86,31 @@ describe("Privacy & Data, wired", () => {
   });
 
   /**
-   * ADR 0185. Two pickers over one list meant neither could be read: the count
-   * swept after the age, so `Keep all` still dropped the 1001st record and a
-   * ninety-day rule was broken by a number nobody was told the meaning of. The
-   * count is the index's ceiling now — stated, not offered — and the rule the
-   * reader sets is a duration in the unit the question is asked in.
+   * ADR 0185, then ADR 0241. Two pickers over one list meant neither could be
+   * read: the count swept after the age, so `Keep all` still dropped the 1001st
+   * record. ADR 0185 stopped offering the count and stated it instead; ADR 0241
+   * deleted it, because a bound on stored dictations is a bound in bytes and a
+   * number of records was the wrong unit in either presentation. **NO NUMBER OF
+   * DICTATIONS APPEARS ON THIS SCREEN AT ALL**, which is what this asserts.
    */
-  it("offers no count cap, and states the ceiling the runtime holds", () => {
+  it("offers no count cap and no longer states one", () => {
     const patch = vi.fn();
     render(
       <PrivacyScreen
         runtime={createWorkspaceRuntime({
           active: true,
-          config: createAppConfig({ history_limit: 1000, history_retention_days: 90 }),
+          config: createAppConfig({ history_retention_days: 90 }),
           patch,
         })}
       />,
     );
 
     expect(screen.queryByLabelText("Stored dictations")).toBeNull();
-    expect(inRow("The index's ceiling").getByText("Newest 1000")).toBeTruthy();
+    expect(screen.queryByText("The index's ceiling")).toBeNull();
+    expect(screen.queryByText(/^Newest \d/)).toBeNull();
 
-    /* Stating it must not write it: the row reads the config, and a screen that
-       patched on render would put its own opinion of the ceiling on disk. */
+    /* Reading a rule must not write one: a screen that patched on render would
+       put its own opinion of the retention on disk. */
     expect(patch).not.toHaveBeenCalled();
   });
 
@@ -443,30 +445,32 @@ describe("Privacy & Data · which collection, and who reads it", () => {
   it("names the collection each retention rule governs, on the card that holds it", () => {
     render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
-    /* The age rule and the ceiling sit under `Dictation history`; the parked
-       recording and the context objects are cards of their own, which is the
-       whole of what four rows under one heading could not say. */
+    /* The age rule sits under `Dictation history`; the parked recording and the
+       context objects are cards of their own, which is the whole of what four
+       rows under one heading could not say. The ceiling row that used to stand
+       beside the rule went with ADR 0241. */
     const dictation = screen.getByText("Dictation history").closest(".ws-card");
     expect(dictation).not.toBeNull();
     const inDictation = within(dictation as HTMLElement);
     expect(inDictation.getByLabelText("Kept for")).toBeInTheDocument();
-    expect(inDictation.getByText("The index's ceiling")).toBeInTheDocument();
     expect(
       screen.getByText("Every dictation, whatever mode ran on it — the failed ones too."),
     ).toBeInTheDocument();
 
     const context = screen.getByText("Context objects").closest(".ws-card");
     expect(context).not.toBeNull();
-    expect(within(context as HTMLElement).queryByText("The index's ceiling")).toBeNull();
+    expect(within(context as HTMLElement).queryByLabelText("Kept for")).toBeNull();
   });
 
   /**
-   * ADR 0185. The sentence this replaces — "whichever binds first: this age, or
-   * the cap above" — was true, and its existence was the defect: it only had to
-   * be written because the screen offered two rules over one list. One rule
-   * needs no reconciliation sentence, and the ceiling states itself.
+   * ADR 0185, completed by ADR 0241. The sentence this replaces — "whichever
+   * binds first: this age, or the cap above" — was true, and its existence was
+   * the defect: it only had to be written because the screen offered two rules
+   * over one list. ADR 0185 left one rule and one stated ceiling; ADR 0241 left
+   * **one rule**, so there is nothing on this card for a reconciliation
+   * sentence to reconcile.
    */
-  it("states one rule for the reader and one ceiling for the index", () => {
+  it("states one rule for the reader and nothing to weigh it against", () => {
     render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     expect(
@@ -474,9 +478,7 @@ describe("Privacy & Data · which collection, and who reads it", () => {
         "This drops the record from History. Your transcript files are kept — they have their own rule below.",
       ),
     ).toBeInTheDocument();
-    expect(
-      inRow("The index's ceiling").getByText(/Beyond this the oldest drops out/),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/Beyond this the oldest drops out/)).toBeNull();
     expect(screen.queryByText("Whichever binds first: this age, or the cap above.")).toBeNull();
   });
 

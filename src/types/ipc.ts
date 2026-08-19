@@ -537,7 +537,6 @@ export interface AppConfig {
   play_startup_sound:             boolean;
   log_level:               string;
   temp_audio_dir:          string;
-  history_limit:           number;
   history_retention_days:  number;
   agent_name:              string;
   agent_model:             string;

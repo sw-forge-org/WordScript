@@ -91,7 +91,6 @@ export function createAppConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     play_startup_sound: true,
     log_level: "info",
     temp_audio_dir: "",
-    history_limit: 200,
     history_retention_days: 90,
     agent_name: "WordScript",
     agent_model: runtimeDefault("agent"),

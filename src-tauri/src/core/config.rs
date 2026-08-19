@@ -386,56 +386,6 @@ pub const fn default_typing_baseline_wpm() -> u32 {
 /// anybody has recorded — a baseline outside this is a typo, not a claim.
 pub const TYPING_BASELINE_RANGE: (u32, u32) = (10, 200);
 
-/// How many dictations the index holds, at most (ADR 0185).
-///
-/// A CEILING, NOT A PREFERENCE, AND THAT IS THE WHOLE CHANGE. `history_limit`
-/// was a picker on Privacy & Data beside the retention days, and two caps over
-/// one list meant neither could be read: `prune_entries` sweeps by age and then
-/// by count, so `Keep all` still dropped the 1001st record and a reader who set
-/// ninety days lost a fortnight's dictation to a number they had chosen without
-/// being told what it did. This machine's own config stood at fifty, which is
-/// why the activity calendar could draw a single column.
-///
-/// Nobody reasons about their own privacy in units of *the last two hundred
-/// dictations* — they reason in months. So the months stayed a setting, the
-/// count became the index's own limit, and the screen states it rather than
-/// offering it.
-///
-/// **IT WAS A THOUSAND AND IT WAS SET AGAINST THE WRONG COST (ADR 0240).** The
-/// argument above ends "a thousand transcripts is a few hundred kilobytes of
-/// text, so this bounds the index rather than the disk" — and disk was never
-/// what bound it. The index was rewritten whole on every dictation, read whole
-/// every five seconds by a list showing ten rows, and carried every field of
-/// every record both ways. At the reporting machine's 196 dictations a day a
-/// thousand records is FIVE DAYS, and a reader who set ninety days got five.
-///
-/// THE NUMBER IS WHAT THE PER-DICTATION WRITE COSTS, and nothing else now
-/// depends on it: the all-time figures moved to the ledger (ADR 0176), the
-/// turnaround causes with them (ADR 0240), and the transcripts stopped being
-/// deleted with the index (ADR 0237) — so a record aging out of the index loses
-/// its metadata and its retry, never its text.
-///
-/// Measured on the reporting machine, release build, serialise plus atomic
-/// write, per dictation:
-///
-/// | records | index | per dictation |
-/// | --- | --- | --- |
-/// | 1,000 | 2.4 MB | 4.8 ms |
-/// | 2,000 | 4.8 MB | 9.2 ms |
-/// | 5,000 | 12.1 MB | 24.9 ms |
-/// | 10,000 | 24.3 MB | 59.4 ms |
-///
-/// FIVE THOUSAND. 25 ms against a 1,210 ms median turnaround is 2% — under the
-/// noise of the network call it follows — and it buys 25 days at 196 dictations
-/// a day, or eight months at twenty. Ten thousand doubles the cost to buy a
-/// reach nobody asked for.
-///
-/// PAST THAT THE FIX IS NOT A BIGGER NUMBER. Every term here is O(records) per
-/// dictation because the index is one JSON array rewritten whole; an append-only
-/// journal would make the write O(1) and delete this constant. That is a change
-/// to how the file works, not to a number in it.
-pub const HISTORY_CEILING: usize = 5000;
-
 /// The languages Translate offers, as ISO 639-1 codes paired with the English
 /// name the prompt uses.
 ///
@@ -1570,7 +1520,6 @@ pub struct AppConfig {
     pub play_startup_sound: bool,
     pub log_level: String,
     pub temp_audio_dir: String,
-    pub history_limit: usize,
     pub history_retention_days: u32,
     pub agent_name: String,
     pub agent_model: String,
@@ -1736,7 +1685,6 @@ impl Default for AppConfig {
             play_startup_sound: default_play_startup_sound(),
             log_level: "INFO".to_string(),
             temp_audio_dir: String::new(),
-            history_limit: HISTORY_CEILING,
             history_retention_days: 90,
             agent_name: DEFAULT_AGENT_NAME.to_string(),
             agent_model: default_agent_model().to_string(),
@@ -2425,12 +2373,13 @@ impl AppConfig {
         );
         self.color_scheme = normalize_color_scheme(&self.color_scheme);
         self.overlay_monitor = normalize_overlay_monitor_value(&self.overlay_monitor);
-        /* PINNED RATHER THAN CLAMPED (ADR 0185). The count stopped being a
-           setting, so a stored value is a leftover from when it was one — and a
-           leftover that silently overrides the retention rule the reader DID
-           set. Raising it here is the migration: there is one ceiling, every
-           install is on it, and the screen can state it as a fact. */
-        self.history_limit = HISTORY_CEILING;
+        /* THE COUNT CAP IS GONE ENTIRELY (ADR 0241). ADR 0185 stopped it being
+           a setting and pinned it to a ceiling; this record deletes the ceiling,
+           because a bound on stored dictations is a bound in BYTES and a number
+           of records was never the unit anybody reasons in. A stored
+           `history_limit` from either era is an unknown field now and serde
+           drops it on the way in. What is left is the rule the reader actually
+           set, in months. */
         self.history_retention_days = self.history_retention_days.min(3650);
         work_mode_rewritten
     }
@@ -4303,31 +4252,25 @@ mod tests {
     #[test]
     fn normalizes_history_settings_to_supported_runtime_values() {
         let mut config = AppConfig {
-            history_limit: 2,
             history_retention_days: 9_999,
             ..AppConfig::default()
         };
 
         config.normalize_for_runtime();
 
-        assert_eq!(config.history_limit, HISTORY_CEILING);
         assert_eq!(config.history_retention_days, 3650);
     }
 
-    /// ADR 0185. The count cap is no longer a preference, so a config carrying
-    /// one — this machine's own stood at fifty — must come back on the ceiling
-    /// rather than keep quietly out-pruning the retention rule beside it.
+    /// ADR 0241. The count cap is gone rather than pinned, so a config written
+    /// by any earlier build — this machine's own once stood at fifty, and ADR
+    /// 0185 then raised every install to five thousand — carries a field this
+    /// build has no name for, and loses it without losing the rule beside it.
     #[test]
-    fn a_stored_count_cap_is_raised_to_the_ceiling_rather_than_honoured() {
-        let mut config = AppConfig {
-            history_limit: 50,
-            history_retention_days: 90,
-            ..AppConfig::default()
-        };
+    fn a_stored_count_cap_is_dropped_and_the_retention_rule_survives_it() {
+        let stored = r#"{"history_limit": 50, "history_retention_days": 90}"#;
 
-        config.normalize_for_runtime();
+        let config: AppConfig = serde_json::from_str(stored).expect("an older config parses");
 
-        assert_eq!(config.history_limit, HISTORY_CEILING);
         assert_eq!(
             config.history_retention_days, 90,
             "the rule the reader did set stays theirs"

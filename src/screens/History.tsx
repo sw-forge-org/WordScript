@@ -459,15 +459,14 @@ const STATUS_FILTERS: { value: "" | TranscriptionHistoryStatus; label: string }[
 /**
  * HOW MANY RECORDS STAND ON ONE PAGE (ADR 0184).
  *
- * TWENTY-FIVE IS THE DEFAULT AND IT IS THE FLOOR OF THE CAP RATHER THAN A ROUND
- * NUMBER. `history_limit` is clamped to 25–`HISTORY_CEILING` in the runtime, so
- * twenty-five is the smallest record this product can hold: on the smallest
- * possible history it is exactly one page — the page control appears when there
- * is something to page through and not before. ADR 0185 has since pinned that
- * field to the ceiling, so a full index is now the case to size for rather than
- * the edge of one, and ADR 0240 took that ceiling from 1,000 to 5,000 — two
- * hundred pages, which is why the rows are built for the page rather than for
- * the set.
+ * TWENTY-FIVE IS THE DEFAULT, AND IT USED TO BE THE FLOOR OF A CAP. The runtime
+ * clamped `history_limit` to 25 at the bottom, so twenty-five was the smallest
+ * history this product could hold and therefore exactly one page of it — the
+ * page control appeared when there was something to page through and not
+ * before. **THERE IS NO CAP NOW** (ADR 0241): the index is swept by
+ * `history_retention_days` and by a byte budget, so what the pager sizes for is
+ * a set with no upper bound at all, which is why the rows are built for the page
+ * rather than for the set.
  *
  * A row here is three lines of text and six controls. Ten pages a record nobody
  * can scan; a hundred is a scroll a reader loses their place in, which is the
@@ -556,13 +555,13 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
      once — a reader scanning for recogniser errors has to be able to see which
      text they are scanning without opening a control to find out. */
   const [shows, setShows] = useState<ShownText>("title");
-  /* PAGED IN THE SCREEN AND NOT IN THE QUERY (ADR 0184). The runtime already
-     hands over the whole filtered set — capped at `history_limit`, which is
-     `HISTORY_CEILING` at its widest — and it is the same set the count in the
-     heading is read off. Asking the runtime for a window instead would mean two
-     round trips per page and a count that no longer matches what was counted.
-     What the page DOES bound is the row build below: a summary is small, and
-     the title, badges and six closures a row needs are not. */
+  /* PAGED IN THE SCREEN AND NOT IN THE QUERY (ADR 0184). The runtime hands over
+     the whole filtered set — uncapped since ADR 0241 — and it is the same set
+     the count in the heading is read off. Asking the runtime for a window
+     instead would mean two round trips per page and a count that no longer
+     matches what was counted. What the page DOES bound is the row build below:
+     a summary is small, and the title, badges and six closures a row needs are
+     not. */
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState(0);
   /* ALL TIME IS THE DEFAULT AND THE MONTH IS THE EXCEPTION (ADR 0184). The
@@ -671,12 +670,12 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
   const current = Math.min(page, pages - 1);
   const from = current * pageSize;
 
-  /* BUILT FOR THE PAGE AND NOT FOR THE SET (ADR 0240). The runtime hands over
-     the whole filtered set — up to `HISTORY_CEILING`, which ADR 0240 raised
-     from 1,000 to 5,000 — and this map mints a title, a badge list and six
-     closures per row on every render, including every keystroke in the search
-     box. Twenty-five of those are drawn. The count above is read off `visible`
-     rather than off this list, so the pager still counts the whole set. */
+  /* BUILT FOR THE PAGE AND NOT FOR THE SET (ADR 0240, and load-bearing since
+     ADR 0241 removed the cap entirely). This map mints a title, a badge list and
+     six closures per row on every render, including every keystroke in the
+     search box, and twenty-five of them are drawn. The count above is read off
+     `visible` rather than off this list, so the pager still counts the whole
+     set. */
   const shown: HistoryRow[] = visible.slice(from, from + pageSize).map((entry) => {
         /* The panel's own text where this is the open row and the record has
            come back, the preview until then (ADR 0240). */

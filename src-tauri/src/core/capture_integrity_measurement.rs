@@ -220,11 +220,12 @@ fn measure_capture_integrity_against_transcripts() {
         "no captures found in the runtime logs — nothing to measure"
     );
 
-    let history_path = wordscript_config_dir().join("history.json");
-    let history: Vec<serde_json::Value> = std::fs::read_to_string(&history_path)
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default();
+    /* THE INDEX IS A JOURNAL SINCE ADR 0241, so this reads it through the
+       replay rather than parsing an array that is no longer there. Parsing it
+       here would answer zero records, and this harness PRINTS its record count
+       as a finding — a silent zero is the one failure mode a measurement must
+       not have. */
+    let history = super::super::history::stored_index_values(&wordscript_config_dir());
 
     println!("\n=== Capture integrity against transcripts ===");
     println!("captures paired from the runtime logs: {}", captures.len());

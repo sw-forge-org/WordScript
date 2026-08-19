@@ -7,9 +7,9 @@
  * failure class this repository keeps a whole track for.
  *
  * THE SOURCE IS THE LEDGER AND NOT HISTORY, and that is the load-bearing fact.
- * `history.json` is pruned on every read by age AND by count, so a total summed
- * from it grows, sticks at the limit and then runs BACKWARDS as the oldest
- * records fall off. `core::activity_ledger` keeps one row per day — counts and
+ * The index is pruned on every read by age — and by a record count too, until
+ * ADR 0241 deleted it — so a total summed from it grows and then runs BACKWARDS
+ * as the oldest records pass the retention window. `core::activity_ledger` keeps one row per day — counts and
  * durations, never text — and does not forget, which is what lets these figures
  * say *all time* at all. The first build of this module read history and could
  * not.
@@ -207,10 +207,10 @@ export function activityStep(dictations: number): number {
 /* ════════════════════════════════════════════════════════════════════════════
    THE ALL-TIME READINGS, WHICH DO NOT COME FROM HISTORY.
 
-   Everything above reads `history.json`, and history is pruned on every read by
-   age and by count. That is fine for a rate over recent records and fatal for
-   anything lifetime-scoped: a total summed from a pruned list grows, sticks at
-   the limit, and then runs backwards.
+   Everything above reads the index, and the index is pruned on every read by
+   age. That is fine for a rate over recent records and fatal for anything
+   lifetime-scoped: a total summed from a swept list grows and then runs
+   backwards.
 
    `core::activity_ledger` is the record that does not forget — one row per day,
    counts only, never text. These derivations read it, and they are separate

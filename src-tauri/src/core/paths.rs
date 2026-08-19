@@ -76,7 +76,26 @@ pub fn scratchpad_file_path() -> PathBuf {
     user_data_dir().join("scratchpad.json")
 }
 
+/// The index, which is a journal and no longer a document (ADR 0241).
+///
+/// **THE EXTENSION IS THE CONTRACT.** One line is one operation — a record put
+/// or a tombstone — so the file is JSON Lines and not JSON, and a tool that
+/// opened it expecting an array would fail on the first line rather than on the
+/// second. It was `history.json` holding one array rewritten whole on every
+/// dictation; that write was O(records) and is what the ceiling existed to
+/// bound.
 pub fn history_file_path() -> PathBuf {
+    user_data_dir().join("history.jsonl")
+}
+
+/// The array this store used to be, for the one read that converts it.
+///
+/// KEPT ONLY UNTIL IT IS CONVERTED. `load_history_entries` reads it when no
+/// journal is there, writes the records out as a journal and deletes it, which
+/// is the whole of the migration ADR 0241 allows itself — the parse was already
+/// written and had to stay for the tests, so reading it once is cheaper than
+/// explaining to the reader where their history went.
+pub fn legacy_history_index_path() -> PathBuf {
     user_data_dir().join("history.json")
 }
 
