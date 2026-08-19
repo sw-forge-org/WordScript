@@ -1967,8 +1967,15 @@ impl HistoryFilter {
     }
 }
 
+/// A caller's own window on the set, bounded by what the store can hold.
+///
+/// THE UPPER BOUND WAS THE LITERAL `1000` AND WAS THE OLD CEILING WEARING A
+/// DIFFERENT NAME. ADR 0240 took `HISTORY_CEILING` to 5,000 and left this
+/// behind, so a query asking for more than a thousand rows was silently handed a
+/// thousand — a number that had stopped meaning anything. It is the ceiling
+/// itself now, and it moves with it.
 fn query_limit(query: &TranscriptionHistoryQuery) -> Option<usize> {
-    query.limit.map(|value| value.clamp(1, 1000))
+    query.limit.map(|value| value.clamp(1, HISTORY_CEILING))
 }
 
 fn filter_history_entries(

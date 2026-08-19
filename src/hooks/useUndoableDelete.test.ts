@@ -5,11 +5,13 @@ import { UNDO_WINDOW_MS, useUndoableDelete } from "./useUndoableDelete";
 /**
  * THE CLOCK IS GRADED HERE AND NOT ON THE SCREENS THAT USE IT (ADR 0195).
  *
- * Both callers poll the runtime every five seconds and debounce a search box, so
- * a case that drove one of them on fake timers would be making a statement about
- * those two as well — the first version of the History case did exactly that and
- * hung. The hook has none of that machinery around it, which is what makes the
- * three cases ADR 0195 had to answer gradeable at all.
+ * Both callers debounce a search box and re-read the index on a runtime event,
+ * so a case that drove one of them on fake timers would be making a statement
+ * about those two as well — the first version of the History case did exactly
+ * that and hung. (It was a five-second poll on both until ADR 0240 replaced it
+ * with the event; the argument is the same one and the machinery is less.) The
+ * hook has none of it around it, which is what makes the three cases ADR 0195
+ * had to answer gradeable at all.
  */
 
 describe("the undo window", () => {

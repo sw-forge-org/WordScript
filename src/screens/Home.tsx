@@ -25,6 +25,7 @@ import {
 } from "@/components/shell";
 import { useTranscriptionHistory } from "@/hooks/useTranscriptionHistory";
 import { useUndoableDelete } from "@/hooks/useUndoableDelete";
+import { useWholeTranscript } from "@/hooks/useWholeTranscript";
 import { PROCESSING_MODE_LABELS } from "@/lib/transformRules";
 import {
   SAVED_WINDOW_DAYS,
@@ -253,8 +254,13 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
      drill-down is a place the reader went, and a window that reopens three
      screens deep into a chart nobody asked for again is furniture. */
   const [metric, setMetric] = useState<MetricKey | null>(null);
-  const { entries, deliveredText, remove, retry, reveal, acknowledgeFallback } =
+  const { entries, record, deliveredText, remove, retry, reveal, acknowledgeFallback } =
     useTranscriptionHistory(Boolean(runtime?.active));
+  /* THE WHOLE TEXT OF THE ONE ROW THAT IS OPEN (ADR 0240), on History's own
+     hook. Home's rows are History's rows on History's builders, and a *View
+     raw* that showed 160 characters here and the whole dictation one screen
+     over would be the drift `TranscriptRow` exists to prevent. */
+  const openText = useWholeTranscript(openRaw, record);
   /* THE ALL-TIME FIGURES COME FROM THE LEDGER AND NEVER FROM `entries`. History
      is pruned by age and by count on every read, so a lifetime total summed from
      it grows, sticks at the limit and then runs backwards. The ledger keeps one
@@ -405,8 +411,9 @@ export function HomeScreen({ banner, runtime }: PartlyWiredScreenProps = {}) {
           ],
           badges: badgesFor(entry),
           /* History's builder, not a second one. Home lists the same record and
-             the foot has to make the same claim about it. */
-          raw: rawOfEntry(entry),
+             the foot has to make the same claim about it — including the whole
+             text once the open row's record has come back (ADR 0240). */
+          raw: rawOfEntry(entry, openText?.id === entry.id ? openText : null),
           /* History's rule, not a second one: a record with a raw transcript
              re-runs its transform and needs no capture (ADR 0075). */
           retryDisabledReason: retryDisabledReason(entry),

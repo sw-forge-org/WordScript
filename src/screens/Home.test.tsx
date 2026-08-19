@@ -672,6 +672,40 @@ describe("Home · the display", () => {
 });
 
 /**
+ * HOME'S ROWS ARE HISTORY'S ROWS (ADR 0078), AND THE CUT IS WHERE THAT COMES
+ * APART. Since ADR 0240 the list is sent a 160-character preview of each
+ * transcript; the first build fetched the whole record when a row was opened on
+ * History and not on Home, so the same disclosure showed the whole dictation on
+ * one screen and a silent truncation of it on the other.
+ */
+describe("Home · the raw panel", () => {
+  it("shows the whole dictation, not the row's cut of it", async () => {
+    /* Swedish, on the same argument the Rust preview test uses German: the cut
+       is a rule about characters, and a suite that only ever states it in one
+       language is stating it about one corpus. */
+    const heard = "ett två tre fyra fem sex sju åtta nio tio ".repeat(6).trim();
+    mockRuntimeHistory([
+      historyEntry({
+        id: "long",
+        title: "En lång diktering",
+        raw_transcript: heard,
+        transformed_transcript: heard,
+      }),
+    ]);
+    render(<HomeScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    await screen.findByRole("heading", { name: /Recent/ });
+    await userEvent.click(await screen.findByRole("button", { name: "View raw transcript" }));
+
+    /* The whole text, both columns — the summary carried 160 characters of it
+       and `transcription_history_record` carries the rest. */
+    expect(heard.length).toBeGreaterThan(160);
+    await waitFor(() => expect(screen.getAllByText(heard)).toHaveLength(2));
+    expect(screen.queryByText(heard.slice(0, 160))).not.toBeInTheDocument();
+  });
+});
+
+/**
  * THE ONE INBOX SOURCE THAT HAS A RECEIVER (ADR 0076). What is held here is
  * the rule as much as the rendering: nothing is drawn when nothing is owed.
  */

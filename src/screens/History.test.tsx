@@ -120,6 +120,24 @@ function recordFor(row: TranscriptionHistorySummary): TranscriptionHistoryEntry 
   } as TranscriptionHistoryEntry;
 }
 
+/**
+ * THE PANEL AS IT STANDS ONCE THE RECORD HAS COME BACK (ADR 0240).
+ *
+ * `rawOf` takes the whole texts as a second argument and withholds its shape
+ * claim without them, because a claim about the WHOLE dictation may not be read
+ * off a 160-character cut. Every case whose assertion IS that claim therefore
+ * states the open panel rather than the closed row — which is the only place
+ * the sentence is ever drawn.
+ */
+function openRawOf(overrides: Parameters<typeof entry>[0] = {}) {
+  const row = entry(overrides);
+  /* THE TEXTS THE CASE WROTE, not the previews derived from them — that is
+     what `transcription_history_record` hands back, whitespace and all. */
+  const heard = overrides.raw_transcript ?? "";
+  const written = overrides.transformed_transcript ?? heard;
+  return rawOf(row, { id: row.id, heard, written });
+}
+
 function mockRuntimeHistory(entries: TranscriptionHistorySummary[]) {
   invoked.mockImplementation(async (command: string, args?: unknown) => {
     if (command === "transcription_history_summaries") return entries;
@@ -282,10 +300,12 @@ describe("History, wired", () => {
    * pass on a build with no undo window at all.
    *
    * THE CLOCK ITSELF IS GRADED IN `useUndoableDelete.test.ts` AND DELIBERATELY
-   * NOT HERE. This screen polls the runtime every five seconds and debounces its
-   * search; driving it on fake timers means every assertion is also a statement
-   * about those two, and the first version of this case hung on exactly that.
-   * The timing rule belongs to the hook, which has no such machinery around it.
+   * NOT HERE. This screen debounces its search and re-reads the index whenever
+   * the runtime says a record landed (ADR 0240 — it was a five-second poll
+   * before that); driving it on fake timers means every assertion is also a
+   * statement about those, and the first version of this case hung on exactly
+   * that. The timing rule belongs to the hook, which has no such machinery
+   * around it.
    */
   it("takes the row out and offers it back, without telling the runtime", async () => {
     const user = userEvent.setup();
@@ -787,14 +807,12 @@ describe("the raw panel's foot", () => {
      whole difference is WordScript's own prompt strip plus one leading and one
      trailing space, which is also why `post_corrected` is on it. */
   it("names the strip on the record whose foot sent a defect report to the wrong stage", () => {
-    const stripped = rawOf(
-      entry({
-        raw_transcript: " in die Neuronen verwendet wird. Likely phrases:\" Commit.",
-        transformed_transcript: "in die Neuronen verwendet wird. Commit. ",
-        corrected: true,
-        applied_rules: ["prompt_echo_stripped", "post_corrected"],
-      }),
-    );
+    const stripped = openRawOf({
+      raw_transcript: " in die Neuronen verwendet wird. Likely phrases:\" Commit.",
+      transformed_transcript: "in die Neuronen verwendet wird. Commit. ",
+      corrected: true,
+      applied_rules: ["prompt_echo_stripped", "post_corrected"],
+    });
 
     expect(stripped.note).toBe(
       "WordScript removed its own prompt from this. Nothing else was added or reworded.",
@@ -806,14 +824,12 @@ describe("the raw panel's foot", () => {
      supporting it: one word swapped for another and the sentence stops saying
      nothing was reworded. */
   it("stops exonerating the AI stage as soon as a word was swapped", () => {
-    const both = rawOf(
-      entry({
-        raw_transcript: "Absetzt davon. Likely phrases: Commit.",
-        transformed_transcript: "Abgesehen davon. Commit.",
-        corrected: true,
-        applied_rules: ["prompt_echo_stripped", "post_corrected"],
-      }),
-    );
+    const both = openRawOf({
+      raw_transcript: "Absetzt davon. Likely phrases: Commit.",
+      transformed_transcript: "Abgesehen davon. Commit.",
+      corrected: true,
+      applied_rules: ["prompt_echo_stripped", "post_corrected"],
+    });
 
     expect(both.note).toBe(
       "WordScript removed its own prompt from this. Anything else that differs is the AI stage's.",
@@ -821,14 +837,12 @@ describe("the raw panel's foot", () => {
   });
 
   it("names the address repair as WordScript's own, not the AI stage's", () => {
-    const repaired = rawOf(
-      entry({
-        raw_transcript: "Sagt mir bitte Bescheid.",
-        transformed_transcript: "Sag mir bitte Bescheid.",
-        corrected: true,
-        applied_rules: ["singular_address_restored", "post_correction_no_change"],
-      }),
-    );
+    const repaired = openRawOf({
+      raw_transcript: "Sagt mir bitte Bescheid.",
+      transformed_transcript: "Sag mir bitte Bescheid.",
+      corrected: true,
+      applied_rules: ["singular_address_restored", "post_correction_no_change"],
+    });
 
     expect(repaired.note).toContain("WordScript repaired the address the recogniser pluralized.");
   });
@@ -837,14 +851,12 @@ describe("the raw panel's foot", () => {
      cluster spends its time telling apart from the other one, so the panel
      says which of the two it is looking at. */
   it("says when the AI stage only took words out", () => {
-    const trimmed = rawOf(
-      entry({
-        raw_transcript: "also ähm das ist so ein Fall",
-        transformed_transcript: "also das ist so ein Fall",
-        corrected: true,
-        applied_rules: ["post_corrected"],
-      }),
-    );
+    const trimmed = openRawOf({
+      raw_transcript: "also ähm das ist so ein Fall",
+      transformed_transcript: "also das ist so ein Fall",
+      corrected: true,
+      applied_rules: ["post_corrected"],
+    });
 
     expect(trimmed.note).toBe("The AI stage removed words and added none.");
   });
@@ -853,16 +865,81 @@ describe("the raw panel's foot", () => {
      default is true there, and a second sentence saying the same thing is the
      rule dump the record warned against. */
   it("leaves a real rewrite to the panel's own default", () => {
-    const rewritten = rawOf(
-      entry({
-        raw_transcript: "kannst du mir das mal eben zusammenfassen",
-        transformed_transcript: "Bitte fasse mir das kurz zusammen.",
-        corrected: true,
-        applied_rules: ["post_corrected"],
-      }),
-    );
+    const rewritten = openRawOf({
+      raw_transcript: "kannst du mir das mal eben zusammenfassen",
+      transformed_transcript: "Bitte fasse mir das kurz zusammen.",
+      corrected: true,
+      applied_rules: ["post_corrected"],
+    });
 
     expect(rewritten.note).toBeUndefined();
+  });
+
+  /* ADR 0240 PUT A CUT BETWEEN THIS SENTENCE AND ITS EVIDENCE. A row carries
+     160 characters of each text, and the shape claim is a claim about the WHOLE
+     dictation: a pair whose first line only drops fillers and whose tail was
+     rewritten wholesale looks like pure removal to both previews. The panel may
+     say it once the record is in hand and not before. */
+  it("withholds the shape claim while it has only the row's cut of the text", () => {
+    /* A dictation whose first line the AI stage did not touch, and whose TAIL
+       it added a sentence to. The two previews are therefore identical — so a
+       panel reading them would exonerate a stage that invented a sentence.
+       Spanish, because the cases around it are German and the cut is a rule
+       about characters rather than about one corpus. */
+    const opening = "bueno este es uno de esos casos que deberiamos revisar pronto. ".repeat(4);
+    const heard = `${opening}Gracias.`;
+    const written = `${opening}Gracias. El modelo se invento esta frase.`;
+
+    const texts = {
+      raw_transcript: heard,
+      transformed_transcript: written,
+      corrected: true,
+      applied_rules: ["post_corrected"],
+    };
+
+    const cut = rawOf(entry(texts));
+    expect(cut.heard.length).toBe(PREVIEW_CHARS);
+    expect(cut.heard).toBe(cut.written);
+    /* The row still knows the whole texts differ — that flag is the runtime's,
+       measured on the full pair — so the panel says the stage rewrote it and
+       stops there. Its own default, and true. */
+    expect(cut.same).toBe(false);
+    expect(cut.note).toBeUndefined();
+
+    /* With the record in hand the claim is refused on the evidence rather than
+       withheld for want of it: a word arrived the recogniser never said. */
+    expect(openRawOf(texts).note).toBeUndefined();
+  });
+
+  /* And where the whole texts DO support it, the record coming back is what
+     turns the claim on — the panel earns the sentence rather than assuming it. */
+  it("makes the shape claim once the record behind the row has come back", () => {
+    /* French, and the filler is that language's own: every corpus this product
+       meets has one, and the rule under test is *nothing was added* rather than
+       anything about which word was dropped. */
+    const opening = "donc euh c'est un cas dont nous devrions parler bientot. ".repeat(4);
+    const texts = {
+      raw_transcript: `${opening}Merci.`,
+      transformed_transcript: `${opening.replace(/euh /g, "")}Merci.`,
+      corrected: true,
+      applied_rules: ["post_corrected"],
+    };
+
+    expect(rawOf(entry(texts)).note).toBeUndefined();
+    expect(openRawOf(texts).note).toBe("The AI stage removed words and added none.");
+  });
+
+  /* The other half of the same rule: the panel shows the WHOLE text once the
+     record lands, not the 160 characters the row was drawn from. */
+  it("replaces the row's cut with the whole text when the record comes back", () => {
+    const heard = "um dois tres ".repeat(20);
+
+    const cut = rawOf(entry({ raw_transcript: heard, transformed_transcript: heard }));
+    expect(cut.heard.length).toBe(PREVIEW_CHARS);
+
+    const open = openRawOf({ raw_transcript: heard, transformed_transcript: heard });
+    expect(open.heard).toBe(heard);
+    expect(open.written).toBe(heard);
   });
 
   it("marks a short capture in the list, so the fold does not have to be opened", () => {

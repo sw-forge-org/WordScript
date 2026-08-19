@@ -21,6 +21,7 @@ import {
 import type { ListItemBadge, RawTranscript } from "@/components/shell";
 import { useTranscriptionHistory } from "@/hooks/useTranscriptionHistory";
 import { useUndoableDelete } from "@/hooks/useUndoableDelete";
+import { useWholeTranscript, type WholeTranscript } from "@/hooks/useWholeTranscript";
 import { PROCESSING_MODE_LABELS } from "@/lib/transformRules";
 import type {
   TranscriptionHistorySummary,
@@ -206,14 +207,23 @@ export function badgesFor(entry: TranscriptionHistorySummary): ListItemBadge[] {
  * said which — `applied_rules` sat in this function, read one line above for
  * `stageRan` and never consulted for the sentence.
  */
-export function rawOf(entry: TranscriptionHistorySummary): RawTranscript {
-  /* THE PREVIEWS, AND `same` IS NOT DERIVED FROM THEM (ADR 0240). The row
-     carries 160 characters of each text; two cuts can agree where the whole
-     texts do not, so the comparison is made in the runtime against the full
-     ones and travels as a flag. The panel fills in the rest of the text when
-     the record arrives — see `openRecord` on the screen below. */
-  const heard = entry.heard_preview;
-  const written = entry.written_preview;
+export function rawOf(
+  entry: TranscriptionHistorySummary,
+  /** The record's two texts, whole, where `useWholeTranscript` has fetched
+   *  them for this row. Absent means the row's own cut is all there is. */
+  whole?: WholeTranscript | null,
+): RawTranscript {
+  /* THE WHOLE TEXTS WHERE THE RECORD HAS COME BACK, THE PREVIEWS UNTIL THEN
+     (ADR 0240). The row carries 160 characters of each text and the panel is
+     opened to READ them, so the fetched pair replaces the cut as soon as it
+     lands — including its leading and trailing whitespace, which the preview
+     trims and `onlyRemovedWords` below is entitled to see.
+
+     `same` IS NEVER DERIVED FROM EITHER PAIR. Two cuts can agree where the
+     whole texts do not, so the comparison is made in the runtime against the
+     full ones and travels as a flag. */
+  const heard = whole?.heard ?? entry.heard_preview;
+  const written = whole?.written ?? entry.written_preview;
   const identical = entry.transcripts_identical;
   const stageRan = entry.corrected || entry.applied_rules.length > 0;
 
@@ -234,7 +244,7 @@ export function rawOf(entry: TranscriptionHistorySummary): RawTranscript {
         ? stageRan
           ? "The AI stage ran and changed nothing."
           : undefined
-        : changedTextNote(entry, heard, written)),
+        : changedTextNote(entry, heard, written, Boolean(whole))),
   };
 }
 
@@ -265,6 +275,13 @@ function changedTextNote(
   entry: TranscriptionHistorySummary,
   heard: string,
   written: string,
+  /** Whether the two strings above are the WHOLE texts (ADR 0240). The shape
+   *  claim is a claim about the whole dictation and may not be read off a cut:
+   *  a rewrite past character 160 is invisible to both previews, so a pair
+   *  that removes fillers in its first line would exonerate a stage that
+   *  reworded everything after it. Where the record has not come back, the
+   *  claim is withheld and the panel falls back to its own default. */
+  whole: boolean,
 ): string | undefined {
   const repairs = [
     entry.applied_rules.includes("prompt_echo_stripped")
@@ -275,7 +292,7 @@ function changedTextNote(
       : undefined,
   ].filter((clause): clause is string => Boolean(clause));
 
-  const removedOnly = onlyRemovedWords(heard, written);
+  const removedOnly = whole && onlyRemovedWords(heard, written);
 
   if (repairs.length === 0) {
     /* No rule of WordScript's own, so the difference is the AI stage's and the
@@ -443,12 +460,14 @@ const STATUS_FILTERS: { value: "" | TranscriptionHistoryStatus; label: string }[
  * HOW MANY RECORDS STAND ON ONE PAGE (ADR 0184).
  *
  * TWENTY-FIVE IS THE DEFAULT AND IT IS THE FLOOR OF THE CAP RATHER THAN A ROUND
- * NUMBER. `history_limit` was clamped to 25–1000 in the runtime, so twenty-five
- * is the smallest record this product can hold: at the ceiling of a thousand it
- * is forty pages, and on the smallest possible history it is exactly one — the
- * page control appears when there is something to page through and not before.
- * ADR 0185 has since pinned that field to the ceiling, so a full index is now
- * the case to size for rather than the edge of one.
+ * NUMBER. `history_limit` is clamped to 25–`HISTORY_CEILING` in the runtime, so
+ * twenty-five is the smallest record this product can hold: on the smallest
+ * possible history it is exactly one page — the page control appears when there
+ * is something to page through and not before. ADR 0185 has since pinned that
+ * field to the ceiling, so a full index is now the case to size for rather than
+ * the edge of one, and ADR 0240 took that ceiling from 1,000 to 5,000 — two
+ * hundred pages, which is why the rows are built for the page rather than for
+ * the set.
  *
  * A row here is three lines of text and six controls. Ten pages a record nobody
  * can scan; a hundred is a scroll a reader loses their place in, which is the
@@ -526,21 +545,9 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
   } = useTranscriptionHistory(runtime.active);
 
   const [openRaw, setOpenRaw] = useState<string | null>(null);
-  /**
-   * THE WHOLE TEXT OF THE ONE ROW THAT IS OPEN (ADR 0240).
-   *
-   * The list carries 160 characters of each transcript, which is the whole text
-   * for most records — the median delivered text on the reporting machine is 135
-   * characters. The panel opens on the preview IMMEDIATELY and fills in when the
-   * record arrives, rather than waiting on a round trip: a spinner over text
-   * that is already correct in half the cases is worse than a paragraph that
-   * grows once.
-   */
-  const [openText, setOpenText] = useState<{
-    id: string;
-    heard: string;
-    written: string;
-  } | null>(null);
+  /* THE WHOLE TEXT OF THE ONE ROW THAT IS OPEN (ADR 0240), on the hook Home
+     draws its own panel from. Two screens, one fetch rule. */
+  const openText = useWholeTranscript(openRaw, record);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"" | TranscriptionHistoryStatus>("");
   /* NOT A FILTER, WHICH IS WHY IT IS NOT A SELECT BESIDE THE ONE ABOVE IT: it
@@ -551,9 +558,11 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
   const [shows, setShows] = useState<ShownText>("title");
   /* PAGED IN THE SCREEN AND NOT IN THE QUERY (ADR 0184). The runtime already
      hands over the whole filtered set — capped at `history_limit`, which is
-     1000 at its widest — and it is the same set the count in the heading is read
-     off. Asking the runtime for a window instead would mean two round trips per
-     page and a count that no longer matches what was counted. */
+     `HISTORY_CEILING` at its widest — and it is the same set the count in the
+     heading is read off. Asking the runtime for a window instead would mean two
+     round trips per page and a count that no longer matches what was counted.
+     What the page DOES bound is the row build below: a summary is small, and
+     the title, badges and six closures a row needs are not. */
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState(0);
   /* ALL TIME IS THE DEFAULT AND THE MONTH IS THE EXCEPTION (ADR 0184). The
@@ -633,29 +642,6 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
     return trash.pending ? inMonth.filter((item) => !trash.hides(item.id)) : inMonth;
   }, [entries, month, trash.pending, trash.hides]);
 
-  useEffect(() => {
-    if (!openRaw) {
-      setOpenText(null);
-      return;
-    }
-    let live = true;
-    void record(openRaw).then((found) => {
-      if (!live) return;
-      /* A record the store no longer holds leaves the preview standing, which is
-         the honest thing: it is what the row was drawn from. */
-      if (!found) return;
-      const heard = found.raw_transcript ?? "";
-      setOpenText({
-        id: openRaw,
-        heard,
-        written: found.transformed_transcript ?? heard,
-      });
-    });
-    return () => {
-      live = false;
-    };
-  }, [openRaw, record]);
-
   const onExport = useCallback(async () => {
     const path = await save({
       defaultPath: "wordscript-history.json",
@@ -672,11 +658,29 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
     }
   }, [exportEntries, query]);
 
-  const rows: HistoryRow[] = visible.map((entry) => {
+  const count = visible.length;
+  /* Which set the list is showing — filtered or the whole record — which the
+     empty state says in words when there is nothing to draw. */
+  const filtered = Boolean(search || status || month);
+
+  /* THE PAGE IS CLAMPED RATHER THAN REMEMBERED. Deleting the last record on page
+     four, or typing one more letter into the search, leaves a page number with
+     nothing behind it — and an empty list under a pager that counts thirty
+     matches reads as a broken screen rather than as a page that ended. */
+  const pages = Math.max(1, Math.ceil(count / pageSize));
+  const current = Math.min(page, pages - 1);
+  const from = current * pageSize;
+
+  /* BUILT FOR THE PAGE AND NOT FOR THE SET (ADR 0240). The runtime hands over
+     the whole filtered set — up to `HISTORY_CEILING`, which ADR 0240 raised
+     from 1,000 to 5,000 — and this map mints a title, a badge list and six
+     closures per row on every render, including every keystroke in the search
+     box. Twenty-five of those are drawn. The count above is read off `visible`
+     rather than off this list, so the pager still counts the whole set. */
+  const shown: HistoryRow[] = visible.slice(from, from + pageSize).map((entry) => {
         /* The panel's own text where this is the open row and the record has
            come back, the preview until then (ADR 0240). */
-        const whole = openText?.id === entry.id ? openText : null;
-        const raw = rawOf(entry);
+        const raw = rawOf(entry, openText?.id === entry.id ? openText : null);
         return {
           id: entry.id,
           title: titleOf(entry, shows),
@@ -686,7 +690,7 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
             entry.active_profile ?? "No profile recorded",
           ],
           badges: badgesFor(entry),
-          raw: whole ? { ...raw, heard: whole.heard, written: whole.written } : raw,
+          raw,
           retryDisabledReason: retryDisabledReason(entry),
           /* Offered where the text did not reach the cursor — the one case
              where placing it again is a thing to do. */
@@ -722,20 +726,6 @@ export function HistoryScreen({ banner, runtime }: WiredScreenProps) {
           },
         };
   });
-
-  const count = rows.length;
-  /* Which set the list is showing — filtered or the whole record — which the
-     empty state says in words when there is nothing to draw. */
-  const filtered = Boolean(search || status || month);
-
-  /* THE PAGE IS CLAMPED RATHER THAN REMEMBERED. Deleting the last record on page
-     four, or typing one more letter into the search, leaves a page number with
-     nothing behind it — and an empty list under a pager that counts thirty
-     matches reads as a broken screen rather than as a page that ended. */
-  const pages = Math.max(1, Math.ceil(count / pageSize));
-  const current = Math.min(page, pages - 1);
-  const from = current * pageSize;
-  const shown = rows.slice(from, from + pageSize);
 
   /* THE STANDING SENTENCE IS GONE (ADR 0184), and what it said is not lost —
      it is offered instead of recited. It named the transcripts folder, the

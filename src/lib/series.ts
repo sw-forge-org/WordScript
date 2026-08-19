@@ -456,9 +456,11 @@ export interface CauseRow {
  * WAS NOT ALL-TIME.** The records are the only place `provider`, `model` and
  * `turnaround_ms` ever sat together, so grouping them was the only way to answer
  * *what causes it* — and history is capped, which at the reporting machine's
- * rate of about 196 dictations a day is roughly five days. A lifetime median sat
- * above a five-day list, the two disagreed, and the surface had to explain the
- * discrepancy rather than remove it.
+ * rate of about 196 dictations a day was roughly five days under the thousand
+ * this ADR replaced, and is about twenty-five under the five thousand it set. A
+ * lifetime median sat above that list, the two disagreed, and the surface had to
+ * explain the discrepancy rather than remove it. A bigger cap moves the number
+ * and not the defect: any cap is shorter than all time.
  *
  * **THE LEDGER LEARNED TO ANSWER IT (ADR 0240).** A distribution per recogniser
  * is exactly what that file is for — counts, no text, no growth with use — and

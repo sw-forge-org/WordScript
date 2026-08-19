@@ -262,9 +262,11 @@ function RateDetail({
  *
  * IT COVERS EVERYTHING THE HISTOGRAM ABOVE IT DOES, AND THAT IS NEW (ADR 0240).
  * The first build read the history records — the only place a wait and the model
- * that produced it ever sat together — and history is capped at a thousand,
- * which here is about five days. So a lifetime median stood above a five-day
- * list, the two disagreed by design, and the head had to say so. The ledger now
+ * that produced it ever sat together — and history was capped at a thousand
+ * then, which on the reporting machine was about five days. So a lifetime median
+ * stood above a five-day list, the two disagreed by design, and the head had to
+ * say so. (The same ADR took that cap to five thousand; the fix is the ledger
+ * either way, because any cap is shorter than all time.) The ledger now
  * keeps the same distribution split by recogniser, the rows sum to the bands,
  * and the sentence explaining the discrepancy could go rather than be reworded.
  */
