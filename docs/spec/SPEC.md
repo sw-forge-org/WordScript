@@ -1,6 +1,13 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-19 (**a bound on stored
+Status: created 2026-07-24, last drift check 2026-08-19 (**a reading that lasts
+forever is a mergeable accumulator per period**: the activity ledger grows a
+month tier that is never pruned, so a pruned day keeps its shape as well as its
+figures and a chart on Home reaches as far back as the installation does; every
+median, rate and share is derived at read time, every field records the day it
+started being measured, the turnaround gains a second one-dimensional cut by
+mode, and the file is written minified through a rename (ADR 0243); before it
+**a bound on stored
 dictations is a bound in bytes**: the index is an append-only journal, the record
 ceiling is deleted rather than raised, both collections get a 5 GB warning and a
 10 GB ceiling of their own, and the archive shards to day level so a ceiling
@@ -993,15 +1000,35 @@ no account. Entities:
   and deleted.
 - **ActivityLedger** (`activity_ledger.rs`): the all-time counts Home reads,
   in `activity.json` beside the index. Counts only -- no text, no ids -- so it
-  survives every retention rule the index obeys (ADR 0176). It holds per-day
-  rows plus four lifetime terms: `rate_buckets`, `turnaround_buckets`,
-  `languages`, and `turnaround_causes`, a `provider/model` key to its own
-  400-bucket turnaround histogram on the same 25 ms axis as the bands, bounded
-  at 64 keys because the key comes off the wire (ADR 0240). Each term is seeded
-  once, idempotently, from whatever the index still holds, and two ledgers merge
-  by field-wise maximum (ADR 0179) -- so a seeded term can start slightly short
-  of the all-time truth and never double-counts. `retired`/`retired_through`
-  carry what pruning removed (ADR 0176).
+  survives every retention rule the index obeys (ADR 0176).
+  **Every reading it stores is a fixed-size mergeable accumulator per period,
+  and every median, mean, rate and share is derived at read time** (ADR 0243).
+  A reading that cannot be expressed that way does not go on Home.
+  Three DISJOINT tiers, all of the same row type, and a lifetime figure is their
+  sum: `days` rolling at `LEDGER_DAY_ROWS`, `months` never pruned, and `retired`
+  as one opaque row for everything before the ladder. Pruning folds a day into
+  its month, so the figures survive and so does the shape. A row carries counts
+  and durations, `turnaround_runs`/`turnaround_ms_sum` for an exact mean, a
+  41-bucket quarter-octave `turnaround_log` for the shape, and the language
+  split as `languages` plus `language_refused` -- the third population,
+  *never asked*, is DERIVED from the row and never stored, so it cannot disagree
+  with the row after a merge.
+  Beside the tiers: `rate_buckets` and `turnaround_buckets`, the two fixed
+  400-bucket lifetime histograms the tiles state a median from; `turnaround_causes`,
+  keyed `provider/model`, bounded at 64 keys with an `other` row that keeps the
+  rows summing (ADR 0240, ADR 0243); and `mode_causes`, the same runs keyed by
+  `effective_mode`. The two cause maps are **two one-dimensional cuts of one
+  total and never a cross-tab.**
+  `measured_from` maps a field to the first day it was written, so no series
+  draws a zero for a period that predates its field; merging takes the EARLIER
+  stamp. `retired`/`retired_through` carry what pruning removed (ADR 0176), and
+  `prehistory_through` -- written once by the migration, merged by taking the
+  LATER -- is the last day the opaque row speaks for, which is where the month
+  series must start after.
+  Each term is seeded once, idempotently, from whatever the index still holds,
+  and two ledgers merge by field-wise maximum (ADR 0179) -- so a seeded term can
+  start slightly short of the all-time truth and never double-counts. The file
+  is written minified, through a temporary and a rename, on every dictation.
 - **CaptureBudget** (`capture_budget.rs`): the resolved recording limits. A
   failure that could survive a second attempt keeps its capture in the temp
   directory until the retry or the seven-day / twenty-file sweep; every other

@@ -53,6 +53,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — every reading on Home can now exist indefinitely
+
+- **The activity ledger grows a month tier, and it is never pruned.** Until now
+  a day row past the 800-day horizon was absorbed into one opaque `retired`
+  total: the figures survived and the SHAPE did not. Every series started after
+  that horizon, so the *Months* view could never hold more than 26 buckets and
+  **the *Years* view could never hold more than three, at any installation age**.
+  A departing day is now folded into its month instead, months are kept forever,
+  and a lifetime figure is the sum of three disjoint tiers. Twelve month rows a
+  year is under 4 kB: **fifty years of them is under 200 kB**, against 4.9 MB if
+  every day row were kept.
+- **A stored reading is a fixed-size mergeable accumulator per period, and
+  nothing else goes on Home.** Sums, counts, maxima and histograms are stored;
+  medians, means, rates and shares are derived when a surface asks. That is what
+  makes coarsening a period lossless, and it is a gate on what may become a tile.
+- **`activity.json` is written minified, through a temporary and a rename.** It
+  was `to_string_pretty` straight over the live file on every dictation — on the
+  reporting machine **21,326 bytes on disk against 5,634 bytes of content, 73%
+  indentation** — and it is the one file in a backup that cannot be rebuilt from
+  anything else. A crash between the truncate and the last byte destroyed it.
+  Seconds are rounded to milliseconds on the way in, so `4647.276553287982`
+  stops being stored as a measurement.
+- **Turnaround and languages have a history.** Both were all-time-only figures
+  that a chart could not draw without spreading a lifetime number evenly over
+  the weeks. Each period now carries its own accumulators: run count and
+  millisecond sum for an exact mean, a 41-bucket quarter-octave histogram for
+  the shape, and the language counts with the refusals beside them.
+- **`Not named` was two populations sharing one counter, and is now two rows.**
+  *Too short to name* is the verdict coming back empty and grows with every
+  brief dictation; *Never asked* is the frozen backlog from before the field
+  existed, is derived rather than stored, and is not drawn where it is zero.
+- **The turnaround gains a second cut, by processing mode.** Two independent
+  one-dimensional views of the same runs — by recogniser and by mode — and never
+  a cross-tab. The 64-key cap on the recogniser map gains an `other` row, so the
+  rows sum to the histogram at every installation age, which is what the display
+  already claimed.
+- **Every accumulator records the day it started being measured.** A series may
+  not draw a period that begins before its field's stamp, because a zero there
+  is a claim about the product's past that the record cannot make. This replaces
+  three separate prose caveats and handles every field added after it.
+- **Home's counters are re-read on the runtime's own event.** The reload key was
+  the number of index rows, which stands still when a dictation and a retention
+  drop land in the same moment. Home also asks for the five recent rows it draws
+  rather than every summary the store holds, and an owed fallback is a filter in
+  the runtime rather than a scan — one can be arbitrarily old, so a limit could
+  never find it.
+- **Three surfaces stop under-saying what they know.** Calendar markers are a
+  list rather than two constants and the legend counts the kinds present; the
+  speaking rate states over how many of the counted runs it was measured.
+
 ### Changed — the index stops being rewritten, and the bound stops being a number of dictations
 
 - **`history.json` is `history.jsonl`, and it is an append-only journal.** One

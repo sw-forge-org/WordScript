@@ -230,20 +230,38 @@ The active product core lives in `src-tauri/src/core/`.
   activation, a wholesale replacement and a doubling of dead weight, and never on
   the dictation path. There is no record ceiling; what governs the index is
   `history_retention_days` and a 10 GB backstop.
-- `activity_ledger.rs`: the all-time figures behind Home's counters — one row per
-  DAY of counts and durations, never text, plus two fixed-width histograms for
-  the medians and a bounded `provider/model` map of turnaround histograms on the
-  same axis (`turnaround_causes`, at most 64 keys, ADR 0240) so the cause list
-  under the turnaround bands is all-time like everything beside it. It exists
-  because the index is pruned by age, so a total summed from it grows and then
-  runs backwards as the oldest records pass the window — deleting the record
-  count (ADR 0241) did not change that and could not.
-  **Nothing in it subtracts**: a day row past the 800-day horizon is folded into
-  `retired` on its way out, so a lifetime figure is monotone by construction and
-  not by care (ADR 0176). It travels in the full backup and an import raises it
-  field by field rather than replacing it (ADR 0179); the one control that lowers
-  it is the reset in Privacy & Data, whose `reset_at_ms` stamp is what stops the
-  history seed from quietly undoing the button.
+- `activity_ledger.rs`: the all-time figures behind Home's counters — counts,
+  durations and histograms per period, never text. It exists because the index is
+  pruned by age, so a total summed from it grows and then runs backwards as the
+  oldest records pass the window — deleting the record count (ADR 0241) did not
+  change that and could not.
+  **Every reading in it is a fixed-size mergeable accumulator per period**
+  (ADR 0243): sums, counts, maxima and histograms, never a median or a share,
+  because those are derived when a surface asks and two accumulators combine by
+  addition without loss. That is what lets a period be coarsened without the
+  reading losing its meaning, and it is a gate — a figure that cannot be
+  expressed this way does not go on Home.
+  **Three tiers, disjoint, and a lifetime total is their sum**: `days`, one row
+  per day, rolling at `LEDGER_DAY_ROWS`; `months`, one row per month, **never
+  pruned**; and `retired`, the single opaque row that speaks for everything
+  before the ladder existed. A day past the horizon is folded into its month
+  rather than into the blob, so **nothing in it subtracts** and no shape is lost
+  with the row (ADR 0176, ADR 0243). `years` is not a tier — twelve month rows
+  are a year, and storing the sum would be a second copy of one fact (ADR 0123).
+  Beside the tiers sit the lifetime terms: two fixed-width histograms for the
+  medians the tiles state to one decimal, and two independent one-dimensional
+  cuts of the turnaround — `turnaround_causes` by `provider/model`, bounded at 64
+  keys with an `other` row so the rows always sum, and `mode_causes` by
+  `effective_mode`, which needs no bound because it is an enum (ADR 0240,
+  ADR 0243). `measured_from` records the first day each field was written, and a
+  series may not draw a period that begins before its field's stamp.
+  The file is written whole through a temporary and a rename, minified, on every
+  dictation — it is a bounded accumulator with no second copy to replay from,
+  which is why the index's journal answer does not reach it (ADR 0243 §6). It
+  travels in the full backup and an import raises it field by field rather than
+  replacing it (ADR 0179); the one control that lowers it is the reset in
+  Privacy & Data, whose `reset_at_ms` stamp is what stops the history seed from
+  quietly undoing the button.
 - `language_detect.rs`: which language a delivered transcript came back in,
   measured locally over `whatlang` and answered as ISO 639-1 (ADR 0180). It
   exists because the provider route cannot work here — Groq treats language as a
