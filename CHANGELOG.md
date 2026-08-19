@@ -127,6 +127,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when* — except where it would land beside its neighbour, which printed
   `10 Aug17 Aug` as a single run of characters.
 
+### Changed — the index is read when it changes, and a row carries what a row needs
+
+- **The five-second poll is gone.** Home and History re-read the index when the
+  runtime says a record landed — `transcription`, `error` and `empty` on
+  `wordscript-event`, the three events that write one — and again when the
+  window comes back into view. Before this it read twelve times a minute whether
+  or not anything had happened, which on the reporting machine's 478 records was
+  **14.1 MB a minute** across the IPC bridge for a file that changes about two
+  hundred times a day (ADR 0240).
+- **A row in the list is a summary, not the whole record.** The list command
+  sends the twenty-four fields the two screens actually draw, with the heard and
+  the written text cut to 160 characters; the whole record is fetched by id when
+  a row is expanded, restored or copied. Fifteen stored fields that no screen
+  has ever read stopped being sent at all — among them the local decoding
+  parameters, the recovery message and the per-session input level, which alone
+  was 161 bytes a row.
+- **Measured, on the owner's real index: 2,453 bytes a row became 1,113, a 54.6%
+  cut** — 1,172,580 bytes for 478 records down to 532,436. And the remaining
+  payload is paid once per dictation while the workspace is open, rather than
+  twelve times a minute regardless.
+- **The turnaround cause list is all time.** It read the records still on the
+  machine, which is where the surface's apology came from — on this machine that
+  was about five days. Each `provider/model` now keeps its own turnaround
+  histogram in the activity ledger, on the same 25 ms axis as the bands above
+  it, seeded once from whatever the index still holds and merged field-wise like
+  every other term. The head reads `N runs all time` and the note about pruning
+  is gone.
+- **The index write is atomic and compact.** It went to a temporary file and a
+  rename, so a crash mid-write can no longer leave a half-written index where a
+  whole one was, and it stopped being pretty-printed — 229,019 bytes of
+  indentation on the reporting machine, 16.3% of the file, in a file nobody
+  reads by eye.
+- **The ceiling went from 1,000 records to 5,000.** A thousand was about five
+  days of writing here. On a release build a 5,000-record index serialises in
+  22.7 ms and reaches the disk in 2.2 ms — measured, not estimated. Past that
+  the answer is a different file format rather than a larger number, and the ADR
+  says so.
+
 ### Changed — your transcript files stopped sharing the index's lifetime
 
 - **Retention no longer deletes your Markdown files.** Every dictation is also a

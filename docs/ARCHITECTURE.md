@@ -218,9 +218,18 @@ The active product core lives in `src-tauri/src/core/`.
   retry. It is also the ONE FUNNEL every finished record passes through, which
   is why the transcript file (ADR 0074) and the activity ledger (ADR 0174) are
   both written from it rather than from their callers.
+  **The record is the storage shape and it is not the wire shape** (ADR 0240): a
+  list answers in `TranscriptionHistorySummary`, with the two transcripts cut to
+  160 characters and fifteen stored fields no screen reads left off entirely;
+  the whole entry is fetched one at a time by `transcription_history_record`.
+  The index is one JSON array, compact, replaced through a temporary file and a
+  rename on every record — so every term here is O(records) per dictation, which
+  is what `HISTORY_CEILING` (5,000) exists to bound.
 - `activity_ledger.rs`: the all-time figures behind Home's counters — one row per
   DAY of counts and durations, never text, plus two fixed-width histograms for
-  the medians. It exists because `history.json` is pruned by age and by count, so
+  the medians and a bounded `provider/model` map of turnaround histograms on the
+  same axis (`turnaround_causes`, at most 64 keys, ADR 0240) so the cause list
+  under the turnaround bands is all-time like everything beside it. It exists because `history.json` is pruned by age and by count, so
   a total summed from it grows, sticks at the limit and then runs backwards.
   **Nothing in it subtracts**: a day row past the 800-day horizon is folded into
   `retired` on its way out, so a lifetime figure is monotone by construction and

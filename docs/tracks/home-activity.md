@@ -966,6 +966,125 @@ stage stopped doing. It is now
 halves — the file survives AND the entry is gone — because the first alone would
 pass if the prune had simply stopped running.
 
+## The record — Stage G, 2026-08-19
+
+Same session again, continued out of Stage F's closing paragraph. Durable form
+is
+[ADR 0240](../decisions/0240-the-index-is-read-when-it-changes-carries-what-a-row-needs-and-the-turnaround-causes-move-into-the-ledger.md).
+
+**Suite: 945 → 949 frontend cases over 57 files, and 997 → 1006 Rust cases.**
+The nine Rust cases are five in `activity_ledger.rs` and four in `history.rs`;
+the four frontend cases are one new file, `useTranscriptionHistory.test.tsx`.
+`npm run build` clean, `npx tsc --noEmit` clean, `cargo test` 1006 passed, 0
+failed, 6 ignored.
+
+### The owner rejected the repair Stage F left open, and asked for the cause instead
+
+Stage F closed saying the cause list still reaches five days because the ceiling
+is unchanged. The owner's answer was not *raise it* — it was **at a thousand
+records this stops making sense, so optimise it**, and then, twice, a wider
+instruction: *every metric on Home gets only what it really needs, and generally
+every function in the app gets only what it really needs, so we do not drag
+unnecessary ballast around and end up with ceilings like a thousand files.*
+
+That reframes the ceiling as a symptom. The index is expensive per record; the
+ceiling is where that expense was capped; raising the cap alone buys reach and
+pays for it on every dictation.
+
+### The premise was half wrong, and the correction is the reason to read this
+
+The question as asked was *why is `history.json` fully parsed and fully written
+back on every dictation?* **The parse half is wrong.** `ensure_loaded` returns
+early on a `loaded` flag; `load_history_entries` runs once per process, on first
+access. The write half is exactly right: `save_history_entries` serialises the
+whole `VecDeque` and replaces the file on every record.
+
+Correcting it mattered because the wrong half would have sent the work at a
+read-side cache that already exists, and the right half is where the O(records)
+cost actually lives.
+
+### What was measured, and none of it is estimated
+
+The reporting machine's index at the time: **478 records, 1,172,580 bytes
+minified, 2,453 bytes a row.** Pretty-printing was **229,019 of those bytes,
+16.3%** — the first estimate written down for that was 8% and about 100 kB, and
+it was wrong by a factor of two.
+
+Three findings, ranked as they were reported:
+
+1. **The write is whole-file, non-atomic and pretty-printed.** A crash between
+   truncate and the last byte leaves a half-written index where a whole one was.
+2. **The worse one: `useTranscriptionHistory` polled every five seconds.** Not
+   the write — the READ. Twelve reads a minute of the entire index, whether or
+   not anything had happened, whether or not the workspace was even the visible
+   window. At 1,172,580 bytes that is **14.1 MB a minute** over the IPC bridge,
+   for a file that changes about 196 times a day.
+3. **The rows carry fifteen fields no screen reads.** 591 bytes a row, 24.1% of
+   the payload, `input_level` alone 161. Each was checked against every reader
+   in `src/` rather than against a guess: the near misses are real and they are
+   all on other shapes — `input_level` on a native event payload,
+   `active_driver` on `platform`, the `local_prompt_*` pair on `config`,
+   `speech_seconds` on `LedgerDay`.
+
+### The delivered payload, before and after
+
+| | Before | After |
+|---|---|---|
+| Bytes a row | 2,453 | 1,113 |
+| 478 records | 1,172,580 B | 532,436 B |
+| Read frequency | every 5 s, 12/min | on a record-writing event, and on `visibilitychange` |
+| Cost per minute, idle workspace | 14.1 MB | 0 |
+
+**54.6%**, and the frequency term is the larger of the two changes.
+
+### The cause list moved into the ledger, and the seed lands two runs short
+
+`turnaround_causes` is a `provider/model` key to its own 400-bucket histogram on
+the 25 ms axis the bands already use, bounded at 64 keys because the key comes
+off the wire. Live writes go through one `if let Some(milliseconds)` with both
+`add_turnaround` and `add_turnaround_cause` inside it, so no run can land in one
+term and not the other.
+
+**The seed is short and the code says why.** On the real file it filled three
+rows totalling **420 runs** against an all-time histogram of **422** — the seed
+skips records with `words == 0 && spoken_words == 0`, and the live funnel counts
+their turnaround. The first comment written for this asserted the two always
+agree; the ledger on disk refuted it within the hour. Two runs in 422 is the
+honest shape of a term seeded after the fact, and ADR 0179's field-wise maximum
+means it can only ever be raised from there.
+
+Rows on the reporting machine after the seed: `groq/whisper-large-v3` 94,
+`groq/whisper-large-v3-turbo` 325, `openai/whisper-large-v3-turbo` 1.
+
+### The ceiling moved, on a measurement rather than on a feeling
+
+A throwaway `src-tauri/tests/index_write_cost.rs` timed serialise and
+write+rename over 20 runs at five sizes, in debug and in release, and was
+deleted afterwards. Release:
+
+| Records | Bytes | Serialise | Write + rename | Total |
+|---|---|---|---|---|
+| 478 | 1,160 kB | 2.4 ms | 0.2 ms | 2.6 ms |
+| 1,000 | 2,423 kB | 4.3 ms | 0.4 ms | 4.8 ms |
+| 2,000 | 4,837 kB | 8.4 ms | 0.8 ms | 9.2 ms |
+| 5,000 | 12,099 kB | 22.7 ms | 2.2 ms | 24.9 ms |
+| 10,000 | 24,277 kB | 55.1 ms | 4.3 ms | 59.4 ms |
+
+Against a median turnaround of 1,210 ms, 24.9 ms is 2% of a dictation and 59.4
+is 5%. **5,000 was chosen because 10,000 is where the number starts being felt**
+— and because past it the honest fix is an append-only journal, which is a
+change to how the file works rather than to a constant in it. The debug figures
+are 15 to 20 times worse (442 ms at 5,000), which is what a dev host feels and
+is not what ships.
+
+### One number the next session inherits
+
+**The owner's own `history_retention_days` is 7.** It was never a shipped
+default — the code default is 90 — and with the ceiling at 5,000 it is now the
+binding rule: 7 × 196 ≈ 1,372 records, well under the cap. It is their setting
+on Privacy & Data and this stage deliberately did not touch it. If the cause
+list is ever reported as short again, that value is the first thing to read.
+
 ## The sequence
 
 **Stage A — the surface, on what already reads.** Nothing here is blocked.
@@ -1079,7 +1198,30 @@ came out of an E2 reading and the session was already in the tree.
 **What this does NOT fix, and the owner was told so before it was built:** the
 cause list still reaches about five days, because `HISTORY_CEILING` is unchanged
 at 1000 and history is what it reads. Raising the ceiling was offered as one of
-four repairs and is not the one that was chosen; it stays open.
+four repairs and is not the one that was chosen; it stays open. **Closed by
+Stage G**, and not by raising the ceiling: the list stopped reading history.
+
+### Stage G — the index stopped being read on a clock and stopped carrying ballast
+
+Opened 2026-08-19 out of Stage F's closing paragraph, in the same session. The
+owner declined the repair that paragraph left open — *at a thousand records this
+stops making sense, so optimise it* — and widened it to a rule: every function
+gets only what it really needs. Durable form is
+[ADR 0240](../decisions/0240-the-index-is-read-when-it-changes-carries-what-a-row-needs-and-the-turnaround-causes-move-into-the-ledger.md).
+
+| Step | What | Done means |
+|---|---|---|
+| **G1 · done** | **The index is read when it changes.** `useTranscriptionHistory` listens on `wordscript-event` for the three payloads that write a record — `transcription`, `error`, `empty` — plus `visibilitychange` for an event lost while hidden. The five-second interval is gone and no slow poll replaced it | A test can advance 300,000 ms of fake time and see exactly one read, and a second read arrives on a `transcription` payload and not on an `audio_level` one |
+| **G2 · done** | **The turnaround causes are an all-time ledger term.** `turnaround_causes`: `provider/model` to a 400-bucket histogram on the 25 ms axis, bounded at 64 keys, seeded once from the index, merged by field-wise maximum. `series.turnaroundCauses` reads the ledger and takes no records at all | The cause list's head reads `N runs all time`, `MetricDetail` no longer accepts a records prop, and the surface's note about pruning is deleted rather than reworded |
+| **G3 · done** | **A list row is a summary and the record is fetched by id.** `TranscriptionHistorySummary` carries 24 fields with the two transcripts cut to 160 characters and a `transcripts_identical` flag; `transcription_history_record(id)` answers the whole entry, or `None` for an id the store does not hold. `summaries_snapshot` filters by reference and clones no record | Expanding a row, restoring one and copying one all still show the whole text, and 2,453 bytes a row became 1,113 on the reader's real index |
+| **G4 · done** | **The index write is compact and atomic.** Temporary file plus rename, `to_string` rather than `to_string_pretty`, and the temporary is removed if the rename fails | A crash mid-write cannot leave a half-written index, asserted by a test that checks no `.json.tmp` survives a successful write, and 16.3% of the file's bytes stopped being indentation |
+| **G5 · done** | **`HISTORY_CEILING` is 5,000.** Raised on a release-build measurement of serialise and write at five sizes, with the table in the constant's own doc block and the note that past 5,000 the answer is an append-only journal | The index reaches about twenty-five days at this machine's rate, and the constant carries the number that justifies it rather than a preference |
+
+**What this does NOT fix, and it is in the ADR too:** every term here is still
+O(records) per dictation, because the index is one JSON array rewritten whole.
+The write got 54.6% cheaper and atomic; it did not stop being linear. An
+append-only journal would make it O(1) and would remove the cost basis the
+ceiling exists to bound — that is a change to the file format, not to a number.
 
 ## Traps
 
@@ -1184,20 +1326,28 @@ absence — a streak, a gap, a "you haven't dictated since" — has to pass thro
 
 ## The prompt for the next session
 
-**Stage A, Stage C, Stage D, Stage E and Stage F are all closed** — A1 to A11,
-C1 to C11, D1 to D4, E1 to E5 and F1 to F4 are landed, C12 stays withdrawn. Read
-the record sections above before anything else, in particular the A3/A4/A5 one,
-*What the readings actually measure*, the Stage C one, the Stage D one and the
-Stage E one: all five carry findings that are not in the tree's own comments.
+**Stage A, Stage C, Stage D, Stage E, Stage F and Stage G are all closed** — A1
+to A11, C1 to C11, D1 to D4, E1 to E5, F1 to F4 and G1 to G5 are landed, C12
+stays withdrawn. Read the record sections above before anything else, in
+particular the A3/A4/A5 one, *What the readings actually measure*, the Stage C
+one, the Stage D one, the Stage E one and the Stage G one: all six carry
+findings that are not in the tree's own comments — Stage G's include a premise
+of the owner's brief that was half wrong, and the correction is where the work
+went.
 
 Work in the repo root on `main`. Do not create a branch. **Seven other tracks
 work in the same tree** — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so
 run `git status` and `git log --oneline -5` before you start, and stage your own
-paths. Never `git add -A`. **0238 is the next free ADR number unless the tree
+paths. Never `git add -A`. **0241 is the next free ADR number unless the tree
 says otherwise — grep, and grep again immediately before you write the file.**
 Stage D cited 0234 twelve times in source and lost the number to another track
 while the session was running; Stage E and Stage F both wrote the ADR file first
 and scattered the citations after, which is what that trap actually asks for.
+**Stage G walked into it anyway** — 0238 was grepped free at the session's start,
+cited 49 times across 14 files over the hours that followed, and was gone to the
+insert-delivery track along with 0239 by the time the file was due. Renumbering
+to 0240 cost a `sed` over 14 files. The rule is not *grep first*, it is **write
+the file the moment you know you need a number.**
 
 ### There is no open stage. What is left is Stage B, and it is not yours to start
 
@@ -1213,9 +1363,9 @@ the thing this track spent Stage A making impossible.
 | **B4** | Meetings and uploads as calendar origins — [`context-objects.md`](context-objects.md). The tooltip already holds their line, unwired and tagged |
 
 **So a session opening this page should probably not be a home-activity
-session.** If the owner brings new readings, they open a Stage F and this page is
-where it goes — that is what Stage D and Stage E both were, each opened by one
-evening's use of what the session before it landed. If they do not, the four live questions below are what this track
+session.** If the owner brings new readings, they open a Stage H and this page
+is where it goes — that is what Stage D through Stage G all were, each opened by
+one evening's use of what the session before it landed. If they do not, the four live questions below are what this track
 still has to say, and every one of them is a PROPOSAL rather than a task.
 
 ### Four things to raise, and none of them is a row yet

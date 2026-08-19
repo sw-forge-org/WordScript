@@ -1,7 +1,11 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-18 (the record's
-provenance clause: **a record names what the request carried** -- `provider`,
+Status: created 2026-07-24, last drift check 2026-08-19 (the history index's
+two shapes: **the list shape is not the record** -- `TranscriptionHistorySummary`
+carries what a row draws with the two transcripts cut to 160 characters, the
+whole entry is fetched by id, nothing polls either, and the turnaround causes
+moved into the activity ledger as an all-time term (ADR 0240); before it the
+record's provenance clause: **a record names what the request carried** -- `provider`,
 `model` and `language` are resolved through the pipeline's own functions and are
 absent rather than invented where the adapter chose, which closed a case where a
 profile-wide speech model belonging to another vendor was substituted on the wire
@@ -335,6 +339,19 @@ Rust core modules in `src-tauri/src/core/`:
 - `transcript_store_status`, `reveal_transcript_in_file_manager` (the Markdown
   transcript store; the reveal refuses any path outside the store's root)
 - `acknowledge_transcription_fallback` (Home's decision inbox, ADR 0076)
+- **The history index answers in two shapes, and the list shape is not the
+  record** (ADR 0240). `transcription_history_summaries` returns
+  `TranscriptionHistorySummary` — the fields the two list screens draw, with
+  `heard_preview` and `written_preview` cut to 160 characters and
+  `transcripts_identical` saying whether the two differ at all. The whole
+  `TranscriptionHistoryEntry` is fetched one at a time by
+  `transcription_history_record(id)`, which answers `None` for an id the store
+  does not hold rather than erroring. `acknowledge_transcription_fallback`,
+  `clear_transcription_history_entries` and `delete_transcription_history_entry`
+  answer in the summary shape too, because they answer with the list.
+  **Nothing polls this.** The frontend re-reads on the three `wordscript-event`
+  payloads that write a record — `transcription`, `error`, `empty` — and on
+  `visibilitychange`; the five-second interval was removed with the same ADR.
 - `export_full_backup`, `import_full_backup`, `reset_all_settings` (both
   destructive ones snapshot the config first and answer with its path)
 - `system_color_scheme`, `set_window_color_scheme` (the native half of the
@@ -928,6 +945,28 @@ no account. Entities:
   and each is absent rather than invented where the adapter chose -- a role
   default the catalogue attributes to another vendor is neither sent nor
   recorded (ADR 0225), and an empty language means auto-detect.
+  **The record holds every field; the wire does not** (ADR 0240). The entry is
+  the storage shape and nothing was dropped from it. What reaches a list is
+  `TranscriptionHistorySummary`, and fifteen stored fields no screen reads --
+  among them `spoken_language`, `provider_profile`, the four `local_*` decoding
+  parameters, `recovery_message` and `input_level` -- are simply not on it.
+  **The index is one JSON array, written whole on every dictation**, compact
+  rather than pretty-printed and landed through a temporary file plus a rename.
+  `HISTORY_CEILING` is 5,000 records; on a release build that index serialises
+  in 22.7 ms and reaches the disk in 2.2 ms. Past that the answer is an
+  append-only journal, not a larger constant -- every term here is still
+  O(records) per dictation.
+- **ActivityLedger** (`activity_ledger.rs`): the all-time counts Home reads,
+  in `activity.json` beside the index. Counts only -- no text, no ids -- so it
+  survives every retention rule the index obeys (ADR 0176). It holds per-day
+  rows plus four lifetime terms: `rate_buckets`, `turnaround_buckets`,
+  `languages`, and `turnaround_causes`, a `provider/model` key to its own
+  400-bucket turnaround histogram on the same 25 ms axis as the bands, bounded
+  at 64 keys because the key comes off the wire (ADR 0240). Each term is seeded
+  once, idempotently, from whatever the index still holds, and two ledgers merge
+  by field-wise maximum (ADR 0179) -- so a seeded term can start slightly short
+  of the all-time truth and never double-counts. `retired`/`retired_through`
+  carry what pruning removed (ADR 0176).
 - **CaptureBudget** (`capture_budget.rs`): the resolved recording limits. A
   failure that could survive a second attempt keeps its capture in the temp
   directory until the retry or the seven-day / twenty-file sweep; every other

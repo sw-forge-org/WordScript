@@ -1558,6 +1558,8 @@ that is what a record is for (ADR 0123: one list per fact).
   The observed modifier state is read from the X server, because a list the app keeps cannot survive a dropped release.
 - [0239](0239-a-registered-binding-is-not-a-delivering-one-so-the-loop-beats-and-the-screen-stops-saying-registered.md):
   A registered binding is not a delivering one, so the loop beats and the screen stops saying *Registered*.
+- [0240](0240-the-index-is-read-when-it-changes-carries-what-a-row-needs-and-the-turnaround-causes-move-into-the-ledger.md):
+  The index is read when it changes, carries what a row needs, and the turnaround causes move into the ledger.
 
 ## Resolved: the number 0011 was used twice
 

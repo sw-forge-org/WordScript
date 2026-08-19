@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-18
+Status: 2026-08-19
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -104,10 +104,10 @@ Status: 2026-08-18
   specifies. `history.json` stays the index and carries the path; Delete and
   Clear take the file with the entry, and the runtime removes only paths an entry
   named. **The retention sweep no longer does** (ADR 0237, 2026-08-19): the
-  index is capped at a thousand records so a list stays fast — about five days
-  of writing at the reporting machine's rate — and that cap is not a lifetime
-  anybody chose for the reader's own files, so the archive is kept until it is
-  deleted. Its consequence is stated rather than hidden: a file whose entry has
+  index is capped so a list stays fast — five thousand records since ADR 0240,
+  about twenty-five days of writing at the reporting machine's rate — and that
+  cap is not a lifetime anybody chose for the reader's own files, so the archive
+  is kept until it is deleted. Its consequence is stated rather than hidden: a file whose entry has
   been pruned is an orphan no History row can reach, so `Transcript files` on
   Privacy & Data states how many files and how many bytes are on the machine and
   carries the one door that removes them — a walk bounded by the store's own
@@ -119,6 +119,20 @@ Status: 2026-08-18
   (ADR 0086), and is absent rather than zero on a retry, an upload and every
   record older than the measurement. `Show transcripts in file manager` acts on
   History, on Home and in the palette.
+- **The index is read when it changes and a row carries what a row needs**
+  (ADR 0240, 2026-08-19). History and Home re-read on the three
+  `wordscript-event` payloads that write a record — `transcription`, `error`,
+  `empty` — and when the window comes back into view; the five-second poll is
+  gone. A list row is a `TranscriptionHistorySummary` with the heard and written
+  text cut to 160 characters, and the whole record is fetched by id when a row
+  is expanded, restored or copied. Measured on the reporting machine's 478
+  records: 2,453 bytes a row became 1,113, a 54.6% cut, and what remains is paid
+  once per dictation while the workspace is open rather than twelve times a
+  minute regardless. The index write is compact and lands through a rename, and
+  `HISTORY_CEILING` is 5,000 — a release build serialises that index in 22.7 ms
+  and writes it in 2.2 ms. **What is not fixed:** every term is still
+  O(records) per dictation, because the index is one JSON array rewritten whole;
+  past 5,000 the answer is an append-only journal, not a larger number.
 - **Full export, Full import and Reset all settings act** (`core::backup`). The
   archive is the config, the history index and the transcript files; import and
   reset copy the config aside first and answer with where it went. The API key
@@ -184,8 +198,11 @@ Status: 2026-08-18
   all-time figures, so they draw their spread and their shares and say so rather
   than inventing a history. **Turnaround's spread is five bands rather than a
   25 ms histogram, and under it a list of which model and vendor the wait belongs
-  to** (ADR 0236, 2026-08-18) — the only reading on Home that is not all-time,
-  because it comes off the records rather than the ledger and history is pruned.
+  to** (ADR 0236, 2026-08-18). That list was the one reading on Home that came
+  off the records rather than the ledger, so it reached about five days; since
+  ADR 0240 each `provider/model` keeps its own turnaround histogram in the
+  ledger, on the same 25 ms axis as the bands, and the list is all-time like
+  everything beside it.
   While a metric is open the view dots are hidden rather than merely inert, and
   their space is held so nothing above them moves. That view is not persisted:
   the block opens on the remembered one of the two. **The display only spans days the history file can
