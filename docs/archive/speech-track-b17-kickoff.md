@@ -53,24 +53,25 @@ one. Read them in the plan before touching `bias_mode`, `ManualBias` or
 `enhance_*` for any other reason — **each is a place where a deletion is the
 likely right answer and a wrong deletion costs a migration.**
 
-## What the owner said, in his words
+## What the owner asked for
 
-Kept verbatim because the paraphrase already went wrong once in this track:
+Stated close to the original, because a loose paraphrase already went wrong once
+in this track:
 
-- On the account card: *"die UI von Account sieht scheiße aus. Die Breakpoints
-  sind absoluter Bullshit. Man kann hier nichts lesen."*
-- On the language: *"es wird halt unter Dictation bei AI Models aufgelistet,
-  aber nur gezeichnet, und dann steht da per Profile — aber auf den
-  Profileinstellungen selbst kann man das nicht einstellen."*
-- On which settings survive at all, which is what closed B19: *"Das einzige was
-  wir davon brauchen ist Into, Keep the profile's words und Language sowie Pin
-  this language. Alles andere braucht man gar nicht erst zu sehen, weil das feste
-  Einstellungen sind, die den User gar nicht interessieren, sondern einfach
-  funktionieren sollen."* **Read this before adding a control to the job list.**
+- On the account card: **the Account UI looks bad, its breakpoints are
+  indefensible, and nothing on it can be read.**
+- On the language: **it is listed under Dictation on AI Models but only DRAWN,
+  and it says *per profile* — while the profile settings themselves offer no way
+  to set it.**
+- On which settings survive at all, which is what closed B19: **the only ones
+  needed are `Into`, `Keep the profile's words`, `Language` and `Pin this
+  language`. Nothing else should even be visible, because they are fixed
+  settings the user has no interest in and that should simply work.**
+  **Read this before adding a control to the job list.**
   A setting whose intent is withdrawn is removed, not marked (ADR 0216).
 - On stored local data, standing since 2026-08-11 and restated three times since:
-  *"Wir müssen nichts an irgendwelcher lokaler Legacy-Data festhalten. Lokal ist
-  mir komplett egal, welche Daten verloren gehen."* Price the clean cut. Do not
+  **nothing has to be held on to from local legacy data, and it does not matter
+  in the slightest which local data is lost.** Price the clean cut. Do not
   build a rescue path for an odd stored value, and do not spend a step's budget
   repairing this machine.
 

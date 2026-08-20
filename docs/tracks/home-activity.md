@@ -735,8 +735,8 @@ measurement was in flight.
 
 ### The reading that opened it, and the second defect inside it
 
-> Diese Funktion gibt es hier erst seit drei Tagen. Dementsprechend haben die
-> letzten vier Wochen bei mir nur 200 Minuten erspart.
+The owner read the tile three days into the record: **this feature has only
+existed here for three days, so the *last four weeks* have saved 200 minutes.**
 
 The complaint is the label. **The defect the complaint contains but does not
 name is the unit**: the same tile has no ceiling, and `DigitCounter` reserves
@@ -886,7 +886,7 @@ on which digits happen to be showing.
 ### Disabling a control is not removing it
 
 The dots were disabled under an open metric and the owner reported them again:
-*mechanisch ist es ausgeschaltet, aber visuell ist es noch da*. A lit dot with an
+**mechanically switched off, visually still there.** A lit dot with an
 unlit twin reads as a choice however inert it is. They are hidden now, with their
 space held — the row is the last thing on the block, so unmounting it would lift
 the chart being read.

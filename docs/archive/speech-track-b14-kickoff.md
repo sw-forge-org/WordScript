@@ -17,10 +17,8 @@ WordScript's profiles are how one person keeps two working lives apart — an
 employer's and a private one. Since ADR 0094 a profile decides **which vendor**
 each job runs on, and since ADR 0203, 0206 and 0207 it decides **which model**
 each of those jobs uses. The owner confirmed on 2026-08-17 that the rest belongs
-there too, and said why:
-
-> Ja, das muss wirklich pro Profil sein. Das ist ja auch ein großer Nutzen der
-> Profile dann letztendlich, wenn das gut umgesetzt ist.
+there too, and gave the reason: **it genuinely has to be per profile, because
+that is a large part of what profiles are worth once they are implemented well.**
 
 What is still machine-wide is the part that makes a lane *usable*: the server
 you type a URL into, and the credential that pays for the call. So a profile can

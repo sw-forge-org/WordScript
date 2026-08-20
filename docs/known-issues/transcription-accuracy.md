@@ -188,8 +188,8 @@ more `overlay_edit` records, and there is one.
 
 ### 2026-08-16: a whole paragraph loses its sense, and there is no ground truth for it
 
-Reported by the owner from the History panel — *"der komplette Absatz wurde
-verdreht, es gibt keinen Sinn mehr, wie er da steht"* — on record
+Reported by the owner from the History panel — **the whole paragraph came back
+twisted around and no longer makes any sense as it stands** — on record
 `history-1786910918745-50`, `Founder ops notes`, mode `cleanup`, Groq. The
 delivered text ends:
 

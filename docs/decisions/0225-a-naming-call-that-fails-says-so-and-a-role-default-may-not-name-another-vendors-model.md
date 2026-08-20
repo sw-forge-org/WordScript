@@ -10,8 +10,8 @@ Track: Speech (B26)
 
 ## Context
 
-The owner reported on 2026-08-18: *fixe bitte den Punkt, dass Titelgeneration
-immer noch nicht funktioniert für History Items.* This is the third report of the
+The owner reported on 2026-08-18 that **title generation still does not work
+for History items.** This is the third report of the
 same symptom and the first one where the runtime was already correct.
 
 **ADR 0221's fix works, and the log proves it.** Since the reasoning headroom
@@ -19,9 +19,9 @@ landed, every naming call on this machine has succeeded — four calls, four
 titles, `answer_tokens=48 effort=low max_tokens=304`, and the last three records
 in `history.json` are named. What the owner is looking at is the 134 records
 written before it, which cannot be named: a title is made at delivery and nothing
-re-opens a record. Asked, the owner ruled them out of scope — *die sind egal, wir
-wollen nicht an dev legacy scheitern* — so no backfill is built and none is
-owed.
+re-opens a record. Asked, the owner ruled them out of scope — **they do not
+matter, and this is not going to fail over dev legacy** — so no backfill is
+built and none is owed.
 
 **What is still wrong is that this call cannot be diagnosed at all.** On the
 reporting machine, 2026-08-18 at 01:09, a 1438-character dictation completed with

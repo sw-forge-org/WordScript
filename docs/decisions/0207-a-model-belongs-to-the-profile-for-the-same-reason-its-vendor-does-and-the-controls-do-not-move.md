@@ -19,12 +19,10 @@ nothing. It left one question open, because the answer is the owner's and not a
 derivation — **does the chat model follow ADR 0094's per-profile axis, or stay
 machine-wide?**
 
-Answered 2026-08-17:
-
-> Ich kann sagen, dass das pro Profil gespeichert wird, aber GUI-technisch die
-> Einstellungen da bleiben, wo sie jetzt sind. Es ist nämlich sehr wichtig, wenn
-> ich zum Beispiel ein Unternehmensprofil habe und ein privates Profil, dass ich
-> zwischen Enterprise und Cloud switchen kann.
+Answered 2026-08-17: **stored per profile, with the controls left in the GUI
+exactly where they already are.** The reason given was the case profiles exist
+for — an employer's profile beside a private one, and being able to switch
+between Enterprise and Cloud across them.
 
 **The profile is where two working lives are kept apart.** That is the same
 argument ADR 0094 made for the vendor, and a vendor without its model is half an

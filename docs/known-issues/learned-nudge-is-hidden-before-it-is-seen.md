@@ -142,9 +142,8 @@ visible *wrongly*, cut off at a third of its width.
 
 ### And this record's own finding was then fixed, the same day
 
-The owner's verdict on seeing it: *"Ich glaube nicht, dass 280 Millisekunden
-genug sind, Bro. Man sieht das gar nicht."* That is the measurement above
-restated from the other side, and it settled the choice between the three
+The owner's verdict on seeing it: **280 ms is not enough — the thing is simply
+not visible.** That is the measurement above restated from the other side, and it settled the choice between the three
 options.
 
 **Option 1 was taken: delay the park.** ADR 0169 carries the derivation and the

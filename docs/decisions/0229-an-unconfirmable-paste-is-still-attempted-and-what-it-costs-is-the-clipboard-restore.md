@@ -19,9 +19,8 @@ the complete list was WordScript's own overlay and its settings window, with the
 editor, browser and terminal all native Wayland clients.
 
 **The owner contradicted it from experience, and the experience is right:**
-
-> Make the Target Take It hat ja davor funktioniert mit xdotool. Natürlich sehr
-> unzuverlässig, aber ab und zu.
+`Make the target take it` HAD worked before, through xdotool — very unreliably,
+but it landed some of the time.
 
 The missing fact is that **KWin forwards XTEST fake input from Xwayland into the
 compositor**, which then delivers it to the focused Wayland window. The absence

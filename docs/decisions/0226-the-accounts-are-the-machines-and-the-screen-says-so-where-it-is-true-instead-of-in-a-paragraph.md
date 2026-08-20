@@ -10,9 +10,9 @@ Track: Speech (B27)
 ## Context
 
 The owner, on 2026-08-18, with a screenshot of the two elements circled — the
-profile chip in the sheet header and the note under the tabs: *hier checkt der
-User nicht ganz auf den ersten Blick, dass das Ganze profilagnostisch ist, und
-die aktuelle UI-Umsetzung ist UX-technisch Bullshit.*
+profile chip in the sheet header and the note under the tabs: **the reader does
+not grasp at a glance that this whole screen is profile-agnostic, and the
+current UI makes a bad job of saying so.**
 
 **They are right about the fact, and the fact is the whole finding.**
 `connections` is a top-level `AppConfig` field. An account's name, its vendor,
@@ -38,8 +38,8 @@ tooltip.
 **And the note claimed the opposite of all of it.** *Setting General writing —
 the accounts and models below are this profile's.* True of the models, false of
 the accounts, over a card whose key is shared by every profile on the machine.
-ADR 0212 added it in good faith to answer *in welchem Profil wähle ich gerade
-was aus*; what it answered was a question about the job list, printed above the
+ADR 0212 added it in good faith to answer *which profile am I choosing things in
+right now*; what it answered was a question about the job list, printed above the
 inventory.
 
 **A paragraph is also the wrong instrument.** The report it was answering is

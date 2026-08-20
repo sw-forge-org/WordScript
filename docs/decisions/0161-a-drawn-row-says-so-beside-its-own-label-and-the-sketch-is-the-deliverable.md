@@ -39,11 +39,10 @@ Two more of the same kind stood beside it:
 ### The rule the owner stated, which is not "delete them"
 
 The obvious fix — remove what is not built — was proposed and **rejected**, and
-the reason is the method this repository is being built by:
-
-> Aber die ganzen Skizzen, die geplant sind, aber noch nicht implementiert sind,
-> die werden mit geändert, aber backend-technisch noch nicht implementiert. Das
-> ist der Sinn davon, dass wir wissen, wie es am Ende aussieht.
+the reason is the method this repository is being built by: **the sketches that
+are planned but not yet implemented get changed along with everything else and
+stay unbuilt behind the surface on purpose, because that is how the shape of the
+finished thing becomes knowable.**
 
 **The drawing is a deliverable, not scaffolding.** It is how the shape of the
 finished product is decided before it is expensive to change, and deleting the

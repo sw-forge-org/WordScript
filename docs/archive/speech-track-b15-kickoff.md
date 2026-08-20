@@ -37,13 +37,10 @@ a provider and a model, switchable as a whole — **already exists and is called
 text profile**: `providers: { default, overrides: Map<JobKey, connection_id> }`
 plus the model fields.
 
-So this requirement, which the owner stated twice and stood behind:
-
-> wir wollen unterschiedliche Provider für unterschiedliche Tasks auf einem
-> Account. Und ich gehe sogar weiter, wir wollen unterschiedliche **Lanes** für
-> unterschiedliche Tasks
-
-**is already satisfiable by the config as it stands.** A connection carries its
+So this requirement, which the owner stated twice and stood behind — **different
+providers for different tasks on one account, and going further than that,
+different LANES for different tasks** — **is already satisfiable by the config as
+it stands.** A connection carries its
 vendor, `laneForProviderId` reads the lane off the vendor, and an override is per
 `JobKey` — so dictation on Cloud, cleanup on Local and the assistant on your own
 server is a state the config accepts today. Three locks in the UI forbid it. They

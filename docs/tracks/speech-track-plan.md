@@ -1028,17 +1028,14 @@ a second one does. `port:diff`: `models` unmoved at `28 | 248 | 20`.
 
 The brief as it was written:
 
-**Added 2026-08-17**, from the owner's own widening of B13's answer:
-
-> Es geht ja nicht nur um die Enterprise Lane, sondern auch um alles andere.
-> Cloud, Local, Your Server und Enterprise. Aber auch alles was damit
-> zusammenhängt.
+**Added 2026-08-17**, from the owner's own widening of B13's answer: **this is
+not only about the Enterprise lane but about all of them — Cloud, Local, Your
+Server and Enterprise — and about everything that hangs together with them.**
 
 **And confirmed as a decision the same day, with the reason** — which is why
-this is a step rather than a question:
-
-> Ja, das muss wirklich pro Profil sein. Das ist ja auch ein großer Nutzen der
-> Profile dann letztendlich, wenn das gut umgesetzt ist.
+this is a step rather than a question: **it genuinely has to be per profile,
+because that is a large part of what profiles are worth once they are
+implemented well.**
 
 So *whether* is settled. What is open is *how*, and it is one design decision
 with two candidate shapes (below). **Start a session on
@@ -1152,19 +1149,17 @@ button then created the same state from the other end.
 corrected, and reaching a conclusion neither of those steps had: the surface is
 not badly laid out, it is organised around the wrong object. Six layout
 directions were drawn at the real 569 px column and the owner rejected all six in
-one sentence — *welche dieser Skizzen macht das Problem nicht nur schöner,
-sondern löst es* — which was the right question and the answer was none of them.
+one sentence — **which of these sketches SOLVES the problem rather than merely
+making it prettier** — which was the right question and the answer was none of
+them.
 They all kept the lane as the screen's spine.
 
 **THE FINDING: `Account` NAMES A CREDENTIAL AND THE READER HEARS A BUNDLE.**
 In the config a `Connection` is exactly one thing — a vendor plus a credential,
 plus an endpoint and a plan (ADR 0208). The surface calls that *Account*. What
-the owner means by the word is a different object:
-
-> du willst ja einen Account haben mit einem Profil-Set, um es mal so zu sagen
-> […] wir wollen unterschiedliche Provider für unterschiedliche Tasks auf einem
-> Account. Und ich gehe sogar weiter, wir wollen unterschiedliche **Lanes** für
-> unterschiedliche Tasks auf dem Account.
+the owner means by the word is a different object: **an account that carries a
+whole profile set — different providers for different tasks on one account,
+and, going further, different LANES for different tasks on it.**
 
 That object — per task a lane, a provider and a model, switchable as a whole —
 **already exists and is called a text profile.** A profile holds
@@ -1220,7 +1215,8 @@ today.
 
 - **The profile is selected at the top of the screen, explicitly**, and no
   control anywhere on it changes which profile is active as a side effect. This
-  is the answer to *in welchem Profil wähle ich gerade was aus* and it retires
+  is the answer to *which profile am I choosing things in right now* and it
+retires
   the hidden write in `chooseLane`.
 - **One row per job.** Two dependent cells: **Runs on** — a picker over *every*
   account on the machine, grouped **lane → provider → account**, which is the
@@ -1525,9 +1521,9 @@ nowhere**, and for two of them the code asserted otherwise.
 | Prompt Enhance `Prompt target` | `DrawnSelect` | absent | no | **removed** |
 
 **The first draft of this step was to wire all four, and the owner ruled the
-opposite for three of them**: *"Alles andere braucht man gar nicht erst zu sehen,
-weil das feste Einstellungen sind, die den User gar nicht interessieren, sondern
-einfach funktionieren sollen."* ADR 0216 is that ruling and its limit — ADR 0161
+opposite for three of them**: nothing beyond the kept set should even be
+visible, because they are fixed settings the user has no interest in and that
+should simply work. ADR 0216 is that ruling and its limit — ADR 0161
 governs a control that is *unbuilt* and therefore owed; a control whose intent is
 *withdrawn* is removed instead, because a `PreviewTag` on it would promise
 something nobody has decided to build.
@@ -1668,8 +1664,8 @@ one, written on the 16th, was not.
   `secret-tool`. Whatever server it authenticates against, revoking it in the
   product is impossible.
 - **The entry on the reporting machine is gone as of 2026-08-17**, deleted with
-  `secret-tool clear` on the owner's instruction — *"dann muss der API Key
-  gelöscht werden, wir wollen nicht an Legacy lokalen Daten festhalten"*. The
+  `secret-tool clear` on the owner's instruction — **the API key has to be
+  deleted; nothing is held on to for the sake of legacy local data.** The
   store now holds `connection-default.chat.api_key` and
   `connection-default.speech.api_key` and nothing else. **That is the symptom
   cleared, not the step closed**: the code path that produced an orphan is
@@ -1756,10 +1752,10 @@ strip never read.
 ### B24. The title budget is spent on thinking, and the inventory is not the product's list — **done 2026-08-18, ADR 0221 and ADR 0222**
 
 **Added and closed 2026-08-18** out of the owner's report on the review of the
-whole uncommitted tree: *die Titelgeneration funktioniert nicht bei History.
-Written und [Heard] kann man unterscheiden, aber Titel nicht* — and, separately,
-*die UI von AI Models und Accounts muss ein bisschen schön gemacht werden. Die
-Breakpoints sind nicht so schön anzusehen und nicht so intuitiv zu bedienen.*
+whole uncommitted tree: **title generation does not work on History — `Written`
+and `[Heard]` can be told apart, but the title cannot** — and, separately,
+**the UI of AI Models and Accounts needs to be made presentable; the breakpoints
+are neither pleasant to look at nor intuitive to operate.**
 
 **The title half is ADR 0214's own last mile.** That record answered this same
 report a day earlier and its fix was right about the cause and measured against
@@ -1882,24 +1878,25 @@ ADR 0223.
   ADR 0216's. `models#1` and `ledger` unmoved.
 - **Still owed, and it is the half of the report this step did not finish**: the
   copy sweep over *What runs what*. The owner's test is their own sentence —
-  *die Sätze sind viel zu lang, viel zu umständlich* — and only the account
+  **the sentences are far too long and far too laboured** — and only the account
   card's strings were cut. **Closed by B26.**
 
 ### B26. An account folds, and a naming call that fails says so — **done 2026-08-18, ADR 0224 and ADR 0225**
 
 **Added and closed 2026-08-18** out of a review of the whole uncommitted tree and
-of B25's handover, on the owner's report: *fixe bitte den Punkt, dass
-Titelgeneration immer noch nicht funktioniert für History Items* and *dass man
-einzelne Accounts ein und aus klappen kann. Die Funktion fehlt, weil irgendwann
-hat man viele Accounts und man hat den Überblick nicht mehr.* It also carries
+of B25's handover, on the owner's report: **title generation still does not work
+for History items**, and **individual accounts should fold open and shut — that
+is missing, and past some number of accounts the screen stops being
+surveyable.** It also carries
 both items B25's handover left open, so that file is deleted with this step.
 
 **The title half is a report against a runtime that is already correct**, and
 saying so is most of the finding. ADR 0221's headroom works: four naming calls
 since it landed, four titles, and the last three records in `history.json` are
 named. What the owner is reading is the 134 records written before it, which
-nothing re-opens — and asked, the owner ruled them out: *die sind egal, wir
-wollen nicht an dev legacy scheitern*. **No backfill is built and none is owed.**
+nothing re-opens — and asked, the owner ruled them out: **they do not matter,
+and this is not going to fail over dev legacy.** **No backfill is built and none
+is owed.**
 
 - **What IS wrong is that the call could not be diagnosed at all.** On this
   machine at 01:09 a 1438-character dictation completed with a cleanup logged, an
@@ -1945,9 +1942,9 @@ wollen nicht an dev legacy scheitern*. **No backfill is built and none is owed.*
 ### B27. The screen has two owners and says so where each is true — **done 2026-08-18, ADR 0226**
 
 **Added and closed 2026-08-18** from the owner reading the shipped screen with
-the profile chip and the scope note circled: *hier checkt der User nicht ganz auf
-den ersten Blick, dass das Ganze profilagnostisch ist, und die aktuelle
-UI-Umsetzung ist UX-technisch Bullshit.*
+the profile chip and the scope note circled: **the reader does not grasp at a
+glance that this whole screen is profile-agnostic, and the current UI makes a bad
+job of saying so.**
 
 **They are right about the fact, and the fact is the finding.** `connections` is
 a top-level `AppConfig` field, so an account's name, key, plan and endpoint are

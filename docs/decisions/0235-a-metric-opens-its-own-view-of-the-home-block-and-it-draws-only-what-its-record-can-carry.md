@@ -14,14 +14,10 @@ to a chart.
 The home block held two views — four counters, and the calendar — swapped by
 pressing the background or one of the two dots. Between them they answer *how
 much* and *when*, and neither answers *is this moving*. The owner asked for the
-third:
-
-> Ich will natürlich auch irgendwo historische Werte. Vielleicht bauen wir das
-> so ein, dass man auf bestimmte Metriken nochmal draufdrücken kann. […] Bei
-> allen Metriken drückt man dann einfach auf die Metrik. Wenn man auf den
-> Hintergrund drückt, kommt man weiterhin zu dieser Kalenderansicht. […] Und wir
-> brauchen dafür die größeren Zeiteinheiten wie Wochen, nach den Tagen Monate,
-> Jahre.
+third: **historical values, opened by pressing a metric itself.** Every metric
+answers its own press; pressing the background still goes to the calendar as it
+does today; and the views need the units above a day — weeks, then months, then
+years.
 
 Two things make this more than a chart component.
 

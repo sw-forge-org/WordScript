@@ -972,8 +972,8 @@ measured run 2's code and reported it as a fresh result.
    `IMPLEMENTATION.md` still read *"0155 onward as they come"*.
 
 **Addendum, 2026-08-15 — findings 4 and 6 were both spent the same session, on
-the owner's word.** *"ADR 0155 kannst du wieder fixen, den port:diff-Browser
-kannst du auch killen und fixen."*
+the owner's word:** fix ADR 0155's placement, and kill and fix the `port:diff`
+browser too.
 
 - **The seventh record is written** and the board's number line with it. ADR 0155
   now stands on [`runtime-ownership.md`](runtime-ownership.md) with what it hands

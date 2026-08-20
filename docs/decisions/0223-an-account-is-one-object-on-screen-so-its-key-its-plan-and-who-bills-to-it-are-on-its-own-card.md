@@ -12,14 +12,14 @@ Track: Speech (B25)
 ## Context
 
 The owner read the shipped AI Models screen and reported, in one breath: the
-provider chips at the top do nothing when clicked (*die Klicks bewirken also
-nichts, denkt der User*); adding an account shows no logos while the logos that
-ARE shown cannot be picked; the API key sits under the account list and reads as
-one key for the machine (*als würde die für alle Accounts gelten*); *This profile
-bills to* is in another section (*steht viel weiter unten und nicht oben in
-dieser Account Karte irgendwie integriert*); changing a provider low on the
-screen changes the logo card at the top; and the sentences are too long
-throughout. Their summary: *es wird einem nicht klar gemacht, was was ist.*
+provider chips at the top do nothing when clicked, so the reader concludes the
+clicks have no effect; adding an account shows no logos while the logos that ARE
+shown cannot be picked; the API key sits under the account list and reads as one
+key that applies to every account on the machine; *This profile bills to* sits
+far below instead of being integrated into the account card at the top;
+changing a provider low on the screen changes the logo card at the top; and the
+sentences are too long throughout. Their summary: **the screen never makes clear
+which thing is which.**
 
 **All seven check out against the code, and they have one cause.** ADR 0208 made
 an account an object. The surface kept that object in four pieces:
@@ -124,10 +124,10 @@ record.
 
 ## What is still owed
 
-**The copy pass is started and not finished.** The owner's *die Sätze sind viel
-zu lang, viel zu umständlich* is about the whole screen; the account card's own
-strings were cut and the job rows below were not. It is its own sweep, with that
-sentence as the test.
+**The copy pass is started and not finished.** The owner's report — **the
+sentences are far too long and far too laboured** — is about the whole screen;
+the account card's own strings were cut and the job rows below were not. It is
+its own sweep, with that sentence as the test.
 
 **The insets are derived and not measured.** `.ws-acct-head` is exempted from the
 card guard on the same reasoning ADR 0222 used for `.ws-list`, and neither has

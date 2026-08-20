@@ -33,11 +33,10 @@ with a file archive in mind.
 
 **The owner's reaction is the decision.** Asked which of four repairs to make —
 raise the ceiling, fix the local retention value, bound the index by bytes, or
-decouple the files — the answer was the fourth.
-
-> Aber was ist denn mit den Markdown Einträgen? Was ist damit? Und warum haben
-> wir eine History Retention mit 7 Tagen und einem Limit von 1000? […] Das ist
-> doch alles viel zu kurz.
+decouple the files — the answer was the fourth, and it arrived as a question
+about the other collection: **what happens to the Markdown entries, and why is
+there a history retention of seven days with a limit of a thousand at all? Both
+are far too short.**
 
 **ADR 0074's reasoning was about drift, and it still holds for the other half.**
 Its rule exists because *a retention rule that holds for one of the two stores

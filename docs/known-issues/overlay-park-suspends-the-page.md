@@ -4,9 +4,8 @@ Status: **Open — one symptom fixed, cause not.** The learned-word tab can no
 longer survive a park (ADR 0169), but nothing else in the overlay is protected,
 and whether the page may be suspended at all is unanswered.
 
-First reported: 2026-08-16 by the owner — *"es war nicht weg, aber auch
-abgeschnitten … erst nachdem ich das Recording neu gestartet habe, war es wieder
-weg."*
+First reported: 2026-08-16 by the owner — **it had not gone away, but it was
+cut off, and only restarting the recording made it disappear.**
 Affected area: `park_overlay_surface` (`src-tauri/src/lib.rs`) and every
 animation or timer in `src/windows/OverlayWindow.tsx`.
 

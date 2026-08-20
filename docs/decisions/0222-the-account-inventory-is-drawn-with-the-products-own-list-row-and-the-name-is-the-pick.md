@@ -8,9 +8,9 @@ Track: Speech (B24)
 
 ## Context
 
-The owner reported on 2026-08-18, with a screenshot of the Accounts card: *die UI
-von AI Models und Accounts muss ein bisschen schön gemacht werden. Die
-Breakpoints sind nicht so schön anzusehen und nicht so intuitiv zu bedienen.*
+The owner reported on 2026-08-18, with a screenshot of the Accounts card:
+**the UI of AI Models and Accounts needs to be made presentable — the
+breakpoints are neither pleasant to look at nor intuitive to operate.**
 
 **The breakpoints are not what is wrong, and ADR 0220 had already measured
 that.** At the 625 CSS px this workspace renders — a display-scale fact about the

@@ -37,11 +37,10 @@ And `enhance_sub_mode` and `enhance_target` are stored in **two** places,
 cited that pair as the precedent its two live Translate controls follow, which is
 a false citation that would have kept the pair looking finished.
 
-**The owner's ruling was not to wire them.** In his words: *"Das einzige was wir
-davon brauchen ist Into, Keep the profile's words und Language sowie Pin this
-language. Alles andere braucht man gar nicht erst zu sehen, weil das feste
-Einstellungen sind, die den User gar nicht interessieren, sondern einfach
-funktionieren sollen."*
+**The owner's ruling was not to wire them.** The only rows needed are `Into`,
+`Keep the profile's words`, `Language` and `Pin this language`; nothing else
+should even be visible, because they are fixed settings the user has no interest
+in and that should simply work.
 
 That is a product decision about the settings, not a judgement about the
 drawing — and ADR 0161 has no arm for it. Its rule assumes an unbuilt control is

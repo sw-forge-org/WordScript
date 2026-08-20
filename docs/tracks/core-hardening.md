@@ -351,10 +351,8 @@ rather than compacted, because the items are cited by number elsewhere.
 ## The rule the owner stated, 2026-08-16
 
 Reported alongside the screenshot, and it applies to **every processing mode**,
-not only Cleanup:
-
-> Es sollte verbessert werden — ein bisschen die Grammatik und so weiter — aber
-> nicht der komplette Sinn geändert werden.
+not only Cleanup: **the text should be improved — the grammar, and things of
+that order — but its meaning must not be changed wholesale.**
 
 It is not a new requirement so much as the sentence this whole cluster is
 defending, said plainly by the person the output is for. Two consequences for

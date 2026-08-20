@@ -92,8 +92,8 @@ text ends:
 
 > …weil ich die gekauft habe von einem, der sie **Agenten schlagen**.
 
-Reported by the owner as *"wieder ganz viel abgeschnitten von dem letzten Satz
-und wieder mit dem Wort Agenten ersetzt"* — the same word that ended the 00:15
+Reported by the owner as **a large part of the last sentence cut off again, and
+replaced again by the word *Agenten*** — the same word that ended the 00:15
 event. **This shape is invisible to the coverage check**, which measures how far
 the segments reach and not what is in them.
 

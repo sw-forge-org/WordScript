@@ -13,9 +13,8 @@ inventory of them — *what this machine holds*, against *what runs where* in th
 list below. The drawing stayed a single `Account` row: a select over the lane's
 accounts, a `ScopeTag`, and Rename / New / Remove beside it.
 
-The owner read the finished screen on 2026-08-17: *"die UI von Account sieht
-scheiße aus. Die Breakpoints sind absoluter Bullshit. Man kann hier nichts
-lesen."*
+The owner read the finished screen on 2026-08-17: **the Account UI looks bad,
+its breakpoints are indefensible, and nothing on it can be read.**
 
 **Measured in the native host at 625 CSS px** — the width this workspace
 permanently renders at, a display-scale fact about the reporting machine rather

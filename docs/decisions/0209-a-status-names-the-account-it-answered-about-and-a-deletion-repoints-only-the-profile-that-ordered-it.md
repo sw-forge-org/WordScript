@@ -13,18 +13,13 @@ introduced.
 
 ADR 0208 made an account an object a profile points at, and gave `AI Models` one
 new row to point with. The owner used it and found three faults in one sitting:
-
-> wenn ich zum Beispiel, egal bei welcher Lane, jetzt einen Account auswähle,
-> und einen neuen erstellen möchte, dann ist dem neuen Account immer noch der
-> alte API Key untergeordnet und wenn ich dann den neuen Account lösche sieht es
-> auf einmal so aus wie in meinem Screenshot. Und ich muss erst alles wieder neu
-> laden, damit die Ansicht wieder normal aussieht.
+**on any lane, selecting an account and then creating a new one leaves the old
+API key sitting under the new account; deleting that new account puts the
+surface into the state the attached screenshot shows; and only reloading
+everything restores a normal view.**
 
 And a fourth question, which turned out to be about a missing label rather than a
-missing feature:
-
-> Und dann frage ich mich auch, okay, wie kann ich einen Account einem Profil
-> zuordnen?
+missing feature: **how is an account assigned to a profile at all?**
 
 Each of the three is a rule that was right about the thing it was written for and
 wrong one step over.

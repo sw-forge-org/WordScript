@@ -12,9 +12,9 @@ Track: Speech (B18)
 
 The owner read the job list on AI Models and asked where the drawn `Language` row
 is actually set. ADR 0216 answered that question for three other rows by removing
-them; this is the one the owner kept, in his words: *"Das einzige was wir davon
-brauchen ist Into, Keep the profile's words und Language sowie Pin this
-language."*
+them; this is the one the owner kept, against a stated set: **the only rows
+needed are `Into`, `Keep the profile's words`, `Language` and `Pin this
+language`.**
 
 **The runtime half was never the missing one.**
 `ProfileSpeechSettings::language` and `language_locked` are carried into the

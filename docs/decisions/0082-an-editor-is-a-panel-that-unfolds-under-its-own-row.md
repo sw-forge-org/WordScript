@@ -221,8 +221,8 @@ with (ADR 0025).
   of a standing instruction.** The Leg 7 brief says Context is not to be touched
   in any direction, on the owner's word of 2026-08-10. The owner lifted it for
   this specific change on 2026-08-11, in order that the two pane screens not
-  grow two manners: *"beide Tabs, Profile und Kontext, müssen einheitlich
-  funktionieren"*. **Nothing there acts** — the context object does not exist in
+  grow two manners: **both tabs, Profiles and Context, have to behave the same
+  way.** **Nothing there acts** — the context object does not exist in
   the runtime and the view's banner still says so; what is settled is the shape,
   so whoever wires Context inherits a rail that already behaves like the rest of
   the product. The rest of the instruction stands: no runtime, no new surface,

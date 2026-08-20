@@ -2236,8 +2236,8 @@ SENTENCE, AND THEN THE DECISION HAS TO BE RE-MADE ON ITS OWN GROUNDS.** The
 Markdown-file promise was put to the owner as keep-or-retire with a
 recommendation to retire, and the recommendation rested on two costs: the
 backfill of 174 records, and two stores that drift. The owner voided the first
-in a sentence — *"auf die vorhandenen Einträge kannst du komplett scheißen, wir
-sind im Development-Modus"* — and asked for it to be reconsidered. Reading
+in a sentence — **the existing entries can be thrown away entirely, because this
+is development mode** — and asked for it to be reconsidered. Reading
 §11.23 then settled it the other way: it is not a label on a drawing, it is a
 designed requirement with a module name, a path scheme, a frontmatter schema, a
 `## Heard` rule and a stated reason, and it even names `reveal_item_in_dir` as

@@ -130,9 +130,9 @@ output.
 
 ## Addendum 2026-08-13: the closing phrase that arrives attached to a sentence
 
-Reported by the owner beside a separate defect: *"dass noch manchmal
-Trainings-Artefakte am Ende der Sätze auftauchen wie thank you oder Thank you
-for watching, like and subscribe."*
+Reported by the owner beside a separate defect: **training artifacts still turn
+up at the end of sentences — `thank you`, or `Thank you for watching, like and
+subscribe`.**
 
 **The slice above covers this class and does not reach this shape.** Both
 mechanisms it built are structurally unable to see an artifact that shares a

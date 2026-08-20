@@ -17,12 +17,9 @@ untouched, because the finding below is that it already did the work.
 
 ADR 0240 raised `HISTORY_CEILING` from 1,000 to 5,000 on a measurement of what
 the per-dictation write costs. The review that followed was asked a plainer
-question by the owner:
-
-> Es würde doch viel mehr Sinn machen, für das Archiv ein Ceiling reinzumachen.
-> [...] Aber der Index braucht doch wirklich kein Ceiling. [...] Und genau den
-> Index brauchen wir ja für diese ganzen Statistiken, die wir ungefähr überall
-> in der App darstellen.
+question by the owner: **would a ceiling not make far more sense on the ARCHIVE?
+The index does not really need one — it is exactly what the statistics all over
+the app are read from.**
 
 The question contains a premise, and the premise is wrong. Establishing that is
 most of this record, because it is the reason the answer is not "move the
@@ -96,11 +93,10 @@ it."* Once the write is O(1), the record count stops being the thing worth
 bounding, and the only cost left is disk — which is measured in bytes.
 
 The owner's position, given after the measurements above were presented:
-
-> Alles, was lokal gespeichert ist, ist egal. Das sind meine Daten, lokal, die
-> können wir wegschmeißen. Wir brauchen keine Migrationen [...] Aber 5000
-> Diktate macht keinen Sinn. Das überhaupt auf die Dateien zu fokussieren, statt
-> auf den Speicher.
+**anything stored locally is disposable — it is one developer's own data, it can
+be thrown away, and no migrations are needed. But five thousand dictations is
+not a unit that means anything: the mistake is focusing on the files at all
+rather than on the storage.**
 
 ## Decision
 

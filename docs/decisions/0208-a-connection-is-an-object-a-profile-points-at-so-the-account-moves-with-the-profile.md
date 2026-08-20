@@ -20,10 +20,9 @@ lane usable**: the server whose URL you type, and the credential that pays for
 the call. So a profile could switch from Cloud to `Your server` and bring
 neither its own server nor its own account.
 
-The owner settled *whether* on 2026-08-17, with the reason:
-
-> Ja, das muss wirklich pro Profil sein. Das ist ja auch ein großer Nutzen der
-> Profile dann letztendlich, wenn das gut umgesetzt ist.
+The owner settled *whether* on 2026-08-17, with the reason: **it genuinely has
+to be per profile, because that is a large part of what profiles are worth once
+they are implemented well.**
 
 What was open is *how*, and B14 stated two shapes: **A**, the profile carries
 the connection and the store's entry user grows a profile component; **B**, a

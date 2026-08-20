@@ -10,12 +10,10 @@ tile that had escaped both, and keeps the counter rule of
 ## Context
 
 The owner read the Home screen three days after the activity ledger started
-recording and reported the tile as it stood:
+recording and reported the tile as it stood: **this feature has only existed
+here for three days, so the *last four weeks* have saved 200 minutes.**
 
-> Diese Funktion gibt es hier erst seit drei Tagen. Dementsprechend haben die
-> letzten vier Wochen bei mir nur 200 Minuten erspart.
-
-Two separate defects sit in that one sentence, and only the first is the one
+Two separate defects sit in that one report, and only the first is the one
 being complained about.
 
 **The foot named a window the record could not fill.** `ledgerTimeSaved` folds
@@ -31,10 +29,8 @@ one place neither had been applied.
 (decision 5 of the home activity track), so the widest reading the tile holds
 without pushing its neighbours is `9999`. At the baseline in Settings a heavy
 month reaches four digits of minutes easily, and the owner asked the obvious
-question before it happened:
-
-> Was ist, wenn da 1000 Minuten steht? Das muss natürlich auf Stunden
-> umgerechnet werden, irgendwann auf Tage.
+question before it happened: **what does the tile do when it reads 1000
+minutes?** It has to convert to hours, and past some point to days.
 
 A counter that runs out of positions widens rather than truncating, which is
 correct and still wrong: the tile grows, the row it sits in shuffles, and the

@@ -21,14 +21,11 @@ reading `history.json` — a lifetime median with a five-day list under it, and 
 sentence in the UI explaining why the two disagreed.
 
 Asked how to remove that limitation rather than explain it, the owner asked a
-different question first:
-
-> Warum bitte wird denn history.json bei jedem Diktat komplett gepasst und
-> wieder komplett zurückgeschrieben? Macht das überhaupt Sinn? […] jede Metrik
-> in Home bekommt nur das, was sie wirklich braucht und generell jede Funktion
-> in der App bekommt nur das, was sie wirklich braucht, damit wir nicht immer
-> unnötigen Ballast mitschleppen und dann solche Ceilings wie 1000 Files
-> zustande kommen.
+different question first: **why is `history.json` parsed whole and written back
+whole on every single dictation, and does that make any sense?** Widened, in the
+same breath, into a rule: **every metric on Home — and every function in the app
+— gets only what it really needs, so that nothing drags unnecessary ballast
+around and ceilings like 1,000 files stop arising in the first place.**
 
 **Half of that premise was wrong and the correction matters.** The index is
 parsed ONCE — `ensure_loaded` returns early on a `loaded` flag and
@@ -80,12 +77,9 @@ Two smaller ones fell out of reading the writer: `save_history_entries` used
 before it writes — a crash between those two leaves a half-written index, which
 fails to parse, which loses every record on the machine.
 
-The owner authorised all of it:
-
-> Ja, der Punkt ist, bei 1000 Records macht das keinen Sinn mehr, deswegen
-> müssen wir das optimieren. Und der schlimmere Fund, den du hast, den kann man
-> auch optimieren. Und die anderen Sachen, ja, lass uns das komplett optimieren,
-> dass es nachhaltig und professionell gebaut ist und nicht so komisch.
+The owner authorised all of it: **at a thousand records this stops making sense,
+so it gets optimised — the worse finding included, and the rest with it, built
+to be sustainable and professional rather than odd.**
 
 ## Decision
 

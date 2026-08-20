@@ -9,9 +9,8 @@ Track: Speech (B26)
 ## Context
 
 The owner reported on 2026-08-18, in the same breath as the title defect
-ADR 0225 answers: *dass man einzelne Accounts ein und aus klappen kann. Die
-Funktion fehlt, weil irgendwann hat man viele Accounts und man hat den Überblick
-nicht mehr.*
+ADR 0225 answers: **individual accounts should fold open and shut, and that is
+missing — past some number of accounts the screen stops being surveyable.**
 
 **It is ADR 0223's own cost, arrived at from the direction that record could not
 see.** That step moved the key, the plan, the endpoint, the token and the
@@ -98,9 +97,9 @@ no `.ws-row` padding at all. Driving the REAL app answers it. At 625 px:
   does have subjects and stays.
 
 **And the copy sweep is done**, which is the half ADR 0223 did not finish. The
-owner's test is their own sentence — *die Sätze sind viel zu lang, viel zu
-umständlich. Man checkt gar nicht, wie irgendwas hier funktioniert als neuer
-User* — and the rule applied is the handover's: lead with the control's own
+owner's test is their own report — **the sentences are far too long and far too
+laboured, and a new user cannot work out how any of this functions** — and the
+rule applied is the handover's: lead with the control's own
 answer and drop the second clause, never delete the derivation the reader needs
 once. Twenty-two strings across *What runs what* and the job rows under it.
 Three of them also stopped saying *the connection* about an object the product
