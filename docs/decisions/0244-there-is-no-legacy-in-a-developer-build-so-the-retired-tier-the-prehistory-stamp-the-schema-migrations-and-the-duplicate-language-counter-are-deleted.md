@@ -1,4 +1,4 @@
-# 0244 - There is no legacy in a build nobody has shipped, so the retired tier, the prehistory stamp, the schema migrations and the duplicate language counter are deleted
+# 0244 - There is no legacy in a developer build, so the retired tier, the prehistory stamp, the schema migrations and the duplicate language counter are deleted
 
 Date: 2026-08-19
 Status: **Accepted.** Closes the two defects Stage I's own surface exposed
@@ -11,7 +11,7 @@ whose reason
 removed the day before; reverses `prehistory_through` and the schema 2-to-3
 migration from ADR 0243 itself; and deletes the lifetime `languages` term that
 has stood since
-[ADR 0180](0180-the-language-is-measured-on-the-text-that-came-back-not-on-the-setting-that-asked-for-it.md).
+[ADR 0180](0180-the-lane-that-most-dictations-take-never-names-a-language-so-the-language-is-measured-on-the-text.md).
 
 ## Context
 
@@ -41,11 +41,11 @@ it.
 
 ### The rule the owner set, and it is wider than this screen
 
-> *Wir löschen alle lokalen Daten, die akkumuliert haben von mir, weil wir sind
-> im Developer-Modus. Wir wollen keine Migrationen bauen, wir wollen keine zwei
-> Systeme bauen, die irgendwie an lokalen Legacy-Daten festhalten, bei einem
-> Developer-Build, also nicht mal einer Release-Build-Version. Das ist nicht
-> meine Arbeitsumgebung.*
+The owner's answer was to delete the accumulated local store outright rather
+than repair what was read out of it, and to state the general rule behind that:
+**this is a developer build, so build no migrations and no second system that
+holds on to local legacy data.** The machine the data sits on is not a working
+environment whose contents have to survive.
 
 **There has never been a release build, so there is no installed base, so there
 is no legacy.** Every construct that exists to carry data forward from a build
@@ -61,6 +61,16 @@ A migration, a legacy field or a conversion fallback earns its place only if
 **some machine outside this repository could hold the data it converts.** Today
 none can. The question is not *could this ever be needed* — everything could —
 but *does any installation hold it*.
+
+**THIS IS NOT A NEW RULE AND THAT MATTERS**, because a rule found twice
+independently is a rule, and a rule found once is a preference.
+[ADR 0112](0112-a-migration-with-no-installation-behind-it-is-ballast-and-the-import-door-is-not-the-config-door.md)
+reached it for the CONFIG — a legacy plaintext key field, millisecond timeout
+fields, two schema gates with their migration bodies — on exactly the argument
+made here, and gate **G9** on
+[`../tracks/v1-release.md`](../tracks/v1-release.md) is where the shapes it named
+are tracked. This record extends the same window to the ledger, and its
+consequences section extends G9 with the obligation that runs the other way.
 
 **What this does not license.** Guards that defend against THIS build's own
 constants changing stay: the histogram axis guards and the bucket-width guards
@@ -98,6 +108,10 @@ The stamp itself is kept because it is what the first release build will need on
 the day it exists. **This record is not a licence to skip migrations after that
 release** — from it forward every user holds data and every schema change owes
 them a path. It is a statement that before it there is nobody to migrate.
+
+**And the reminder does not live here**, because nobody reads an ADR on the day
+they cut a release. It lives on gate G9, which is the row a release is checked
+against.
 
 ### 5. One language counter, and it is the tiered one
 
@@ -139,6 +153,14 @@ every construct this record removes.
 **A ledger from before this change is not read.** There is no conversion and no
 detection. This is safe exactly once, and the window closes at the first release
 build.
+
+**Gate G9 gains the other half of that window.** It has always tracked what must
+be DELETED before the first release, while no installation holds it. From that
+release forward the obligation inverts: every on-disk shape — `activity.json` and
+its `LEDGER_SCHEMA`, `history.jsonl`, the transcript archive's layout, the config
+— owes a real user a path, and removing a shape stops being a deletion and
+becomes a migration. The gate now says both halves, so whoever cuts the release
+meets the second one where they are already looking.
 
 **What is kept, and why it is not legacy.** The seed from the index rebuilds a
 lost or corrupt ledger from records that still exist — a recovery path, not a

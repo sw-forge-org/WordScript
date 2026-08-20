@@ -71,7 +71,7 @@ down first. **WordScript is delivered when all five hold:**
 | **G6** | A reviewed release-note, tag and promotion process | **open** | The runbook has the procedure; the notes ADR 0037 obliges are unwritten | this track, with G10 |
 | **G7** | The decision to promote beyond internal draft handoffs | **owner** | Felix says the workflow publishes | — |
 | **G8** | The surface claims only what it can do | **open — this track builds it** | Stage A below: Developer Mode, one registry, off by default | this track |
-| **G9** | The compatibility shapes go out before the first release, not after | **open** | ADR 0112's list, executed. **The window closes with the first release** — see below | this track raises it; the config is core's |
+| **G9** | The compatibility shapes go out before the first release, not after | **open** | ADR 0112's list and ADR 0244's, executed. **The window closes with the first release, and the obligation inverts** — see below | this track raises it; the config is core's, the ledger the Home track's |
 | **G10** | The identifier change is in the release notes | **open** | ADR 0037's two consequences written into the first release's notes | this track, with G6 |
 | **G11** | `main` is continuously validated | **open** | CI runs on `pull_request` and `workflow_dispatch` only; the `push: main` trigger is off | this track's owner decision |
 | **G12** | Distribution meets the licence it ships under | **not started** | AGPL-3.0 source offer and third-party notices in the artifact | this track |
@@ -92,6 +92,26 @@ somebody installs a version**: from then on every one of those shapes is a real
 compatibility obligation to a real install, and removing it becomes a migration
 rather than a deletion. This gate is cheap now and permanent later, which is why
 it is on the board rather than in a backlog.
+
+[ADR 0244](../decisions/0244-there-is-no-legacy-in-a-developer-build-so-the-retired-tier-the-prehistory-stamp-the-schema-migrations-and-the-duplicate-language-counter-are-deleted.md)
+reached the same rule independently for the ACTIVITY LEDGER and widened the
+gate's scope past the config: **a migration, a legacy field or a conversion
+fallback earns its place only if some machine outside this repository could hold
+the data it converts.** It deleted a retired tier, a prehistory stamp and two
+schema-migration bodies on that test, after an unexercised compatibility path
+put a wrong number on Home — which is the concrete evidence that this gate is
+not bookkeeping. The shapes to check on the day are the four the product writes
+to disk: `activity.json` and its `LEDGER_SCHEMA` (ADR 0243 and ADR 0244),
+`history.jsonl` (ADR 0241), the transcript archive's layout (ADR 0237) and the
+config (ADR 0112).
+
+**And past the release the gate runs the other way, which is why it stays on the
+board after it is met.** From the first install forward each of those four
+shapes is held by somebody, so removing one stops being a deletion and becomes a
+migration that owes them a path — and `LEDGER_SCHEMA` keeps a gapped numbering
+(it stands at **3** with no branches behind it) precisely so the first real
+migration has an unambiguous number to move to. Whoever cuts the release reads
+both halves here rather than in an ADR nobody opens that day.
 
 **G12 — an AGPL app that is actually distributed owes things a private build
 does not.** `LICENSE` is AGPL-3.0. Nothing is distributed today, so nothing is

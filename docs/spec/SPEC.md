@@ -1,7 +1,7 @@
 # Spec -- WordScript
 
 Status: created 2026-07-24, last drift check 2026-08-19 (**there is no legacy in
-a build nobody has shipped**: the ledger's opaque `retired` tier, its prehistory
+a developer build**: the ledger's opaque `retired` tier, its prehistory
 stamp, its schema migrations and the duplicate lifetime language counter are
 deleted rather than maintained, and a share is stated against the runs it was
 measured over (ADR 0244); before it **a reading that lasts

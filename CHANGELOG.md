@@ -53,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed — there is no legacy in a build nobody has shipped
+### Removed — there is no legacy in a developer build
 
 - **The ledger's opaque `retired` tier is deleted, with its stamp and its schema
   migrations.** It existed because pruning used to destroy a day's shape; the

@@ -1228,11 +1228,10 @@ before anything else, **verify every claim on this page against the file before
 believing it**, sort the raised items into *defect / decision / not repairable /
 conditional*, and put that in front of him before building anything. The
 constraint arrived once the sorting was accepted, and it is why this stage is a
-schema change rather than seven repairs — *alle Metriken in Home sollen
-unendlich existieren können*: **every metric on Home must be able to exist
-indefinitely**, *keine halben Sachen*, complete and sustainable.
+schema change rather than seven repairs: **every metric on Home must be able to
+exist indefinitely** — no half measures, complete and sustainable.
 
-**And one sentence that reaches further than this track: the ADRs are not
+**And one point that reaches further than this track: the ADRs are not
 fixed.** They are written as *Accepted* and they say so, and they can still be
 overruled the moment something better exists. Stage I overrules the day-row
 bound of [ADR 0176](../decisions/0176-a-lifetime-figure-that-can-fall-is-not-a-lifetime-figure-so-a-pruned-day-is-retired-and-only-a-button-clears-it.md), which was right for the question 0176 was
@@ -1244,9 +1243,9 @@ section is what happened, not what was decided.
 
 ### Four of this page's own claims were wrong, and being told to check is why they were found
 
-*Prüf jede Behauptung gegen die Datei* was not a formality. Four of the eight
-raised items misdescribed the tree they pointed at, and two of the four changed
-what got built:
+**The instruction to check every claim against the file was not a formality.**
+Four of the eight raised items misdescribed the tree they pointed at, and two of
+the four changed what got built:
 
 - **Item 6 — *`Not named` will hold 91 runs forever*.** It was 104 the next day.
   The counter is TWO populations sharing one number: a frozen backlog — **411 of
@@ -1440,16 +1439,16 @@ run and not from the numbers this page carried.
 ## The record — Stage J, 2026-08-19
 
 **Opened within the hour Stage I closed, by the owner reading the screen Stage I
-had just shipped.** Two sentences, and both of them were right about something
-neither of us had written down:
+had just shipped.** Two reports, and both were right about something neither of
+us had written down:
 
-> *Womit ich halt ein Problem habe, ist in der Languages-Metrik `Never asked`.
-> Das macht nur Sinn für mich als Legacy-Developer mit meinen lokalen Daten. Aber
-> die hat niemand anderes.* … *Und bei Turnaround wird nicht ganz klar, ob* which
-> model heard it *und* what the mode cost *sich addieren oder bereits irgendwie
-> aufgesplittet sind.*
+1. **`Never asked` only makes sense for the one developer with accumulated local
+   data.** Nobody else has any.
+2. **It is not clear whether the two turnaround lists add up or are already
+   split** — whether *which model heard it* and *what the mode cost* are
+   components of one total or two views of it.
 
-Durable form is [ADR 0244](../decisions/0244-there-is-no-legacy-in-a-build-nobody-has-shipped-so-the-retired-tier-the-prehistory-stamp-the-schema-migrations-and-the-duplicate-language-counter-are-deleted.md). This section is what the checking found.
+Durable form is [ADR 0244](../decisions/0244-there-is-no-legacy-in-a-developer-build-so-the-retired-tier-the-prehistory-stamp-the-schema-migrations-and-the-duplicate-language-counter-are-deleted.md). This section is what the checking found.
 
 ### `Never asked` did not measure what its own ADR said it measured
 
@@ -1494,11 +1493,10 @@ the same session that shipped the screen.
 
 ### The owner's answer was wider than the two defects
 
-> *Wir löschen alle lokalen Daten, die akkumuliert haben von mir, weil wir sind
-> im Developer-Modus. Wir wollen keine Migrationen bauen, wir wollen keine zwei
-> Systeme bauen, die irgendwie an lokalen Legacy-Daten festhalten, bei einem
-> Developer-Build, also nicht mal einer Release-Build-Version. Das ist nicht meine
-> Arbeitsumgebung.*
+Not *repair what the screen read*, but **delete the accumulated local store, and
+build no migrations and no second system that holds on to local legacy data in a
+developer build.** The machine the data sits on is not a working environment
+whose contents have to survive.
 
 **There has never been a release build, so there is no installed base, so there
 is no legacy.** Both defects above were the same construct wearing two hats: a
@@ -1509,8 +1507,8 @@ because nobody else could produce it.
 
 `Never asked` and the duplicate counter were named. **`retired`,
 `retired_through`, `prehistory_through` and the schema migrations were not** —
-they were put to the owner as the same rule applied consistently, and approved:
-*keine halben Sachen, alles vollständig und nachhaltig.*
+they were put to the owner as the same rule applied consistently, and approved
+on the same terms as Stage I: no half measures, complete and sustainable.
 
 `retired` existed because pruning destroyed a day's shape (ADR 0176). ADR 0243
 removed that reason twenty-four hours earlier, and `prehistory_through` had been
@@ -1731,9 +1729,9 @@ late.
 
 **Opened 2026-08-19 immediately after the G6 review, and closed the same day: H1
 to H5 are landed.** The owner read G6's answer, rejected the unit rather than the
-number, and settled it in one line — *5000 Diktate macht
-keinen Sinn. Das überhaupt auf die Dateien zu fokussieren, statt auf den
-Speicher.* Durable form is
+number, and settled it in one line: **five thousand dictations is not a unit
+that means anything, and the thing to bound is the storage rather than the file
+count.** Durable form is
 [ADR 0241](../decisions/0241-a-bound-on-stored-dictations-is-a-bound-in-bytes-so-the-index-becomes-a-journal-and-both-collections-get-a-warning-and-a-ceiling.md),
 which carries the measurements, the premise that had to be corrected first, and
 the reasoning;
@@ -1842,7 +1840,7 @@ to J5 are landed.** The owner read the Languages metric Stage I had just shipped
 and said `Never asked` makes sense only for him. Checking that found the row did
 not measure what its own ADR claimed, and found a second defect nobody had
 raised: the facts list mixed two generations of one counter and **summed to 653
-against 586 dictations**. Durable form is [ADR 0244](../decisions/0244-there-is-no-legacy-in-a-build-nobody-has-shipped-so-the-retired-tier-the-prehistory-stamp-the-schema-migrations-and-the-duplicate-language-counter-are-deleted.md).
+against 586 dictations**. Durable form is [ADR 0244](../decisions/0244-there-is-no-legacy-in-a-developer-build-so-the-retired-tier-the-prehistory-stamp-the-schema-migrations-and-the-duplicate-language-counter-are-deleted.md).
 
 **The premise this stage rests on, and it is a rule rather than a one-off:**
 *there has never been a release build, so there is no installed base, so there is
@@ -1876,7 +1874,10 @@ ADR 0243 is only the part that existed to carry one developer's file forward.
 exactly once, because no such file exists anywhere. **At the first release build
 that stops being true**, and every schema change from then on owes its users a
 path. ADR 0244 says so in its own Decision section rather than leaving it to be
-inferred from the absence of code.
+inferred from the absence of code, and gate **G9** on
+[`v1-release.md`](v1-release.md) carries the reminder to where a release is
+checked — the same gate ADR 0112 opened for the config, now stating both halves
+of the window for all four on-disk shapes.
 
 ## Traps
 
@@ -2066,8 +2067,12 @@ say, and every one of them is a PROPOSAL rather than a task.
    remind you.** ADR 0244 deleted the ledger's schema migrations because no
    installation outside this repository holds a file to convert. **That stops
    being true the day a release ships**, and from then on every schema change
-   owes its users a path. Whoever cuts the first release owns re-reading ADR 0244
-   before they do — this is the only place that says so outside the ADR itself.
+   owes its users a path. **The reminder lives on gate G9** of
+   [`v1-release.md`](v1-release.md), which is the row a release is actually
+   checked against — an ADR is not read on the day somebody cuts one. G9 names
+   the four shapes that go out before the release and the same four that owe a
+   path after it: `activity.json` with its `LEDGER_SCHEMA`, `history.jsonl`, the
+   transcript archive's layout and the config.
 
 **Answered and kept for findability:** the old items 1, 2, 4, 6, 8 and 9 were
 built in Stage I; the old item 3 was DECIDED in ADR 0243 §8 — *if multi-selection
@@ -2130,8 +2135,8 @@ record is in the Stage H section.
     REWRITTEN, not deleted**: in Stage J two such rewrites caught a defect in the
     deletion itself, which deleting them would have shipped.
 12. **An `Accepted` ADR is not a closed door.** Said in as many words on
-    2026-08-19: *alle festen Entscheidungen sind nicht fest — wir können uns
-    umentscheiden, falls wir was Besseres haben.* Stage I overruled ADR 0176's
+    2026-08-19: a decision recorded as fixed is not fixed, and it gets revisited
+    the moment something better exists. Stage I overruled ADR 0176's
     day-row bound and Stage J overruled parts of ADR 0243 one day after it was
     written. What an ADR guarantees is that the reasoning is findable before it
     is overturned, not that it never is.
