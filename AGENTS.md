@@ -19,6 +19,29 @@ voice tools.
 All repository documentation is written in **American English** -- no German in
 docs. Chat replies follow the global instruction.
 
+## Quotation and Examples
+
+- **Never quote the owner.** No ADR, no track page, no known-issues record and
+  no commit message reproduces dictated words verbatim -- no blockquote, no
+  italic span, no "in his words". State what was decided or reported, in the
+  documentation set's own American English. This binds hardest in ADRs, where a
+  quotation reads as the authority the record rests on. What stays verbatim is
+  evidence the product produced: a transcript pair (raw, delivered,
+  raw-versus-out) and the tokens the bias filters and the corpus match on are
+  the defect itself, and deleting them deletes the record.
+- **An example in code is constructed, never transcribed.** A prompt rule, a
+  doc comment, a test fixture, a retention or filter rule -- anything that
+  teaches by example -- carries the clearest example for that rule, worked out
+  for the purpose. It is not the sentence the owner happened to say, even when
+  that sentence is what prompted the rule. Derive the better one: cover the
+  boundary the rule actually draws, and its near miss on either side.
+- **The reason is what a brief is and what an example is.** A dictated brief is
+  one instance stated under load and is regularly imprecise; an example in code
+  is a specification, and whatever it fails to cover is uncovered. Copying the
+  first into the second freezes an approximation into the place that defines
+  correctness. Extend the case rather than repeating it -- and where the
+  extension changes what the rule means, ask instead of guessing.
+
 ## Setup Commands
 
 - Install: `npm install`

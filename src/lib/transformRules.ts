@@ -208,3 +208,23 @@ export const PROCESSING_MODE_LABELS: Record<ProcessingMode, string> = {
   agent: "Draft",
   prompt_enhance: "Prompt Enhance",
 };
+
+/**
+ * THE SAME NAMES, ON THE PILL. Spread from the map above rather than written
+ * out, so a mode's name can only be typed in one place.
+ *
+ * The overlay pill lives in a 480px window whose rounded ends clip if the pill
+ * outgrows it, which is why one entry is genuinely shorter here. That is the
+ * only licence this map has: an entry that differs for any other reason is
+ * drift, and `processingModeLabels` in `transformRules.test.ts` fails on it.
+ *
+ * It exists because the pill used to carry its own private `switch` (ADR 0245).
+ * It answered `Agent` for `agent` — the name ADR 0029 retired, and the name
+ * ADR 0030 gives to a different feature reachable by cycling the very same
+ * control. A second copy is a second chance to disagree, and this one had
+ * already taken it.
+ */
+export const PROCESSING_MODE_SHORT_LABELS: Record<ProcessingMode, string> = {
+  ...PROCESSING_MODE_LABELS,
+  prompt_enhance: "Enhance",
+};

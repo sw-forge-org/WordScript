@@ -14,18 +14,16 @@ import {
   Square,
   X,
 } from "lucide-react";
+import { PROCESSING_MODE_SHORT_LABELS } from "@/lib/transformRules";
+import type { ProcessingMode } from "@/types/ipc";
 import "../../styles/overlay-pill.css";
 
 /* ── Public types ────────────────────────────────────────────────────────── */
 
-export type OverlayProcessingMode =
-  | "auto"
-  | "verbatim"
-  | "cleanup"
-  | "rewrite"
-  | "translate"
-  | "prompt_enhance"
-  | "agent";
+/** The runtime's own mode union, not a second copy of it. The pill draws every
+ *  mode the cycle can reach, so a mode added on one side and forgotten on the
+ *  other is a chip with nothing to say. */
+export type OverlayProcessingMode = ProcessingMode;
 
 /**
  * The recording's auto-stop, as the overlay states it.
@@ -140,19 +138,6 @@ const BAR_COUNT = 11;
 const MIN_BAR = 5;
 const MAX_BAR = 30;
 const IDLE_BARS = [5, 7, 9, 12, 15, 17, 15, 12, 9, 7, 5];
-
-function modeShortLabel(mode: OverlayProcessingMode): string {
-  switch (mode) {
-    case "auto": return "Auto";
-    case "cleanup": return "Cleanup";
-    case "rewrite": return "Rewrite";
-    case "translate": return "Translate";
-    case "agent": return "Agent";
-    case "verbatim": return "Verbatim";
-    case "prompt_enhance": return "Enhance";
-    default: return "Cleanup";
-  }
-}
 
 function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -448,7 +433,7 @@ function ModeChip({
   targetLanguage?: string;
   onCycleLanguage?: () => void;
 }) {
-  const label = modeShortLabel(mode);
+  const label = PROCESSING_MODE_SHORT_LABELS[mode];
   return (
     <>
       <button

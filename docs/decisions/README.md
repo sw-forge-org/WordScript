@@ -1564,6 +1564,12 @@ that is what a record is for (ADR 0123: one list per fact).
   A bound on stored dictations is a bound in bytes, so the index becomes a journal and both collections get a warning and a ceiling.
 - [0242](0242-the-journal-replays-into-a-list-the-archive-counts-itself-by-day-stamps-and-the-byte-that-is-bounded-is-the-content-byte.md):
   The journal replays into a list, the archive counts itself by day stamps, and the byte that is bounded is the content byte.
+- [0243](0243-a-reading-that-lasts-forever-is-a-mergeable-accumulator-per-period-so-the-ledger-grows-a-month-tier-and-every-field-says-when-it-started.md):
+  A reading that lasts forever is a mergeable accumulator per period, so the ledger grows a month tier and every field says when it started.
+- [0244](0244-there-is-no-legacy-in-a-developer-build-so-the-retired-tier-the-prehistory-stamp-the-schema-migrations-and-the-duplicate-language-counter-are-deleted.md):
+  There is no legacy in a developer build, so the retired tier, the prehistory stamp, the schema migrations and the duplicate language counter are deleted.
+- [0245](0245-a-draft-does-the-work-its-instruction-asks-for-an-echo-is-not-a-result-and-the-pill-calls-the-mode-what-every-other-surface-calls-it.md):
+  A draft does the work its instruction asks for, an echo is not a result, and the pill calls the mode what every other surface calls it.
 
 ## Resolved: the number 0011 was used twice
 

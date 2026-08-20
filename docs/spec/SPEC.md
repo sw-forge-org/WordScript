@@ -1,6 +1,13 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-19 (**there is no legacy in
+Status: created 2026-07-24, last drift check 2026-08-20 (**a draft does the work
+its instruction asks for**: the output contract stops reading "never answer"
+as "never derive", so an instruction that asks the mode to solve, find, rank or
+answer gets the worked-out result rather than its own words back; an echo is
+detected in the runtime and reported as `corrected: false` with a warning rather
+than delivered as a result; and the overlay pill reads the mode's name from the
+one map that holds it, so the chip says `Draft` like every other surface
+(ADR 0245); before it **there is no legacy in
 a developer build**: the ledger's opaque `retired` tier, its prehistory
 stamp, its schema migrations and the duplicate lifetime language counter are
 deleted rather than maintained, and a share is stated against the runs it was
@@ -831,9 +838,16 @@ snippets contribute trigger without expansion. See ADR 0023.
 
 `agent` output is the artifact the instruction asks for and never a reply to the
 user: the prompt opens with `AGENT_OUTPUT_CONTRACT`, ahead of profile context
-and style block, fixing the addressee to the person the instruction names and
-returning the dictated content as plain text when the instruction cannot be
-carried out. It holds at every register, `off` included. See ADR 0026.
+and style block, and fixes the addressee to the person the instruction names.
+**When the instruction asks for something to be worked out -- solved, decided,
+chosen, found, ranked, guessed or answered -- the finished result of that work
+is the artifact and is produced** (ADR 0245). The prohibition is on addressing
+the user and on adding content nobody asked for; it never bounds work the
+instruction explicitly asks for. Returning the dictated content as plain text is
+the fallback for a transcript that carries no instruction at all, and the
+runtime detects a reply that is the instruction, reports `corrected: false` and
+a `transform_warning` rather than delivering the echo as a result. It holds at
+every register, `off` included. See ADR 0026 and ADR 0245.
 
 **`agent` carries out an instruction; it does not act** (ADR 0029). It is one
 chat completion over two messages, and it gains no tool-calling surface, no

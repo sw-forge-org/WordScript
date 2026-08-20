@@ -1914,7 +1914,8 @@ describe("OverlayWindow", () => {
     // The trailing fetch fires at the end of the window and picks up the change.
     await act(async () => { await new Promise((r) => setTimeout(r, 260)); });
     await waitFor(() =>
-      expect(screen.getByLabelText("Mode Agent, tap to cycle")).toBeInTheDocument(),
+      // `agent` on the wire, `Draft` on the chip (ADR 0029, ADR 0245).
+      expect(screen.getByLabelText("Mode Draft, tap to cycle")).toBeInTheDocument(),
     );
   });
 

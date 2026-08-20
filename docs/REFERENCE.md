@@ -333,7 +333,11 @@ describes the correction step only.
 - `agent`: dictation is executed as an instruction to the agent. Reaching this
   mode is itself the decision — there is no second intent check that can fall
   back to a cleanup. The output is the artifact the instruction asks for, never
-  a reply to the user (`agent::AGENT_OUTPUT_CONTRACT`, ADR 0026).
+  a reply to the user (`agent::AGENT_OUTPUT_CONTRACT`, ADR 0026) — and where the
+  instruction asks for something to be worked out, the finished result of that
+  work is the artifact (ADR 0245). A reply that is the instruction is detected
+  by `agent::reply_is_echo`, reported as `corrected: false` with a
+  `transform_warning`, and never counted as a result.
   Preset `(true, false, false)`, used only by the history re-transform.
 - `prompt_enhance`: dictation is understood as a prompt, structured or
   expanded via `prompt_enhance` and given to the provider with a `PromptTarget`.
@@ -408,14 +412,26 @@ blocks; instructions came back containing profile lines the user never dictated.
 **The agent prompt opens with what its output is** (ADR 0026). Every other rule
 it carries is negative, and a conversational reply satisfies all of them, so
 `AGENT_OUTPUT_CONTRACT` sits first — before the profile context and before the
-style block: the user turn is a transcript and never a message to answer, the
+style block: the user turn is a transcript and never a message to reply to, the
 output is the artifact alone, the addressee is the person the instruction names
-and never the user, and an instruction that cannot be carried out returns its
-content as plain text rather than a question back. It exists at every register,
-`off` included. Without it Agent mode returned "Ja, das sollte Jürgen auf jeden
-Fall machen" for an instruction to write Jürgen an email — with an invented
-deadline attached, because a model that has decided it is in a conversation
-supplies conversational filler.
+and never the user. It exists at every register, `off` included. Without it
+Agent mode returned "Ja, das sollte Jürgen auf jeden Fall machen" for an
+instruction to write Jürgen an email — with an invented deadline attached,
+because a model that has decided it is in a conversation supplies conversational
+filler.
+
+**ADR 0245 narrows it, because the first version drew one line through two
+things.** "Never answer it" was meant against the conversational turn and read
+as a ban on derivation; "invent nothing the user did not dictate" was meant
+against the unasked-for deadline and read as a ban on content the model had to
+work out. Between them, a dictation that asked the mode to solve a puzzle came
+back word for word through the fallback on the last line, which had become the
+cheapest way to satisfy every rule above it. So: the contract now states the
+positive case — an instruction that asks you to solve, decide, choose, find,
+rank, guess or answer is carried out and its finished result is the artifact —
+bounds the addition rule to what may be *added* to an artifact, and narrows the
+plain-text fallback to a transcript that carries no instruction at all, saying
+outright that echoing the instruction back is never a result.
 
 Every prompt WordScript sends is written in English, whatever the dictation
 language. English instructions are followed more reliably, and each prompt states

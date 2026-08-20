@@ -53,6 +53,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — a record states what was decided, and an example is written for its rule
+
+- **Nothing in this repository quotes the owner's dictation any more, and no
+  example in code is a transcript of one.** `AGENTS.md` gains a *Quotation and
+  Examples* section: records state what was decided or reported in their own
+  American English, and a prompt rule, doc comment, test fixture or filter rule
+  that teaches by example carries the clearest example for that rule rather than
+  the sentence that prompted it — a dictated brief is one instance stated under
+  load, while an example in code is a specification and whatever it leaves
+  uncovered is uncovered. ADR 0245's context paragraph and the echo guard's
+  fixtures are rewritten to it, the fixtures now spread across languages, and
+  the guard gains the boundary case its ratio never had. Product evidence still
+  stays verbatim — a transcript the app produced is the defect itself.
+
+### Fixed — Draft refused work it exists to do, and said nothing
+
+- **Draft carries out the instruction it was given, including one that asks it
+  to work something out.** A dictation that listed ten words with their
+  positions and asked which word they point at came back word for word, pasted
+  at the cursor, 473 characters in and the same 473 out. The mode had not
+  failed — it had obeyed. `AGENT_OUTPUT_CONTRACT` said *never answer it* against
+  conversational replies and *invent nothing the user did not dictate* against
+  an invented deadline, and between them the two closed off derivation, leaving
+  the plain-text fallback as the only rule the model could satisfy. The contract
+  now states the positive case: an instruction that asks you to solve, decide,
+  choose, find, rank, guess or answer is carried out and its finished result is
+  the artifact. Everything the old rules were written against stays forbidden —
+  no reply to the user, no addressee but the one the instruction names, no fact,
+  name, date or number nobody asked for (ADR 0245, narrowing ADR 0026).
+- **A refusal is no longer delivered as a result.** `was_agent` was set from
+  "the HTTP call returned Ok" and read everywhere as "the mode produced
+  something", so the echo reached the record as `corrected: true` with
+  `transform_warning: null` and reached the cursor through the ordinary paste
+  path — indistinguishable, at every surface, from a Draft that worked. The
+  runtime now compares the reply to the instruction, and where they are the same
+  text it reports `corrected: false` with a warning History renders. The text
+  still goes through: a mode that discards a minute and a half of speech because
+  it disliked the instruction is worse than one that hands it back.
+- **The overlay pill calls the mode `Draft`, like every other surface.**
+  ADR 0029 renamed it because ADR 0030 gives `Agent` to a different feature —
+  one reachable by cycling the very same control. The rename had landed on Home,
+  History, Hotkeys, AI Models, Onboarding and Handoff; the pill kept a private
+  `switch` that still answered `Agent`, and nothing failed. It now reads
+  `PROCESSING_MODE_SHORT_LABELS`, spread from the single map that holds the
+  names, and a test walks both against `ProcessingMode`.
+
+
 ### Removed — there is no legacy in a developer build
 
 - **The ledger's opaque `retired` tier is deleted, with its stamp and its schema

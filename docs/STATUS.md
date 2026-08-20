@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-19
+Status: 2026-08-20
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -663,7 +663,12 @@ Status: 2026-08-19
   `resolve_auto_mode` (agent name + imperative -> agent; imperative + IDE
   context -> prompt_enhance; else cleanup); the renderer queries the
   effective mode via `resolve_current_processing_mode`; overlay side label
-  and profile dock show the active mode. `translate` owns its own prompt in
+  and profile dock show the active mode -- and name `agent` `Draft` on every
+  surface including the pill, which carried a private label map until ADR 0245.
+  `agent` carries out the instruction it is given, up to and including one that
+  asks for something to be worked out; a reply that is the instruction is
+  detected, reported as `corrected: false` with a warning, and never counted as
+  a result (ADR 0245). `translate` owns its own prompt in
   `core::translate` rather than a flag on the correction prompt, is never
   auto-selected, carries no communication style, and takes four settings -- the
   target language and the profile-words switch per profile on

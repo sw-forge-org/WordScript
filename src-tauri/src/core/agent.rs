@@ -349,25 +349,41 @@ pub(crate) fn build_profile_context(config: &AgentConfig) -> String {
 /// block rather than to its weakest member.
 pub(crate) const PROFILE_CONTEXT_HEADING: &str = "PROFILE CONTEXT. It exists solely to help you read the instruction correctly — spellings, proper nouns, technical terms, domain. Never derive content from it, never supplement the result with it, never carry any of it into the result. All content comes from the user's instruction alone:";
 
-/// What the mode owes the user: an artifact, never an answer.
+/// What the mode owes the user: an artifact, never a conversational turn.
 ///
-/// Every other rule in this prompt is negative — no preamble, no invented
+/// Every other rule in this prompt is negative — no preamble, no unasked-for
 /// facts, no profile content — and negative rules bound a result they never
 /// define. Nothing said what the output *is*, so the model was free to satisfy
-/// all of them with a reply: "Schreib eine Mail an Jürgen, er soll X machen"
-/// came back as "Ja, das sollte Jürgen auf jeden Fall machen".
+/// all of them with a reply: an instruction to write a colleague an email came
+/// back as agreement, addressed to the user, that the colleague should do it.
 ///
 /// The pull it works against is structural. The user turn is a bare transcript
 /// (ADR 0023), which in a chat completion is formally a message to the
-/// assistant, and a message to the assistant has one default prior: answer it.
-/// The counterweight belongs in the system turn rather than in a prefix on the
-/// transcript — the transcript is the one thing in this request that is the
-/// user's own words, and it stays that way. See ADR 0026.
+/// assistant, and a message to the assistant has one default prior: reply to
+/// it. The counterweight belongs in the system turn rather than in a prefix on
+/// the transcript — the transcript is the one thing in this request that is
+/// the user's own words, and it stays that way. See ADR 0026.
+///
+/// **ADR 0245 narrows it, because ADR 0026 drew one line through two things.**
+/// Its defect was a reply where an artifact was asked for — agreement aimed at
+/// the user — carrying a delivery time the instruction never named. Forbidding
+/// both is right. Neither of them is
+/// *derivation* — but "never answer it" and "invent nothing" are both wide
+/// enough to forbid it, and a dictation that asked the mode to work something
+/// out came back verbatim through the fallback on the last line, which was the
+/// cheapest way left to satisfy every rule above it.
+///
+/// So: the prohibition is on addressing the user, not on doing the work. When
+/// the instruction asks for something to be worked out, the finished result of
+/// that work IS the artifact. The fallback is narrowed to the case it was for
+/// — a transcript carrying no instruction at all — and says outright that an
+/// echo is not a result.
 pub(crate) const AGENT_OUTPUT_CONTRACT: &str = "\
-- The user turn is a transcript of dictated speech, not a message addressed to you. Never answer it, never comment on it, never confirm, agree with or evaluate it, and never write to the user.
-- Produce the artifact the instruction asks for — an email, a message, a list, a summary, a text. Your output is that artifact alone, from its first word to its last.
+- The user turn is a transcript of dictated speech, not a message in a conversation with you. Never reply to it, never comment on it, never confirm, agree with or evaluate it, and never address the user.
+- Produce the artifact the instruction asks for — an email, a message, a list, a summary, a text, or the worked-out result of a question it puts to you. Your output is that artifact alone, from its first word to its last.
+- When the instruction asks you to work something out — to solve, decide, choose, find, rank, guess, or answer — do that work and output its finished result. That result is the artifact. Never hand the question back, and never restate the instruction instead of carrying it out.
 - When the instruction names an addressee, the result is written to that addressee. The user is never the addressee.
-- When the instruction cannot be carried out as dictated, output its content as plain text and nothing else. Never ask a question back, never explain why.";
+- Echoing the instruction back is never a result. Only when the transcript carries no instruction at all, output its content as plain text and nothing else. Never ask a question back, never explain why.";
 
 /// The agent's system prompt, without the transcript.
 ///
@@ -387,7 +403,7 @@ The user has addressed you with a spoken instruction. Carry it out precisely and
 {AGENT_OUTPUT_CONTRACT}\n\
 - Output the finished result text only — no preamble, no explanation, no \"Here is...\".\n\
 - Write the result in the language the user dictated in, and keep any mix of languages they used. Never translate, and never answer in the language of these instructions.\n\
-- All content comes from the instruction. Do not invent facts, names, dates or numbers the user did not dictate; if something is missing, leave it out."
+- Add nothing that was not asked for: no fact, name, date or number about the user's world that they neither dictated nor asked you to supply. This bounds what you may ADD to an artifact. It never bounds the work the instruction explicitly asks you to do — a result you were told to work out is the artifact, not an invention."
     )];
 
     // Deliberately before the style block: what may be said outranks how it is
@@ -439,7 +455,77 @@ pub(crate) fn build_agent_request(text: &str, config: &AgentConfig) -> ChatCompl
     }
 }
 
+/// How much of the instruction a reply may repeat before it is an echo.
+///
+/// Only reached by the substring arm below, which needs a length rule the
+/// equality arm does not. Set high on purpose: a shortening instruction
+/// ("kürz das auf zwei Sätze") legitimately returns a fragment of its own
+/// input, and the difference between that and a trimmed echo is length.
+const ECHO_SUBSTRING_RATIO: f32 = 0.8;
+
+/// What the mode says when the model handed the instruction back (ADR 0245).
+///
+/// It names both halves the user needs: nothing was produced, and the thing at
+/// their cursor is their own dictation rather than a result. A notice that said
+/// only the first would leave them looking for output that is already there and
+/// is not output.
+pub(crate) const AGENT_ECHO_WARNING: &str =
+    "Draft handed the dictation back unchanged instead of carrying out the instruction. \
+The text is what you said, not a result.";
+
+/// Strip a string to the characters a comparison may depend on.
+///
+/// Case, whitespace and punctuation all move when a model reformats what it was
+/// given, and none of them is evidence that work was done.
+fn echo_normalize(value: &str) -> String {
+    value
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .flat_map(|c| c.to_lowercase())
+        .collect()
+}
+
+/// Whether the reply is the instruction rather than a result (ADR 0245).
+///
+/// **Exact, not similar.** A similarity threshold would have to fire on outputs
+/// that legitimately resemble their input — "format this as a list", "remove
+/// the filler words" — and a false refusal notice on a working draft costs more
+/// than a missed echo. Equality after normalisation is the only comparison that
+/// cannot be true of work that was actually done.
+///
+/// The substring arm is the one extension, for the near-certain second shape:
+/// the instruction returned with the spoken address ("Hey WordScript, …")
+/// trimmed off the front. It requires the reply to be a contiguous run of the
+/// instruction and to carry most of its length, so a genuine shortening or
+/// extraction does not reach it.
+pub(crate) fn reply_is_echo(reply: &str, instruction: &str) -> bool {
+    let reply = echo_normalize(reply);
+    let instruction = echo_normalize(instruction);
+    if reply.is_empty() || instruction.is_empty() {
+        return false;
+    }
+    if reply == instruction {
+        return true;
+    }
+    instruction.contains(&reply)
+        && reply.chars().count() as f32
+            >= instruction.chars().count() as f32 * ECHO_SUBSTRING_RATIO
+}
+
 /// Execute the agent instruction and return the composed result text.
+///
+/// **`was_agent` is a claim about the RESULT, not about the transport**
+/// (ADR 0245). It used to be set from nothing but "the call returned Ok", which
+/// is a fact about HTTP, while every surface downstream read it as "the mode
+/// produced something" — so a model that handed the dictation straight back
+/// reached the record as `corrected: true` with no warning, and reached the
+/// cursor through the ordinary paste path. Whether the provider answered lives
+/// in the `Err` arm and in the runtime log.
+///
+/// The text still goes through on both failing paths. This is a dictation app,
+/// and a mode that discards a minute and a half of speech because it disliked
+/// the instruction is worse than one that hands it back. What was missing was
+/// the sentence saying which of the two just happened.
 pub async fn apply_agent_transform(text: &str, config: &AgentConfig) -> AgentResult {
     let request = build_agent_request(text, config);
 
@@ -447,11 +533,20 @@ pub async fn apply_agent_transform(text: &str, config: &AgentConfig) -> AgentRes
     match create_chat_completion(request).await {
         Ok(reply) => {
             let result = reply.trim().to_string();
+            let echoed = reply_is_echo(&result, text);
             runtime_log::record(format!(
-                "[Agent] Execution done elapsed_ms={} output_len={}",
+                "[Agent] Execution done elapsed_ms={} output_len={} echoed={}",
                 started.elapsed().as_millis(),
                 result.len(),
+                echoed,
             ));
+            if echoed {
+                return AgentResult {
+                    text: result,
+                    was_agent: false,
+                    warning: Some(AGENT_ECHO_WARNING.to_string()),
+                };
+            }
             AgentResult {
                 text: result,
                 was_agent: true,
@@ -670,7 +765,7 @@ mod tests {
     fn system_prompt_no_longer_invites_the_model_to_use_the_context() {
         let prompt = build_agent_system_prompt(&leaky_profile());
         assert!(!prompt.contains("take it into account"));
-        assert!(prompt.contains("Do not invent facts, names, dates or numbers"));
+        assert!(prompt.contains("no fact, name, date or number about the user's world"));
     }
 
     /// A snippet expansion is finished text. Offering it to a generative model
@@ -729,9 +824,54 @@ mod tests {
         for config in [&empty, &leaky_profile(), &styled] {
             let prompt = build_agent_system_prompt(config);
             assert!(prompt.contains(AGENT_OUTPUT_CONTRACT));
-            assert!(prompt.contains("never write to the user"));
+            assert!(prompt.contains("never address the user"));
             assert!(prompt.contains("The user is never the addressee"));
         }
+    }
+
+    /// ADR 0245. The prohibition is on addressing the user, not on doing the
+    /// work — and the two used to be one rule. A dictation that asked the mode
+    /// to work something out came back verbatim, because "never answer it" and
+    /// "invent nothing the user did not dictate" between them left the echo
+    /// fallback as the only door open.
+    #[test]
+    fn the_contract_asks_for_the_work_an_instruction_puts_to_the_model() {
+        let prompt = build_agent_system_prompt(&leaky_profile());
+
+        // The positive rule, without which the negatives bound nothing.
+        assert!(prompt.contains("to solve, decide, choose, find, rank, guess, or answer"));
+        assert!(prompt.contains("do that work and output its finished result"));
+        assert!(prompt.contains("the worked-out result of a question it puts to you"));
+
+        // The word that carried the conflation is gone; what it meant stays.
+        assert!(!prompt.contains("Never answer it"));
+        assert!(prompt.contains("Never reply to it"));
+    }
+
+    /// ADR 0026's own defect, which ADR 0245 does not reopen: a reply to the
+    /// user, and a deadline nobody dictated.
+    #[test]
+    fn the_contract_still_forbids_a_reply_and_unasked_for_content() {
+        let prompt = build_agent_system_prompt(&leaky_profile());
+
+        assert!(prompt.contains("never confirm, agree with or evaluate it"));
+        assert!(prompt.contains("Add nothing that was not asked for"));
+        assert!(prompt.contains("neither dictated nor asked you to supply"));
+
+        // And the bound is on what may be ADDED, which is the distinction the
+        // old wording could not carry.
+        assert!(prompt.contains("It never bounds the work the instruction explicitly asks you to do"));
+    }
+
+    /// The fallback stays — a dictation app does not discard speech — but it is
+    /// no longer the cheapest way to satisfy every rule above it.
+    #[test]
+    fn the_fallback_is_narrowed_to_a_transcript_with_no_instruction() {
+        let prompt = build_agent_system_prompt(&leaky_profile());
+
+        assert!(prompt.contains("Echoing the instruction back is never a result"));
+        assert!(prompt.contains("Only when the transcript carries no instruction at all"));
+        assert!(!prompt.contains("When the instruction cannot be carried out as dictated"));
     }
 
     /// "Reply" was the mode's own word for what it does. It is the thing the
@@ -805,5 +945,98 @@ mod tests {
         let context = prompt.find(PROFILE_CONTEXT_HEADING).unwrap();
         let style = prompt.find("WRITING STYLE.").unwrap();
         assert!(context < style);
+    }
+
+    // ── The echo guard (ADR 0245) ────────────────────────────────────────────
+
+    /// The reported shape (`history-1787234929217-54`): an instruction that
+    /// states a rule, hands over the data it applies to, and asks for the
+    /// result. There is no text in it to reshape — every word of the answer has
+    /// to be worked out — and it came back at the same length it went in, as
+    /// `corrected: true` with no warning, pasted at the cursor.
+    #[test]
+    fn the_instruction_returned_verbatim_is_an_echo() {
+        let instruction = "Hey WordScript, I will read out words with a number each, and the \
+closer that number is to one, the more it is the word I am pointing at. Work out which word \
+that is and list your three best runners-up. Curtain at 44. Harbour at 371. Skyline at 1022.";
+
+        assert!(reply_is_echo(instruction, instruction));
+    }
+
+    /// Case, whitespace and punctuation all move when a model reformats what it
+    /// was given, and none of them is evidence that work was done.
+    #[test]
+    fn a_reformatted_echo_is_still_an_echo() {
+        let instruction = "Hey WordScript, welche der drei Zahlen liegt am nächsten an eins?";
+        let reply = "hey wordscript welche der drei zahlen liegt am nächsten an eins";
+
+        assert!(reply_is_echo(reply, instruction));
+    }
+
+    /// The near-certain second shape: the instruction handed back with the
+    /// spoken address trimmed off the front.
+    #[test]
+    fn the_instruction_without_its_address_is_an_echo() {
+        let instruction = "Hey WordScript, ordena estas cinco ciudades por su número y dime \
+cuál de ellas es la que estoy buscando exactamente.";
+        let reply = "ordena estas cinco ciudades por su número y dime cuál de ellas es la que \
+estoy buscando exactamente.";
+
+        assert!(reply_is_echo(reply, instruction));
+    }
+
+    /// The threshold the substring arm turns over at, from both sides. A
+    /// contiguous run of the instruction is an echo once it carries most of the
+    /// instruction's length; below that it is an extraction, and an extraction
+    /// is work. Written in a single repeated token because the boundary is a
+    /// length and nothing else — a sentence here would pin the ratio to its own
+    /// word lengths.
+    #[test]
+    fn the_substring_arm_turns_over_at_its_ratio() {
+        let instruction = "wort".repeat(25);
+
+        assert!(reply_is_echo(&"wort".repeat(21), &instruction));
+        assert!(!reply_is_echo(&"wort".repeat(19), &instruction));
+    }
+
+    /// The whole reason the comparison is exact rather than similar. An
+    /// instruction that asks for less text legitimately returns a fragment of
+    /// its own input, and a false refusal notice on a working draft costs more
+    /// than a missed echo.
+    #[test]
+    fn a_shortening_is_not_an_echo() {
+        let instruction = "Hey WordScript, cut this down to two sentences. The first sentence \
+carries the point. The second sentence carries the reason. The third sentence adds an aside \
+that nobody needs to read twice.";
+        let reply = "The first sentence carries the point. The second sentence carries the \
+reason.";
+
+        assert!(!reply_is_echo(reply, instruction));
+    }
+
+    #[test]
+    fn a_produced_artifact_is_not_an_echo() {
+        let instruction = "Hey WordScript, schreib eine kurze Mail an die Buchhaltung, die \
+Rechnung soll bis Freitag freigegeben werden.";
+        let reply = "Hallo zusammen,\n\nkönnt ihr die Rechnung bis Freitag freigeben?\n\nDanke!";
+
+        assert!(!reply_is_echo(reply, instruction));
+    }
+
+    /// An empty reply is a different failure with a different report, and the
+    /// echo guard must not claim it.
+    #[test]
+    fn an_empty_reply_is_not_an_echo() {
+        assert!(!reply_is_echo("", "Hey WordScript, write the accounting team a note"));
+        assert!(!reply_is_echo("   \n  ", "Hey WordScript, write the accounting team a note"));
+        assert!(!reply_is_echo("some result or other", ""));
+    }
+
+    /// The notice names both halves: nothing was produced, and the thing at the
+    /// cursor is the user's own dictation.
+    #[test]
+    fn the_echo_warning_says_what_the_text_is() {
+        assert!(AGENT_ECHO_WARNING.contains("instead of carrying out the instruction"));
+        assert!(AGENT_ECHO_WARNING.contains("not a result"));
     }
 }
