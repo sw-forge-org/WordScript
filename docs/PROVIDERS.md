@@ -199,6 +199,15 @@ serves all three roles alone.
   separate identification model -- see *What this means for a language pair*.
 - Language hints are optional via a `languages` parameter taking ISO 639-1
   codes.
+- **Gap, found 2026-08-22: this row records no accepted input format and no
+  upload ceiling, while the runtime enforces one.** `openai.rs` carries
+  26,214,400 bytes for every account, taken from the vendor's published figure
+  rather than from a reading recorded here, and nothing on this page says which
+  container the endpoint takes. Both matter before D4 sends anything other than
+  WAV on this lane: an encoder is worth nothing against a vendor that refuses
+  the container, and a ceiling the file does not carry cannot be checked when
+  the vendor moves it. Read the source page and fill both in rather than
+  assuming this lane mirrors Groq's list.
 - Voice: `POST /v1/audio/speech`, 13 built-in voices (`alloy`, `ash`, `ballad`,
   `coral`, `echo`, `fable`, `nova`, `onyx`, `sage`, `shimmer`, `verse`, `marin`,
   `cedar`); `marin` and `cedar` are the vendor's quality recommendation.
@@ -365,6 +374,14 @@ against the vendor's own audio-API pages.
 - **Operational ceilings, and they are tighter than the chat lane's:** a
   60-second upstream timeout, no audio URLs, 25 MB on the multipart path, and
   no SRT/VTT output. A meeting does not fit through this door.
+- **Gap, found 2026-08-22: no accepted input format is recorded for this lane
+  either**, and here it is the harder question, because a request is brokered
+  to whichever upstream model was named. Whether the container is checked by
+  OpenRouter, by the upstream, or by both is unrecorded, so a format that works
+  against `openai/whisper-large-v3` proves nothing about `google/chirp-3`. The
+  60-second upstream timeout binds before the 25 MB does on a slow uplink, so
+  a smaller body helps this lane twice — but only once a reading says the
+  container is accepted at all.
 - Models are discovered with `?output_modalities=transcription` rather than
   from the default catalogue. Named on the vendor's pages:
   `openai/gpt-4o-mini-tts-2025-12-15`, `google/gemini-3.1-flash-tts-preview`,
