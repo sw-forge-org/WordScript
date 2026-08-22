@@ -2034,6 +2034,41 @@ readable event restarts, and the events already in the record cannot be re-read.
 this plan (B2, B4, B5, B7, D1a, D3, E1) is free of `core::capture` and is free
 to run now.
 
+**Addendum, 2026-08-21 — what the dictation ceiling turned out to be, and what
+C1 is and is not the answer to.** A 17:46 dictation was refused by Groq at
+34,108,638 bytes and deleted before it could be retried.
+[ADR 0246](../decisions/0246-a-failed-transcription-keeps-its-audio-and-a-plan-does-not-raise-an-attachment-limit.md)
+carries the measurement: the multipart attachment is capped at 25 MiB on
+**every** plan, so the dictation ceiling on this lane is **819 s = 13:39** of
+16 kHz mono i16, not the 30 minutes the settings card had been drawing.
+
+- **The interim is the format, and it is not blocked by step 6.** Groq accepts
+  FLAC and recommends it for exactly this case. Transcoding at upload time
+  lives in the adapter, touches no part of `core::capture`, and roughly doubles
+  the minutes inside the same 25 MiB. It is the change that should land first,
+  because it is the one this gate does not hold. **It is D4**, and what it
+  costs, what it must measure and what it leaves open are stated there.
+- **C1 stays the only answer that removes the ceiling** rather than moving it,
+  and the ordering above is unchanged: step 6 first. Nothing here reopens it.
+- **Do not read ADR 0246's length distribution as usage evidence.** It reports
+  the surviving `history.jsonl`, and the local stores have been discarded
+  several times by refactors in this developer build. The owner reports that
+  dictations of eleven and twenty minutes are both ordinary, which the record
+  cannot show and does not contradict. **The record is truncated, not
+  representative** — a distribution drawn from it may bound what this machine
+  can prove, never what its user does.
+- **Reported, not measured: captures well below the ceiling sometimes fail to
+  upload.** The surviving runtime logs hold three transcription failures in
+  total — a missing self-hosted model id, a missing OpenAI key, and the 413
+  above — so there is no evidence for it and none against it either. It is
+  worth a reading the next time it happens rather than a theory now.
+- **And the architecture is a meetings answer first.** Turn-per-recording buys
+  a meeting what it needs; a dictation is a different shape — one cleanup pass
+  over one text, one reducer commit (ADR 0018), one history row. With the audio
+  now retained on every failure and a retry that re-transcribes from it, a
+  dictation that overruns is recoverable rather than lost, which is what made
+  the ceiling urgent in the first place.
+
 ### C2. The runtime mute (ADR 0098)
 
 - **Requires** — C1 (it must hold the segmenter, which C1 introduces).
@@ -2466,6 +2501,62 @@ and a socket resolving after the deadline is closed, not leaked.
 - **Done when** — an account can hold a key for recognition and a subscription
   for chat at the same time, and choosing the subscription makes the speech jobs
   say what they now need.
+
+### D4. The upload is FLAC, so the ceiling belongs to the format rather than to the recording (ADR 0246's open consequence)
+
+- **Requires** — nothing, and **explicitly not the runtime-ownership gate**.
+  C1's wait is on `core::capture` being under measurement; this step never
+  opens that file. It is the only ceiling work that can run today.
+- **Touches** — the encode between the exported capture and the multipart body,
+  in the adapter (`openai_compatible.rs`, reached by Groq first). **The
+  artifact on disk stays WAV**: the retention sweep, the `capture-<n>.wav`
+  membership test, ADR 0039's retry and the local and self-hosted lanes all
+  read that file and none of them should learn a second format to keep working.
+  A pure-Rust encoder is a new dependency — `flacenc` 0.5.1, Apache-2.0,
+  candidate rather than decision — and pure Rust is the requirement, because a
+  C encoder puts a toolchain into three platform builds for one lane's upload.
+  The multipart part needs the extension and content type the vendor matches
+  on, not only the bytes. And **`capture_budget` stops being able to hold one
+  bytes-per-second**: `EXPORT_BYTES_PER_SECOND` describes PCM, so once a lane
+  sends something else the rate belongs to the lane, which moves all four
+  consumers at once (ADR 0034) — pipeline timeouts, auto-stop, the settings
+  card and the overlay tab.
+- **Validates** — `cargo test`; `npm audit` for the dependency; a **round-trip
+  test that decoding the encoded body returns the sample buffer that went in**,
+  because the one failure this step can cause silently is a lossy encode that
+  degrades every transcription on the lane instead of failing; a **measured
+  compression ratio over real 16 kHz mono speech** before any number on a
+  surface moves; and the pre-flight refusal compared against the **encoded**
+  size, since comparing the WAV would refuse uploads that were going to fit and
+  reproduce ADR 0246's defect with the sign flipped.
+- **Done when** — a capture past 13:39 uploads and transcribes on Groq, and the
+  ceiling the card draws is the one the wire honours.
+
+**What the ceiling becomes is a measurement, not an arithmetic choice.** 25 MiB
+is 26,214,400 bytes and PCM spends 32,000 of them a second, which is the 819 s
+= 13:39 the card now draws. A ratio of 0.75 buys 1092 s = 18:12, 0.60 buys
+1365 s = 22:45, 0.50 buys 1638 s = 27:18. **The number belongs to the dense
+case and not to the average one**: the capture that opened ADR 0246 was 277.0 s
+of speech inside 1066.3 s, so its own ratio would flatter the encoder by
+measuring pauses. Set the ceiling where continuous speech lands, and let the
+pre-flight refusal be the backstop for a recording that beats the estimate.
+
+**Being wrong about the ratio now costs a retry rather than the recording**,
+which is the whole reason this step is safe to take on a measured estimate.
+ADR 0246 made retention unconditional, so a capture the encoder failed to fit
+is still on disk and still re-transcribable from a lane without the limit.
+
+**Two costs to measure rather than assume.** Encoding spends CPU on every
+dictation the lane sends, including an eleven-second one, and this product's
+claim is that dictation is fast — so measure the encode against the upload it
+saves, and if a short capture pays for a long one's headroom, encode only when
+the WAV would not fit. And the transcription timeout is derived from the same
+budget the rate lives in: a ceiling that moves without it moves a recording
+into a new failure mode instead of out of the old one.
+
+**It earns its own ADR.** ADR 0246 states the attachment limit and explicitly
+leaves the format undecided; what the wire carries, which lanes it applies to
+and what the ceiling is set from are decisions this step makes.
 
 ---
 
