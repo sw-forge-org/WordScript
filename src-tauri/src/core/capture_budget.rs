@@ -507,8 +507,14 @@ mod tests {
         );
     }
 
+    /// THE ASSERTION THAT COST A DICTATION (ADR 0246).
+    ///
+    /// This test used to read `a_paid_plan_raises_the_ceiling` and passed for
+    /// months, because it asserted the table rather than the vendor. Measured
+    /// 2026-08-21 on a Developer-tier key, Groq refuses the attachment at the
+    /// same byte on both plans, so the ceiling is the same on both plans.
     #[test]
-    fn a_paid_plan_raises_the_ceiling() {
+    fn a_paid_plan_does_not_raise_the_ceiling() {
         let mut config = AppConfig::default();
         let free = resolve(&config);
 
@@ -517,15 +523,13 @@ mod tests {
         )]);
         let dev = resolve(&config);
 
-        assert!(
-            dev.ceiling_seconds > free.ceiling_seconds,
-            "the developer plan buys a longer recording: {} vs {}",
-            dev.ceiling_seconds,
-            free.ceiling_seconds
+        assert_eq!(
+            dev.ceiling_seconds, free.ceiling_seconds,
+            "the plan buys rate limit, not request size: {} vs {}",
+            dev.ceiling_seconds, free.ceiling_seconds
         );
-        // 100 MiB is past the 30-minute configuration maximum, so that is what
-        // binds instead — and the reason has to say so.
-        assert_eq!(dev.ceiling_reason, CaptureCeilingReason::ConfiguredMaximum);
+        assert_eq!(dev.ceiling_seconds, 819);
+        assert_eq!(dev.ceiling_reason, CaptureCeilingReason::ProviderUploadLimit);
     }
 
     #[test]
@@ -640,19 +644,32 @@ mod tests {
     }
 
     #[test]
-    fn a_paid_plan_moves_the_answer_rather_than_the_question() {
-        let free = upload_capacity("groq", "whisper-large-v3", "", 40 * MIB);
-        let dev = upload_capacity(
-            "groq",
-            "whisper-large-v3",
-            crate::core::providers::groq::GROQ_DEV_TIER_ID,
-            40 * MIB,
-        );
-        assert!(matches!(free, UploadCapacity::TooLarge { .. }));
-        assert!(
-            matches!(dev, UploadCapacity::Fits { .. }),
-            "the developer plan takes 40 MiB, got {dev:?}"
-        );
+    fn a_paid_plan_does_not_move_the_attachment_answer() {
+        let dev_id = crate::core::providers::groq::GROQ_DEV_TIER_ID;
+
+        // The boundary the rule draws, from both sides, on both plans.
+        for plan in ["", dev_id] {
+            assert!(
+                matches!(
+                    upload_capacity("groq", "whisper-large-v3", plan, 25 * MIB),
+                    UploadCapacity::Fits { .. }
+                ),
+                "25 MiB answered 200 on plan {plan:?}"
+            );
+            assert!(
+                matches!(
+                    upload_capacity("groq", "whisper-large-v3", plan, 25 * MIB + 1),
+                    UploadCapacity::TooLarge { .. }
+                ),
+                "one byte past the attachment limit is refused on plan {plan:?}"
+            );
+        }
+
+        // The size that was actually recorded, refused and deleted.
+        assert!(matches!(
+            upload_capacity("groq", "whisper-large-v3", dev_id, 34_108_638),
+            UploadCapacity::TooLarge { .. }
+        ));
     }
 
     #[test]

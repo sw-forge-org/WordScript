@@ -128,7 +128,9 @@ separate and stays the owner's question.
 ### Groq
 
 Source: `console.groq.com/docs/models`, `/speech-to-text`, `/text-to-speech`,
-read 2026-08-11. The only cloud lane the runtime integrates.
+read 2026-08-11; the attachment ceiling **measured** 2026-08-21 because the
+documented figure and the deployed gateway disagree -- see below. The only
+cloud lane the runtime integrates.
 
 | Job | Model | Notes |
 | --- | --- | --- |
@@ -144,9 +146,29 @@ read 2026-08-11. The only cloud lane the runtime integrates.
   `/audio/translations`, one file in, one result out. **No websocket, no
   `stream=true`, no partial results.** This is the finding that decides where a
   streaming recogniser can live at all.
-- File size ceiling is **25 MB on the free tier, 100 MB on dev**. Minimum audio
+- **The attachment ceiling is 25 MiB and no plan raises it.** Measured
+  2026-08-21 against a Developer-tier key -- the same response carried
+  `x-ratelimit-limit-audio-seconds: 400000`, so the account was paid while the
+  upload was refused:
+
+  | Attachment bytes | Answer |
+  | --- | --- |
+  | 25,165,824 (24 MiB) | `200` |
+  | **26,214,400 (25 MiB)** | **`200`** |
+  | **26,738,688 (25.5 MiB)** | **`413` `request_too_large`** |
+  | 27,262,976 (26 MiB) | `413` `request_too_large` |
+  | 34,108,638 (a real 17:46 capture) | `413` `request_too_large` |
+
+  The documented *25 MB free / 100 MB dev* is a **file**-size figure. The same
+  page caps the **attachment** at 25 MB and names the `url` parameter as the way
+  past it, and `url` needs hosted audio, which a local-first product does not
+  have. Multipart is the only shape this client sends, so 25 MiB is the only
+  number that binds. Deriving a recording ceiling from the plan instead is the
+  defect [ADR 0246](decisions/0246-a-failed-transcription-keeps-its-audio-and-a-plan-does-not-raise-an-attachment-limit.md) records.
+- At 16 kHz mono i16 that ceiling is **819 s = 13:39** of WAV. Minimum audio
   0.01 s; minimum billing 10 s. Accepted: FLAC, MP3, MP4, MPEG, MPGA, M4A, OGG,
-  WAV, WebM.
+  WAV, WebM -- **FLAC is the one that buys minutes back**, and Groq's own page
+  recommends it for exactly this reason.
 - **Language is a hint, not a detection.** Supplying ISO-639-1 improves accuracy
   and latency; automatic detection is not documented as a feature.
 - **Voice covers English and Saudi Arabic and nothing else.** A German-English

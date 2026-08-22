@@ -160,7 +160,7 @@ describe("Privacy & Data, wired", () => {
 
   /**
    * ADR 0185, the other half. The screen recited ADR 0039's rule — seven days,
-   * twenty files — and could not say whether anything was under it, which is
+   * four gigabytes — and could not say whether anything was under it, which is
    * the question a privacy screen is actually opened with. A raw WAV of
    * everything the microphone heard is the most sensitive thing this product
    * holds, so the count is read from the runtime and never assumed.
@@ -173,7 +173,7 @@ describe("Privacy & Data, wired", () => {
             bytes: 0,
             oldest_age_ms: null,
             max_age_days: 7,
-            max_files: 20,
+            max_bytes: 4_000_000_000,
             directory: "/tmp/ws",
           }
         : undefined,
@@ -196,7 +196,7 @@ describe("Privacy & Data, wired", () => {
           bytes: 4_200_000,
           oldest_age_ms: 2 * 24 * 3_600_000,
           max_age_days: 7,
-          max_files: 20,
+          max_bytes: 4_000_000_000,
           directory: "/tmp/ws",
         };
       }
@@ -206,7 +206,7 @@ describe("Privacy & Data, wired", () => {
           bytes: 0,
           oldest_age_ms: null,
           max_age_days: 7,
-          max_files: 20,
+          max_bytes: 4_000_000_000,
           directory: "/tmp/ws",
         };
       }
@@ -558,7 +558,7 @@ describe("Privacy & Data · which collection, and who reads it", () => {
     const audio = screen.getByText("Audio from a failed dictation").closest(".ws-card");
     expect(audio).not.toBeNull();
     const inAudio = within(audio as HTMLElement);
-    expect(inAudio.getByText("7 days · 20 files")).toBeInTheDocument();
+    expect(inAudio.getByText("7 days · 4.0 GB")).toBeInTheDocument();
     expect(inAudio.getByText("On this machine now")).toBeInTheDocument();
 
     expect(

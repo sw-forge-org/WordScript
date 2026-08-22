@@ -152,7 +152,7 @@ function statusFor(args: unknown, base: Record<string, unknown> = STATUS) {
 
 const TIERS = [
   { id: "free", label: "Free — 25 MiB per request", max_audio_bytes: 26_214_400, default: true },
-  { id: "dev", label: "Developer — 100 MiB per request", max_audio_bytes: 104_857_600, default: false },
+  { id: "dev", label: "Developer — 25 MiB per request, higher rate limits", max_audio_bytes: 26_214_400, default: false },
 ];
 
 beforeEach(() => {
@@ -342,7 +342,7 @@ describe("AI Models, wired", () => {
     const plan = (await screen.findByLabelText("Account plan")) as HTMLSelectElement;
     expect([...plan.options].map((option) => option.textContent)).toEqual([
       "Free — 25 MiB per request",
-      "Developer — 100 MiB per request",
+      "Developer — 25 MiB per request, higher rate limits",
     ]);
     await userEvent.selectOptions(plan, "dev");
     /* UNDER THE VENDOR, NOT BESIDE IT (ADR 0167). The whole map is written
@@ -1477,7 +1477,7 @@ describe("AI Models, choosing the connection", () => {
       expect(card().getByText("Standard — 25 MiB per request")).toBeInTheDocument(),
     );
     expect(card().queryByLabelText("Account plan")).not.toBeInTheDocument();
-    expect(card().queryByText("Developer — 100 MiB per request")).not.toBeInTheDocument();
+    expect(card().queryByText("Developer — 25 MiB per request, higher rate limits")).not.toBeInTheDocument();
   });
 
   /**

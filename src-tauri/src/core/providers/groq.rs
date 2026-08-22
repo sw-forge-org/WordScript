@@ -52,8 +52,22 @@ const GROQ_SPEECH_TURBO_ROW: &str = "groq-speech-turbo";
 const GROQ_SPEECH_QUALITY_ROW: &str = "groq-speech-large-v3";
 const DEFAULT_TIMEOUT_MS: u64 = 55_000;
 const DEFAULT_MAX_RETRIES: u8 = 2;
-const GROQ_FREE_TIER_MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
-const GROQ_DEV_TIER_MAX_AUDIO_BYTES: usize = 100 * 1024 * 1024;
+/// The largest multipart attachment `POST /openai/v1/audio/transcriptions`
+/// accepts, and **no plan raises it**.
+///
+/// Measured 2026-08-21 against a Developer-tier key, both sides of the
+/// boundary: 26_214_400 bytes answered `200`, 26_738_688 answered `413`
+/// `request_too_large`. The same response carried
+/// `x-ratelimit-limit-audio-seconds: 400000`, so the account was on the paid
+/// plan while the attachment was refused.
+///
+/// Groq documents 25 MB free and 100 MB developer for a *file*, and separately
+/// that the attachment is capped at 25 MB with the `url` parameter as the way
+/// past it. The second sentence is the one that binds every request this
+/// client sends, because a multipart body is the only shape it has. Deriving
+/// the ceiling from the plan instead is what let a 17:46 capture be recorded,
+/// refused at 32.5 MiB and deleted (ADR 0246).
+const GROQ_ATTACHMENT_MAX_AUDIO_BYTES: usize = 25 * 1024 * 1024;
 
 /// This lane's transport error. **The type is shared and the wording is not** —
 /// every message it carries names `Groq`, because the first question about a
@@ -267,16 +281,6 @@ async fn transcribe_audio_file(
 
     validate_audio_upload_size(&file_name, audio_bytes.len())
         .map_err(ProviderCommandError::from)?;
-
-    if audio_bytes.len() > GROQ_FREE_TIER_MAX_AUDIO_BYTES {
-        runtime_log::record(format!(
-            "[WordScript] Groq transcription upload warning file={} size={} free_tier_limit={} dev_tier_limit={}",
-            file_name,
-            format_audio_size(audio_bytes.len()),
-            format_audio_size(GROQ_FREE_TIER_MAX_AUDIO_BYTES),
-            format_audio_size(GROQ_DEV_TIER_MAX_AUDIO_BYTES),
-        ));
-    }
 
     let audio_bytes_len = audio_bytes.len();
     let plan = TranscriptionPlan {
@@ -562,9 +566,10 @@ fn annotate_transcription_error(
     GroqProviderError {
         kind: ProviderErrorKind::InvalidRequest,
         message: format!(
-            "Groq rejected the audio upload for '{}' because {} exceeds the request size limit. Groq speech-to-text is limited by file size, not only by recording minutes: free tier allows up to 25 MiB per uploaded file and dev tier up to 100 MiB. Use a shorter recording, a lower-bandwidth export, or a hosted audio URL for larger files.",
+            "Groq rejected the audio upload for '{}' because {} exceeds the attachment limit of {}, which every Groq plan shares. Shorten the recording or transcribe it on another lane.",
             file_name,
             format_audio_size(audio_bytes_len),
+            format_audio_size(GROQ_ATTACHMENT_MAX_AUDIO_BYTES),
         ),
         status: error.status,
         retry_after_seconds: error.retry_after_seconds,
@@ -575,17 +580,17 @@ fn validate_audio_upload_size(
     file_name: &str,
     audio_bytes_len: usize,
 ) -> Result<(), GroqProviderError> {
-    if audio_bytes_len <= GROQ_DEV_TIER_MAX_AUDIO_BYTES {
+    if audio_bytes_len <= GROQ_ATTACHMENT_MAX_AUDIO_BYTES {
         return Ok(());
     }
 
     Err(GroqProviderError {
         kind: ProviderErrorKind::InvalidRequest,
         message: format!(
-            "Groq cannot accept '{}' because {} exceeds the maximum uploaded audio size of {}. Provide the audio through a hosted URL or shorten the recording before upload.",
+            "Groq cannot accept '{}' because {} exceeds the {} attachment limit. No Groq plan raises that limit for a multipart upload — the Developer plan's larger file size applies to the hosted-URL path this client does not use. Shorten the recording, or transcribe this one on a lane without the limit.",
             file_name,
             format_audio_size(audio_bytes_len),
-            format_audio_size(GROQ_DEV_TIER_MAX_AUDIO_BYTES),
+            format_audio_size(GROQ_ATTACHMENT_MAX_AUDIO_BYTES),
         ),
         status: Some(StatusCode::PAYLOAD_TOO_LARGE.as_u16()),
         retry_after_seconds: None,
@@ -595,23 +600,26 @@ fn validate_audio_upload_size(
 pub const GROQ_FREE_TIER_ID: &str = "free";
 pub const GROQ_DEV_TIER_ID: &str = "dev";
 
-/// Groq's plans, and the upload each one buys.
+/// Groq's plans, and the upload each one buys — which is the same upload.
 ///
-/// The two limits were already in this file as the thresholds the upload
-/// validator checks; stating them as plans is what lets a paying account record
-/// to its real ceiling instead of the free one.
+/// **The plan buys rate limit, not request size.** Both rows carry the
+/// attachment limit because the measurement in
+/// `GROQ_ATTACHMENT_MAX_AUDIO_BYTES` found the paid plan refused at the same
+/// byte as the free one. The row that claimed 100 MiB was the one a 30-minute
+/// ceiling was derived from, and a ceiling that a provider will not honour is
+/// worse than a smaller one it will.
 fn tiers() -> Vec<ProviderTier> {
     vec![
         ProviderTier {
             id: GROQ_FREE_TIER_ID.to_string(),
             label: "Free — 25 MiB per request".to_string(),
-            max_audio_bytes: GROQ_FREE_TIER_MAX_AUDIO_BYTES as u64,
+            max_audio_bytes: GROQ_ATTACHMENT_MAX_AUDIO_BYTES as u64,
             default: true,
         },
         ProviderTier {
             id: GROQ_DEV_TIER_ID.to_string(),
-            label: "Developer — 100 MiB per request".to_string(),
-            max_audio_bytes: GROQ_DEV_TIER_MAX_AUDIO_BYTES as u64,
+            label: "Developer — 25 MiB per request, higher rate limits".to_string(),
+            max_audio_bytes: GROQ_ATTACHMENT_MAX_AUDIO_BYTES as u64,
             default: false,
         },
     ]
@@ -633,9 +641,8 @@ fn capture_limits(tier_id: &str) -> ProviderCaptureLimits {
         max_audio_bytes: Some(tier.max_audio_bytes),
         realtime_factor: None,
         detail: format!(
-            "the {} upload size on your {} plan",
+            "the {} attachment limit every Groq plan shares",
             format_upload_limit(tier.max_audio_bytes as usize),
-            tier.id,
         ),
     }
 }
@@ -901,11 +908,10 @@ mod tests {
         assert!(matches!(error.kind, ProviderErrorKind::InvalidRequest));
         assert!(error.message.contains("capture-2.wav"));
         assert!(error.message.contains("34.6 MiB (36284708 bytes)"));
-        assert!(error.message.contains("25 MiB"));
-        assert!(error.message.contains("100 MiB"));
+        assert!(error.message.contains("25.0 MiB (26214400 bytes)"));
         assert!(error
             .message
-            .contains("file size, not only by recording minutes"));
+            .contains("which every Groq plan shares"));
     }
 
     #[test]
@@ -926,14 +932,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_audio_above_documented_max_upload_size() {
-        let error = validate_audio_upload_size("capture-oversize.wav", 120 * 1024 * 1024)
-            .expect_err("oversized uploads should be rejected before the request");
+    fn the_attachment_limit_is_the_boundary_the_measurement_found() {
+        validate_audio_upload_size("capture-at-the-limit.wav", 26_214_400)
+            .expect("26_214_400 bytes answered 200 on 2026-08-21");
+
+        let error = validate_audio_upload_size("capture-over-the-limit.wav", 26_738_688)
+            .expect_err("26_738_688 bytes answered 413 request_too_large on the same key");
 
         assert!(matches!(error.kind, ProviderErrorKind::InvalidRequest));
         assert_eq!(error.status, Some(StatusCode::PAYLOAD_TOO_LARGE.as_u16()));
-        assert!(error.message.contains("capture-oversize.wav"));
-        assert!(error.message.contains("120.0 MiB"));
-        assert!(error.message.contains("100.0 MiB"));
+        assert!(error.message.contains("capture-over-the-limit.wav"));
+        assert!(error.message.contains("25.5 MiB (26738688 bytes)"));
+        assert!(error.message.contains("25.0 MiB (26214400 bytes)"));
     }
 }

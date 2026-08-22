@@ -163,9 +163,10 @@ import type { PartlyWiredScreenProps, WorkspaceRuntime } from "./props";
  */
 
 /**
- * THE LONGEST RECORDING THIS LANE ACCEPTS. Drawn as `~26 min`, which was a
- * plausible number; `resolve_capture_budget` has the real one and it moves with
- * the provider, the account plan and the model (ADR 0034). Reading it here is
+ * THE LONGEST RECORDING THIS LANE ACCEPTS. Drawn as `~13 min`, which is what
+ * Groq's 25 MiB attachment limit buys at 16 kHz mono i16; `resolve_capture_budget`
+ * has the real one and it moves with the provider and the model (ADR 0034,
+ * corrected by ADR 0246 — it does not move with the plan). Reading it here is
  * also what makes this row agree with the identical statement on
  * Profiles → Defaults, which reads the same command — a second derivation in
  * TypeScript is how the two would drift.
@@ -175,7 +176,7 @@ function CeilingBadge() {
   /* Two components rather than one with a conditional hook, and the split is
      load-bearing: the gallery asserts NO runtime state, so it must not reach
      for `resolve_capture_budget` at all. */
-  return wired ? <WiredCeilingBadge /> : <StatusBadge tone="plan">~26 min</StatusBadge>;
+  return wired ? <WiredCeilingBadge /> : <StatusBadge tone="plan">~13 min</StatusBadge>;
 }
 
 function WiredCeilingBadge() {
@@ -451,11 +452,11 @@ function DrawnAccountCard() {
           />
           <Row
             label="Plan"
-            hint="Sets the largest upload, and with it the longest recording."
+            hint="Sets the rate limit. Every plan shares the same upload limit."
             control={
               <DrawnSelect defaultValue="Free — 25 MiB per request" aria-label="Plan">
                 <option>Free — 25 MiB per request</option>
-                <option>Developer — 100 MiB per request</option>
+                <option>Developer — 25 MiB per request, higher rate limits</option>
               </DrawnSelect>
             }
           />
@@ -1746,11 +1747,11 @@ function CloudCredentialRows({
         />
         <Row
           label="Account plan"
-          hint="Sets the largest upload, and with it the longest recording. Stated again where it is spent."
+          hint="Sets the rate limit. Every plan shares the same upload limit."
           control={
             <DrawnSelect defaultValue="Free — 25 MiB per request" aria-label="Account plan">
               <option>Free — 25 MiB per request</option>
-              <option>Developer — 100 MiB per request</option>
+              <option>Developer — 25 MiB per request, higher rate limits</option>
             </DrawnSelect>
           }
         />
@@ -1834,10 +1835,11 @@ function CloudCredentialRows({
  * WHAT THIS MACHINE'S PLAN IS WITH THE VENDOR THE CONNECTION NAMES — or why
  * there is nothing here to set (ADR 0167).
  *
- * **A plan is one thing only: how much audio may go up in one request.** So the
- * row is a control exactly where a vendor sells more than one ceiling, which is
- * what ADR 0038 decided when it declared the plans and which this row did not
- * do: it drew a select with one option for OpenAI, and a permanently disabled
+ * **A plan buys rate limit, and on Groq it does not buy request size** —
+ * measured 2026-08-21, both plans refuse the attachment at the same byte
+ * (ADR 0246). The row is a control where a vendor sells more than one ceiling,
+ * which is what ADR 0038 decided when it declared the plans and which this row
+ * did not do: it drew a select with one option for OpenAI, and a permanently disabled
  * *Reading the provider plans…* for a vendor with none. The second is the worse
  * of the two — a sentence claiming a read is in flight when the runtime has
  * already answered, on a screen whose own rule is that a state it cannot

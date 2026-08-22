@@ -541,8 +541,13 @@ toggle lives per profile
 Relevant external Groq limit for the product path:
 
 - `413 request_too_large` relates to upload size, not only duration.
-- Documented reference values from the current integration: Free `25 MiB`,
-  Dev `100 MiB` per upload.
+- **The attachment limit is `25 MiB` on every plan**, measured 2026-08-21 on a
+  Developer-tier key: `26,214,400` bytes answered `200`, `26,738,688` answered
+  `413`. The documented `100 MiB` is a file-size figure for the hosted-`url`
+  path, which this product does not use. Details and the full boundary table
+  are in [`PROVIDERS.md`](PROVIDERS.md#groq); the derivation is
+  [ADR 0246](decisions/0246-a-failed-transcription-keeps-its-audio-and-a-plan-does-not-raise-an-attachment-limit.md).
+- At 16 kHz mono i16 that is `819 s` = `13:39` of recording.
 
 These values are only part of the product reference insofar as they affect
 the active desktop flow.

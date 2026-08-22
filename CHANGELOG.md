@@ -53,6 +53,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a failed dictation keeps its recording, and the ceiling is the one the provider honours
+
+- **A transcription that fails no longer takes your audio with it.** A 17:46
+  dictation was recorded cleanly, refused by the provider, and deleted six
+  milliseconds later, with nothing left to retry from. Retention had been asking
+  whether the same request would succeed if it were repeated — which is a fact
+  about the request, not about what would be lost. After a failed transcription
+  nothing else survives: there is no transcript, and the recording is the whole
+  of what you said. A failed transcription now keeps its audio whatever failed,
+  so the retry that re-transcribes from it always has something to work with.
+  Every other path — success, an empty result, an abandoned session, an abort —
+  still deletes as before (ADR 0246).
+- **The recording ceiling stops promising minutes the provider will not accept.**
+  Groq's ceiling was computed from the stored plan: 25 MiB on Free, 100 MiB on
+  Developer, which drew a 30-minute ceiling on the settings card. Measured
+  against a Developer-tier key on both sides of the boundary, the upload is
+  capped at 25 MiB on **every** plan — the larger figure belongs to a
+  hosted-file path this app does not use. A plan buys rate limit, not request
+  size, and the rows on AI Models say so. **The Groq dictation ceiling is now
+  13:39**, which is a real loss of minutes and the honest number; the previous
+  one cost the whole recording rather than a retry.
+- **An upload that cannot succeed is refused before it is sent**, at the real
+  limit rather than at a limit nobody had tested, and the message says what to
+  do rather than repeating the provider's wording.
+
+### Changed — kept recordings are bounded by what they weigh
+
+- **The sweep keeps a week or four gigabytes, instead of a week or twenty
+  files.** A file count answers *how many*, which is a question nobody has:
+  twenty one-minute recordings are 38 MiB and twenty at the ceiling are half a
+  gigabyte, so one number meant two very different things and neither was the
+  one that mattered. It also became the wrong bound the moment retention stopped
+  being conditional — an afternoon of failures fills twenty slots easily, and
+  the file a count throws out first is the oldest, which is the one you were
+  meaning to come back to. Privacy & Data states the new bound (ADR 0246, on
+  ADR 0241's shape).
+
 ### Changed — a record states what was decided, and an example is written for its rule
 
 - **Nothing in this repository quotes the owner's dictation any more, and no

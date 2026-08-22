@@ -2405,13 +2405,37 @@ fn capture_temp_dir(config: &NativeCaptureConfig) -> Result<PathBuf, String> {
     Ok(directory)
 }
 
-/// How long a retained capture stays on disk, and how many may pile up.
+/// How long a retained capture stays on disk, and how much may pile up.
 ///
 /// A recording kept for a retry is worth keeping until the retry happens, but
 /// not forever: these are raw WAVs of everything the microphone heard, and an
 /// unbounded directory of them is both a disk problem and a privacy one.
+///
+/// **DAYS ARE THE POLICY, GIGABYTES ARE THE BACKSTOP, FILES ARE NEITHER**
+/// (ADR 0241's rule, applied here by ADR 0246). A count answers *how many*,
+/// which is not a question anybody has: twenty one-minute captures are 38 MiB
+/// and twenty at the ceiling are half a gigabyte, so the same number meant two
+/// different things and neither was the one that mattered. It was also the
+/// wrong bound to hold once a failed transcription always keeps its audio — a
+/// bad afternoon of expired-credential failures reaches twenty files quickly,
+/// and the file it evicts first is the oldest, which is the one somebody has
+/// been meaning to come back to.
 const RETAINED_CAPTURE_MAX_AGE: Duration = Duration::from_secs(7 * 24 * 60 * 60);
-const RETAINED_CAPTURE_MAX_FILES: usize = 20;
+
+/// What the parked captures may cost this disk before the oldest start leaving.
+///
+/// Four gigabytes is about 150 captures at the Groq ceiling, or some two
+/// thousand at this machine's typical dictation length, against a partition
+/// with 227 GB free. Reaching it inside the seven days means transcription has
+/// been failing continuously, which is a fault to notice rather than a quota to
+/// enforce — the age bound is what is meant to bind in a working install.
+///
+/// **Decimal, because the screen that states it is decimal.** Privacy & Data
+/// renders this through `formatStoredSize`, which divides by 1e9 (ADR 0241);
+/// a binary four would be written as four here and read as `4.3 GB` there,
+/// and a bound whose stated value differs from its displayed value is a bound
+/// nobody can check.
+const RETAINED_CAPTURE_CEILING_BYTES: u64 = 4_000_000_000;
 
 /// Whether a path is a capture this app wrote, in the directory it writes to.
 ///
@@ -2500,9 +2524,9 @@ fn retained_captures() -> Vec<(std::time::SystemTime, PathBuf, u64)> {
 
 /// What is actually parked on this machine right now (ADR 0185).
 ///
-/// A RETENTION RULE WITHOUT A READING IS HALF AN ANSWER. "Seven days, twenty
-/// files" states what MAY be kept; the question a privacy screen is opened with
-/// is whether anything IS. Nothing parked is the most reassuring sentence the
+/// A RETENTION RULE WITHOUT A READING IS HALF AN ANSWER. "Seven days, four
+/// gigabytes" states what MAY be kept; the question a privacy screen is opened
+/// with is whether anything IS. Nothing parked is the most reassuring sentence the
 /// screen can print, and it could not print it.
 #[derive(Debug, Clone, Serialize)]
 pub struct RetainedCaptureStatus {
@@ -2513,7 +2537,7 @@ pub struct RetainedCaptureStatus {
     /// and a clock skew between write and read must not produce a future date.
     pub oldest_age_ms: Option<u64>,
     pub max_age_days: u64,
-    pub max_files: usize,
+    pub max_bytes: u64,
     pub directory: String,
 }
 
@@ -2530,7 +2554,7 @@ fn retained_capture_status_now() -> RetainedCaptureStatus {
         bytes: captures.iter().map(|(_, _, bytes)| *bytes).sum(),
         oldest_age_ms,
         max_age_days: RETAINED_CAPTURE_MAX_AGE.as_secs() / (24 * 60 * 60),
-        max_files: RETAINED_CAPTURE_MAX_FILES,
+        max_bytes: RETAINED_CAPTURE_CEILING_BYTES,
         directory: retained_capture_dir().to_string_lossy().to_string(),
     }
 }
@@ -2572,19 +2596,49 @@ pub fn discard_retained_captures() -> Result<RetainedCaptureStatus, String> {
 ///
 /// Failures are logged and swallowed: a sweep that cannot run must never take a
 /// session down with it.
+/// Which captures the sweep takes, in the newest-first order it is given.
+///
+/// Pure, and separate from the deleting, because the age bound and the ceiling
+/// ARE the product's retention promise — a promise no test can reach is one
+/// that drifts, which is how a bound in files survived long enough to threaten
+/// a recording somebody wanted back.
+///
+/// The running total crosses the ceiling at the point where the rest of the
+/// list is the older part, and that part is what leaves. This is what "oldest
+/// first" has to mean once the bound is a size rather than a position.
+fn sweep_plan(now: std::time::SystemTime, captures: &[(std::time::SystemTime, u64)]) -> Vec<bool> {
+    let mut kept_bytes = 0u64;
+    captures
+        .iter()
+        .map(|(modified, bytes)| {
+            let too_old = now
+                .duration_since(*modified)
+                .map(|age| age > RETAINED_CAPTURE_MAX_AGE)
+                .unwrap_or(false);
+            let past_ceiling =
+                !too_old && kept_bytes.saturating_add(*bytes) > RETAINED_CAPTURE_CEILING_BYTES;
+
+            if too_old || past_ceiling {
+                true
+            } else {
+                kept_bytes = kept_bytes.saturating_add(*bytes);
+                false
+            }
+        })
+        .collect()
+}
+
 pub fn prune_retained_captures() {
     let captures = retained_captures();
+    let ages: Vec<(std::time::SystemTime, u64)> = captures
+        .iter()
+        .map(|(modified, _, bytes)| (*modified, *bytes))
+        .collect();
+    let plan = sweep_plan(std::time::SystemTime::now(), &ages);
 
-    let now = std::time::SystemTime::now();
     let mut removed = 0usize;
-    for (index, (modified, path, _)) in captures.iter().enumerate() {
-        let too_old = now
-            .duration_since(*modified)
-            .map(|age| age > RETAINED_CAPTURE_MAX_AGE)
-            .unwrap_or(false);
-        let past_count = index >= RETAINED_CAPTURE_MAX_FILES;
-
-        if (too_old || past_count) && std::fs::remove_file(path).is_ok() {
+    for ((_, path, _), take) in captures.iter().zip(plan) {
+        if take && std::fs::remove_file(path).is_ok() {
             removed += 1;
         }
     }
@@ -2970,6 +3024,50 @@ mod tests {
             trim_leading_trailing_silence(&samples, TRANSCRIPTION_SAMPLE_RATE).len(),
             samples.len()
         );
+    }
+
+    fn ago(seconds: u64) -> std::time::SystemTime {
+        std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(2_000_000_000 - seconds)
+    }
+
+    fn now_for_sweep() -> std::time::SystemTime {
+        std::time::SystemTime::UNIX_EPOCH + Duration::from_secs(2_000_000_000)
+    }
+
+    /// THE BOUND THAT REPLACED A COUNT (ADR 0246).
+    ///
+    /// Twenty-one captures of a minute each are 40 MiB — a rounding error
+    /// against the ceiling, and one file past the bound that used to hold here.
+    /// Every one of them stays.
+    #[test]
+    fn a_run_of_small_captures_is_not_a_reason_to_evict() {
+        let captures: Vec<_> = (0..21).map(|i| (ago(i * 60), 1_920_044)).collect();
+        assert!(sweep_plan(now_for_sweep(), &captures)
+            .iter()
+            .all(|taken| !taken));
+    }
+
+    #[test]
+    fn the_ceiling_is_the_boundary_and_the_older_side_is_what_leaves() {
+        let ceiling = RETAINED_CAPTURE_CEILING_BYTES;
+
+        // Exactly at the ceiling, in two halves: both stay.
+        let exact = vec![(ago(60), ceiling / 2), (ago(120), ceiling / 2)];
+        assert_eq!(sweep_plan(now_for_sweep(), &exact), vec![false, false]);
+
+        // One byte past it: the newest survives, the older one goes.
+        let past = vec![(ago(60), ceiling / 2), (ago(120), ceiling / 2 + 1)];
+        assert_eq!(sweep_plan(now_for_sweep(), &past), vec![false, true]);
+    }
+
+    #[test]
+    fn age_binds_before_size_and_a_swept_file_frees_no_room() {
+        let day = 24 * 60 * 60;
+        let captures = vec![
+            (ago(day), 1_000),          // inside the window
+            (ago(8 * day), 1_000),      // past seven days
+        ];
+        assert_eq!(sweep_plan(now_for_sweep(), &captures), vec![false, true]);
     }
 
     #[test]

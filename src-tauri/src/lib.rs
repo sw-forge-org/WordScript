@@ -2557,13 +2557,15 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     return;
                 }
 
-                // A failure that could succeed on a second attempt keeps its
-                // audio. Deleting it here is what made a timeout permanent: the
-                // history entry has no transcript to retry from, so the
-                // recording — minutes of speech that cost nothing to keep — was
-                // gone before the error finished rendering.
-                keep_audio = error.retryable
-                    || matches!(error.kind, core::providers::ProviderErrorKind::Timeout);
+                // A failed transcription keeps its audio, whatever failed.
+                // The condition here used to ask whether the same request would
+                // succeed if repeated — a property of the request. What decides
+                // is whether anything else survived, and after a transcription
+                // failure nothing else ever does: there is no transcript, and
+                // the capture is the whole of what the user said. Reading it
+                // the old way deleted a 17:46 dictation on a 413, and would
+                // have deleted it just as fast on an expired key (ADR 0246).
+                keep_audio = true;
 
                 let _ = core::history::record_transcription_failure(
                     &pipeline_app_config,

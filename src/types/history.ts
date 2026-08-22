@@ -51,7 +51,7 @@ export interface TranscriptionHistoryStorageStatus {
  *
  *  A RAW RECORDING IS THE MOST SENSITIVE THING THE PRODUCT HOLDS, and until
  *  this shape existed Privacy & Data could only recite the rule — seven days,
- *  twenty files — without saying whether anything was under it. `count: 0` is
+ *  four gigabytes — without saying whether anything was under it. `count: 0` is
  *  the answer the screen is most often opened for.
  *
  *  `oldest_age_ms` is an age rather than a date because the rule it is read
@@ -61,7 +61,7 @@ export interface RetainedCaptureStatus {
   bytes: number;
   oldest_age_ms: number | null;
   max_age_days: number;
-  max_files: number;
+  max_bytes: number;
   directory: string;
 }
 

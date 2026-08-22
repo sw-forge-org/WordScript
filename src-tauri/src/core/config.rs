@@ -2331,9 +2331,11 @@ impl AppConfig {
             active_local_decode,
         );
         // Clamp all timeout fields to technically realistic ranges.
-        // Max recording: 1–30 minutes (60–1800s). Groq free tier caps at
-        // ~25 MiB ≈ 13 min; dev tier at ~100 MiB ≈ 53 min. Local runtime has
-        // no hard limit but RAM-bound. 30 min is the practical ceiling.
+        // Max recording: 1–30 minutes (60–1800s). Groq caps the attachment at
+        // 25 MiB on every plan, which is ~13 min at 16 kHz mono i16 (ADR 0246).
+        // Local runtime has no hard limit but RAM-bound. 30 min is the
+        // configuration ceiling; the provider's is usually lower and binds
+        // first through `capture_budget`.
         self.max_recording_seconds = self.max_recording_seconds.clamp(60, 1800);
         // Silence timeout: 0 (disabled) – 60s. Longer than 60s of silence is
         // not a recording anymore.

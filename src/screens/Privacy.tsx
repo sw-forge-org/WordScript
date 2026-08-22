@@ -64,7 +64,7 @@ import type { WiredScreenProps } from "./props";
  * `normalize_for_runtime`, and no longer anybody's preference.
  *
  * THE THIRD COLLECTION IS AUDIO'S, AND IT IS A CARD RATHER THAN A ROW. ADR 0039
- * keeps a failed capture for seven days or twenty files, and that row sat inside
+ * keeps a failed capture for seven days or four gigabytes, and that row sat inside
  * `Dictation history` — under the very card whose rule is that a card names its
  * collection. A raw WAV is not a history entry. It is also the most sensitive
  * thing this product holds, so the card states what the rule ALLOWS and, since
@@ -781,13 +781,13 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
               control={
                 <StatusBadge tone="plan">
                   {captures
-                    ? `${captures.max_age_days} days · ${captures.max_files} files`
-                    : "7 days · 20 files"}
+                    ? `${captures.max_age_days} days · ${formatStoredSize(captures.max_bytes)}`
+                    : "7 days · 4.0 GB"}
                 </StatusBadge>
               }
             />
-            {/* A RULE WITHOUT A READING IS HALF AN ANSWER. "Seven days, twenty
-                files" says what MAY be kept; the question this screen is opened
+            {/* A RULE WITHOUT A READING IS HALF AN ANSWER. "Seven days, four
+                gigabytes" says what MAY be kept; the question this screen is opened
                 with is whether anything IS — and `Nothing kept` is the most
                 reassuring sentence it can print. The button appears only when
                 there is something to delete, because a door onto an empty
