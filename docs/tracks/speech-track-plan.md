@@ -2062,12 +2062,106 @@ carries the measurement: the multipart attachment is capped at 25 MiB on
   total — a missing self-hosted model id, a missing OpenAI key, and the 413
   above — so there is no evidence for it and none against it either. It is
   worth a reading the next time it happens rather than a theory now.
-- **And the architecture is a meetings answer first.** Turn-per-recording buys
-  a meeting what it needs; a dictation is a different shape — one cleanup pass
-  over one text, one reducer commit (ADR 0018), one history row. With the audio
-  now retained on every failure and a retry that re-transcribes from it, a
-  dictation that overruns is recoverable rather than lost, which is what made
-  the ceiling urgent in the first place.
+- **The architecture is built for meetings, and that is an argument for
+  dictation rather than against it.** The shape observation stands:
+  turn-per-recording is what a meeting needs, while a dictation is one cleanup
+  pass over one text, one reducer commit (ADR 0018) and one history row — and
+  with the audio retained on every failure, a dictation that overruns is now
+  recoverable rather than lost. What it does not settle is cost, and this page's
+  first phrasing — *a meetings answer first* — priced the turn model as though
+  the whole of it were on dictation's bill. **Corrected by the owner,
+  2026-08-22:** the machinery is being built for meetings either way, so what
+  dictation pays is the mapping onto it and not the machinery.
+
+- **The same detector unlocks a second, smaller lever: spend the quota on
+  speech instead of on silence.** Groq's rate limit is denominated in audio
+  seconds and its billing in audio duration, so unlike D4 — which buys request
+  size and nothing else — dropping the pauses out of what is *sent* reduces
+  both. The capture behind ADR 0246 was 277.0 s of speech inside 1066.3 s.
+  **This is not C1 and must not be filed as C1**: turn segmentation cuts one
+  recording into several requests and removes the ceiling, while pause elision
+  keeps one request and makes it cheaper — a two-hour continuous talk still
+  does not fit. What they share is the boundary detector, and nothing else.
+
+  **Four things are true about that detector and they do not point the same
+  way.** It *already exists and already runs on every dictation*:
+  `observe_speech` banks any quiet stretch of `PAUSE_MIN_MS` = 500 ms or longer,
+  in full, at the callback that ends it (ADR 0177). It produces *a scalar and
+  not an interval list*, so the existing records cannot estimate what elision
+  would save — the sum is kept, the distribution is not, and that measurement
+  has to be built before the saving can be named. It lives in `core::capture`,
+  so unlike D4 this **is** held by the step-6 gate and the ordering above
+  applies to it unchanged. And *being wrong costs incomparably more than it does
+  today*: a misread pause currently costs a wrong figure on Home, while the same
+  misread applied to an edit takes a word out of the recording the retry
+  restores from.
+
+  **The design note, so it is not rediscovered: normalise pauses, do not delete
+  them.** A silence is a boundary cue the recogniser reads for punctuation and
+  sentence breaks; splicing speech flush against speech invites run-on output
+  and hallucination at the discontinuity, which is ADR 0130's objection to seams
+  applied to a seam inside a single request. Collapsing each pause to a short
+  fixed gap keeps the cue and still drops most of the bytes. What that costs in
+  accuracy is a measurement nobody here has made.
+
+  **The detector has an owner already, and it is not the upload.** It was built
+  for the Home metric: `speech_seconds` reaches `lib/activity.ts`, which derives
+  the speaking rate and the share of a recording that was pause — a rate that
+  counts a model's words over an open microphone is not a speaking rate
+  (ADR 0177). Elision would make `PAUSE_MIN_MS` = 500 ms serve two consumers
+  whose errors cost different things: tuned for the metric it decides whether a
+  reader's comma counts against their rate, and tuned for the upload it decides
+  what is cut out of a recording. **One constant, two spenders, is ADR 0034's
+  shape** — the threshold belongs to whichever control spends it, and if both
+  do, there are two thresholds.
+
+  **And it reaches the overlay, where the shape it implies has already been
+  tried and rejected.** ADR 0038 shipped the auto-stop tab narrow on purpose:
+  a threshold flash was wrong because the last half minute had nothing on
+  screen, and holding it open for the whole recording was wrong because it put
+  a countdown on screen for ten minutes in which nothing was going to happen.
+  `limitThresholds` is that decision in code — silent until `auto_stop / 4`,
+  capped at 120 s, sharpening to danger inside 30 s.
+
+  **Elision changes the premise that rejection rested on, which is why it is
+  worth re-deciding rather than working around.** A countdown that stalls while
+  you think is not a display of a thing that is not happening; it is a live
+  readout of a budget being spent at a rate that varies with how you speak, and
+  it is informative for the whole recording rather than for its last two
+  minutes. The strongest form is **one clock instead of two, in the window where
+  there are two**: the pill's elapsed `mm:ss` runs for the whole recording, and
+  the tab's remaining `m:ss` joins it only inside the last two minutes. So they
+  coexist for the closing stretch and not before — and it is exactly that
+  stretch the code writes a comment about, saying the padding differs between
+  them so a glance can tell them apart, which is an admission that two time
+  readouts on one overlay are confusable at the moment it matters most.
+
+  Three things constrain it. The first was **stated wrongly here and the owner
+  corrected it, 2026-08-22**: this page claimed local and self-hosted have no
+  remaining to count down from, on the strength of `max_audio_bytes: None`.
+  Reading `ceiling_from_limits` says otherwise. **The local lane is bound, and
+  more tightly than Groq** — `realtime_factor` yields
+  `MAX_TRANSCRIPTION_TIMEOUT_MS / factor` with reason `DecodeBudget`, which at a
+  factor of 2.0 is 300 s against Groq's 819 s. It has a ceiling and therefore a
+  remaining. **Self-hosted really does declare `unbounded()`, and that is an
+  absence of knowledge rather than an absence of a limit**: the lane says so in
+  its own comment — no limit *this lane knows about*, deliberately not a
+  borrowed number, because a guessed ceiling reads as authoritative. A server
+  running a decoder has a limit; this app does not know it. So the fallback a
+  single clock needs is not for an unbounded lane but for an **unknown** one,
+  which is a different sentence on screen: elapsed, plus the fact that no
+  ceiling is known, rather than a countdown from nothing. The stall must
+  be bounded, because a dictation is still spending real seconds against the
+  transcription timeout even while it spends no bytes. And **it must not ship
+  before elision is real**: a timer that appears to stop while the runtime keeps
+  charging wall-clock seconds is not ADR 0020's invisible control but the worse
+  case, a display that contradicts the runtime. If it is built, it supersedes
+  ADR 0038's display half by number.
+
+  Filed as a note rather than a step: while step 6 stands it has no **Requires**
+  it can satisfy, and a step that cannot state its four fields is not ready to
+  start. The overlay half is a surface decision and belongs to whoever owns that
+  surface, not to this track.
 
 ### C2. The runtime mute (ADR 0098)
 
