@@ -1,6 +1,9 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-22 (**a wait is two
+Status: created 2026-07-24, last drift check 2026-08-23 (**a stage figure
+carries the runs it was measured on** while that count is short of the row's
+own runs, because the stage histogram and the total histogram in one row are
+over different populations (ADR 0248); before it **a wait is two
 stages**: the runtime stamps `heard_ms` when the provider returns, so the model
 cut of the turnaround carries the hearing and the mode cut carries the
 rewriting, each on its own histogram and each absent rather than nought where
@@ -1052,6 +1055,11 @@ no account. Entities:
   carried one. **An empty stage histogram means never measured, never nought.**
   A stage median is read from its own histogram; `median(total) -
   median(rewrite)` is not the hearing and no surface may compute it.
+  **And a stage figure carries the run count it rests on** wherever that count
+  is short of the row's own runs (ADR 0248): the two histograms in one row are
+  over different populations from the day the split ships until the last unsplit
+  run leaves the ledger, so printing both figures without both counts invites a
+  subtraction of two medians that were never over the same set.
   `measured_from` maps a field to the first day it was written, so no series
   draws a zero for a period that predates its field; merging takes the EARLIER
   stamp.

@@ -1574,6 +1574,8 @@ that is what a record is for (ADR 0123: one list per fact).
   A failed transcription keeps its audio, and a plan does not raise an attachment limit.
 - [0247](0247-a-wait-is-two-stages-so-the-runtime-measures-both-and-the-metric-detail-states-its-reading-before-it-draws-the-evidence.md):
   A wait is two stages, so the runtime measures both, and every metric detail states its reading before it draws the evidence.
+- [0248](0248-a-stage-figure-carries-the-runs-it-was-measured-on-because-a-partly-measured-column-is-not-a-measured-one.md):
+  A stage figure carries the runs it was measured on, because a partly measured column is not a measured one.
 
 ## Resolved: the number 0011 was used twice
 

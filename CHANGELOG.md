@@ -53,6 +53,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — a stage figure says how many runs it was measured on
+
+- **`heard in 0.5 s` beside `in total 0.9 s` was two medians over two different
+  sets of runs.** The split table had a state for *nothing measured* and a state
+  for *measured*, and none for the one every installation is in the day after
+  the split ships: five runs of a hundred and forty-seven carrying a stage, the
+  rest carrying only a total, both printed on one line with nothing but a hover
+  tooltip to tell them apart. While a row's split is short of its runs the count
+  cell now holds both — `4/137`, `1/6`, `0/2` — and the heading names the column
+  that is thin (`heard in measured on 5 so far`). Both statements delete
+  themselves once the split covers the runs (ADR 0248).
+- **A `—` in the stage column now has a number beside it.** `0/2` says the dash
+  is *never measured* rather than *nothing to measure*, which is the distinction
+  the empty stage histogram exists to preserve.
+- **The per-cause total histogram is guarded against an edited bucket
+  constant**, as its `heard_buckets` sibling in the same struct already was, and
+  a cause row left with no counts by that guard is dropped rather than kept as a
+  name with nothing behind it.
+
 ### Changed — a wait is two stages, and every metric detail says what it is reading before it draws it
 
 - **The turnaround detail no longer stacks two lists of the same number.**

@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-22
+Status: 2026-08-23
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -220,6 +220,11 @@ Status: 2026-08-22
   four metric details opens with its reading in one line rather than closing
   with a paragraph. Nothing on disk holds the split, so the stage columns start
   empty on every installation and are not drawn until a dictation fills them.
+  Once one has, the row prints the run count each figure rests on -- `4/137`
+  beside a rewriting time measured on four of a mode's hundred and thirty-seven
+  runs -- and the heading names the column that is thin, both of which delete
+  themselves when the split covers the runs (ADR 0248). Measured on the
+  reporting machine the day after the split shipped: five of 147.
   While a metric is open the view dots are hidden rather than merely inert, and
   their space is held so nothing above them moves. That view is not persisted:
   the block opens on the remembered one of the two. **The display only spans days the history file can

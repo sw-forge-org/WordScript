@@ -1674,6 +1674,115 @@ which `MetricDetail.test.tsx` grew 11 → 15. `npx tsc --noEmit` clean,
 histograms are still empty in the real ledger, and the new layout has not been
 seen at the workspace's 625 CSS px. Both are the first things to check.
 
+## The record — Stage K verified, 2026-08-23
+
+**Opened by the owner asking for Stage K to be finished rather than reported.**
+Stage K closed the day before with two things named as unverified in its own
+record: no dictation had run against the rebuilt binary, so the stage histograms
+were empty in the real ledger, and the new layout had not been seen at the
+workspace's 625 CSS px. Both were checked. The first passed on the real store;
+the second passed on geometry and failed on what the layout was saying.
+
+Durable form is [ADR 0248](../decisions/0248-a-stage-figure-carries-the-runs-it-was-measured-on-because-a-partly-measured-column-is-not-a-measured-one.md).
+
+### The runtime half verified itself while the session was reading the page
+
+The owner's own dictation of the brief is in the store: `history.jsonl` and
+`activity.json` were both written forty seconds before the first `git status` of
+this session. Five dictations have now run against the Stage K binary, and every
+one of them recorded two figures where the record used to hold one.
+
+| Read from | What it says |
+|---|---|
+| `history.jsonl` | five of 148 records carry a `heard_ms` beside their `turnaround_ms`: 662 of 1095, 292 of 1013, 375 of 747, 526 of 917, 566 of 1139 |
+| `turnaround_causes.<model>.heard_buckets` | one count each at bucket 11, 15, 21, 22 and 26 — exactly `floor(heard / 25)` for those five, against 147 in the total beside it |
+| `mode_transform_causes` | `cleanup` at 14, 15, 17, 22 and `agent` at 28 — exactly `floor((total - heard) / 25)`, and the mode the record names for each run |
+
+The arithmetic closes to the bucket on every run, on both cuts, with no
+rounding left over. **K1 and K2 are measured rather than asserted**, and the
+claim that `heard_ms` is stamped before the staleness check was read off
+`lib.rs` rather than off the ADR: the mark sits above
+`processing_session_still_current`, three lines before the abort returns.
+
+### The layout was right at 625 px and the table was saying something untrue
+
+Rendered over this machine's own `config.json` and `activity.json` behind a
+stubbed `__TAURI_INTERNALS__`, at 625 CSS px, all four details fit with no
+horizontal scroll and the figures line up down their columns. What the
+turnaround detail printed:
+
+| Cut | Row | runs | stage | in total |
+|---|---|---|---|---|
+| by model | `whisper-large-v3-turbo` | 147 | heard in **0.5 s** | 0.9 s |
+| by mode | `Cleanup` | 137 | rewrote in **0.4 s** | 0.9 s |
+| by mode | `Draft` | 6 | rewrote in **0.7 s** | 1.0 s |
+| by mode | `Rewrite` | 2 | — | 1.3 s |
+
+**0.5 s is the middle of five runs and 0.9 s the middle of a hundred and
+forty-seven, printed on one line as though they shared a denominator.** A
+reader subtracts them and gets a rewriting time that is wrong twice over —
+medians do not subtract, and these two are not over the same set. `Draft`'s
+0.7 s is a single dictation carrying the same weight as a figure over 137. The
+only thing on the screen that said so was a `title` attribute, which speaks on
+hover and to nobody reading the table.
+
+This is Stage K's own defect one level down. Stage K found two figures that
+looked comparable and were one measurement; this found two figures that look
+comparable and are over two populations.
+
+### The state that was missing had no fixture, and the fixture builder said so
+
+Every case written for the split table used a row whose split covered all of its
+runs or none of them. The builder's own doc comment calls the empty case *the
+state every existing installation is in* — and the partly filled one, which is
+the state every installation is in one dictation later, had no case in either
+runtime. **A fixture that covers only the endpoints of a range tests the two
+states a product passes through and not the one it lives in.**
+
+### What the table prints now
+
+The count cell holds both populations while they differ — `4/137`, `1/6`,
+`0/2` — and collapses to a plain count when they stop differing. The heading
+gains one clause naming the column that is thin, for the cut on screen:
+`The same 147 waits · heard in measured on 5 so far`. No prose was added; a
+count in a column of counts is not a new small text, which is the standing
+objection this block is under. `0/2` beside a `—` is also what finally says
+which of *never measured* and *nothing to measure* the dash means.
+
+The two self-deleting statements on this block now leave at different times: ADR
+0247's sentence goes when the first split lands, this clause when the last
+unsplit run leaves the ledger.
+
+### One asymmetry in the Rust, found while auditing the same file
+
+`migrate` guards every histogram on the shared axis against a bucket constant
+edited in the present — and ADR 0247 added `heard_buckets` to that walk while
+leaving `buckets`, the total sitting in the same struct, out of it. One field of
+a pair defended, its sibling not. Both are guarded now, and a cause row emptied
+by the guard is dropped the way the mode cuts beside it have been since ADR 0243.
+
+### Two of Stage K's own counts were understated, and this is how much
+
+Stage K's record and its commit message both report **Rust 1043 passed**. The
+tree at that commit runs **1045 passed, 7 ignored, 1052 cases listed** — read
+from `cargo test -- --list` rather than from the tail of a run. The frontend
+figure was right: 969 over 58 files, and it is 971 now. **Nothing in the code
+depended on it**; what it cost is that the next session's baseline was two low,
+which is exactly the kind of drift the page's own rule 4 is about.
+
+### Counts, measured at this session's own end
+
+Rust **1046 passed**, 7 ignored, over 1053 listed — one case added, for a row
+holding more runs than it holds splits. Frontend **971 passed over 58 files**,
+of which `MetricDetail.test.tsx` grew 15 → 17. `npx tsc --noEmit` clean,
+`npm run build` clean but for the pre-existing chunk-size warning. The runtime
+log stood at 1,584 lines before the Rust pass and no capture measurement was
+running.
+
+**Verified rather than claimed:** the split arithmetic against the real store,
+the stamp's position in `lib.rs`, and the four detail views rendered at 625 CSS
+px both before and after the repair. **Not verified:** nothing on this stage.
+
 ## The sequence
 
 **Stage A — the surface, on what already reads.** Nothing here is blocked.
@@ -1992,13 +2101,15 @@ promised a stage the record had never held.
 
 **Built in the order K1, K2, K3** — the measurement first, because a surface
 that states a stage before the runtime measures one is the defect this stage
-exists against.
+exists against. **K4 was added the next day**, when the first real dictations
+put the table into the state neither of K3's two shapes covered.
 
 | Step | What | Done means |
 |---|---|---|
 | **K1 · done** | **The runtime measures where the wait went.** `TurnaroundFacts { total_ms, heard_ms }` replaces the loose `Option<u64>` on the history, session and insert paths; `heard_ms` is stamped when the provider returns and before the staleness check, so an aborted run measures the same interval; the rewriting is the remainder, derived once in the ledger funnel | A dictation records two figures where it recorded one, on every path including the parked preview commit. The pair is one parameter, so the two durations cannot be swapped silently |
 | **K2 · done** | **Each cut of the turnaround carries the stage it owns.** `LedgerCause.heard_buckets` inside `turnaround_causes`, and `mode_transform_causes` beside `mode_causes` — same 400-bucket 25 ms axis, same merge rule, written only where a split was measured. `LEDGER_SCHEMA` stays 3: the new fields are `#[serde(default)]` and a developer build converts nothing (ADR 0244) | A stage median is read off its own histogram. An empty stage histogram means never measured and never nought, and the two states cannot collapse |
 | **K3 · done** | **One table with named columns, and a lead line above it.** `Which model heard it` and `What the mode cost` are one `Split` block with a `by model` / `by mode` toggle and the columns `runs`, `heard in` / `rewrote in`, `in total`. Every `ws-metric-note` paragraph is deleted, every chart takes a `title`, and each of the four details opens with a figure-first sentence and one middle-dot line of qualifiers | The screen's subject is legible without reading a paragraph, and the reader is never asked to work out whether one figure is inside another. Where no split has been measured yet, the stage column is not drawn and one self-deleting sentence says when it will be |
+| **K4 · done** | **A stage figure carries the runs it was measured on.** While a row's split is short of its runs the count cell holds both — `4/137`, `1/6`, `0/2` — and the heading names the column that is thin for the cut on screen; both collapse away when the split covers the runs. Found by rendering the real ledger at 625 CSS px five dictations after K1 shipped, and neither runtime had a case for the partly measured state (ADR 0248) | Two figures on one line are never read as sharing a denominator when they do not, and a `—` in the stage column has a count beside it saying which of *never measured* and *nothing to measure* it is |
 
 **What this stage does NOT do.** It writes no migration and no backfill. The
 stage histograms start empty on every installation including this one, because
@@ -2116,24 +2227,31 @@ and `not drawn`, and so is a period before its field's `measured_from`.**
 
 **Stage A, and Stage C through Stage K, are all closed** — A1 to A11, C1 to C11,
 D1 to D4, E1 to E5, F1 to F4, G1 to G6, H1 to H5, I1 to I7, J1 to J5 and K1 to
-K3 are landed, C12 stays withdrawn. Stage H, I, J and K were each opened by the
+K4 are landed, C12 stays withdrawn. Stage H, I, J and K were each opened by the
 owner using what the session before it landed, and each was built the same day;
 Stage J was opened within the hour Stage I closed, and Stage K the day after,
-each by reading the screen the stage before it had just shipped. Read the record
-sections above before anything else, in particular the A3/A4/A5 one, *What the
-readings actually measure*, and the Stage C, D, E, G, H, I, J and K ones.
+each by reading the screen the stage before it had just shipped. **K4 is the
+exception and it is the useful one**: it came from an owner asking for Stage K
+to be FINISHED rather than reported, and the two lines Stage K had labelled *not
+verified* turned out to hold a shipped defect. Read the record sections above
+before anything else, in particular the A3/A4/A5 one, *What the readings
+actually measure*, and the Stage C, D, E, G, H, I, J and K ones — the last of
+which is now two, the stage and its verification.
 
-**Stage I's first section, Stage J's first two and Stage K's first are the ones
-to read even if you read nothing else.** Between them: four of the eight items
-this page raised misdescribed the code they pointed at, a row shipped with a
-label that did not match what it measured, a source comment asserted a behaviour
-the surface did not have, and two headings named a stage the record had never
-held. **Everything on this page is evidence and nothing on it is a source.**
+**Stage I's first section, Stage J's first two and both of Stage K's first ones
+are the ones to read even if you read nothing else.** Between them: four of the
+eight items this page raised misdescribed the code they pointed at, a row
+shipped with a label that did not match what it measured, a source comment
+asserted a behaviour the surface did not have, two headings named a stage the
+record had never held, and two figures over different populations were printed
+on one line as though they shared a denominator. **Everything on this page is
+evidence and nothing on it is a source** — including its counts: Stage K
+recorded 1043 Rust cases where the tree at its own commit ran 1045.
 
 Work in the repo root on `main`. Do not create a branch. **Seven other tracks
 work in the same tree** — see [`../IMPLEMENTATION.md`](../IMPLEMENTATION.md) — so
 run `git status` and `git log --oneline -5` before you start, and stage your own
-paths. Never `git add -A`. **0248 is the next free ADR number unless the tree
+paths. Never `git add -A`. **0249 is the next free ADR number unless the tree
 says otherwise — grep, and grep again immediately before you write the file.**
 Stage D cited 0234 twelve times in source and lost the number to another track
 while the session was running; Stage G was grepped clean at its start, cited 0238
@@ -2141,7 +2259,8 @@ across 14 files over the hours that followed, and lost it anyway, at a cost of a
 `sed` over 14 files. Stage E, F, H, I and J all wrote the ADR file the moment the
 number was known and none of them lost it; Stage K did not, drafted against
 0245 while 0245 and 0246 were already on disk, and paid for it with a rename
-across 22 citations. The rule is not *grep first*, it is
+across 22 citations. K4 wrote 0248 to disk before it wrote a line of the
+decision and kept it. The rule is not *grep first*, it is
 **write the file the moment you know you need a number.**
 
 ### What is left is Stage B, and it is still not yours to start
@@ -2165,15 +2284,18 @@ say, and every one of them is a PROPOSAL rather than a task.
 ### Five things to raise
 
 1. **The second clock inside the turnaround is on the record — ANSWERED by
-   Stage K.** The clock still stops when the TEXT exists (ADR 0181), but the
-   interval is now split: `heard_ms` is stamped when the provider returns and
-   the rewriting is the remainder (ADR 0247). What this item predicted held —
-   it needed a second timestamp on the record, and it changed what existing
-   records can be compared against, which is why the stage histograms start
-   empty everywhere rather than being backfilled. **What is still open is the
-   third clock**: the recogniser-output repair between the two stages is
-   counted with the mode, on the argument that it is sub-millisecond string
-   work. Nothing has measured that argument.
+   Stage K, and measured since.** The clock still stops when the TEXT exists
+   (ADR 0181), but the interval is now split: `heard_ms` is stamped when the
+   provider returns and the rewriting is the remainder (ADR 0247). What this
+   item predicted held — it needed a second timestamp on the record, and it
+   changed what existing records can be compared against, which is why the stage
+   histograms start empty everywhere rather than being backfilled. K4 read the
+   first five split runs off the real store and the arithmetic closes to the
+   bucket on both cuts. **What is still open is the third clock**: the
+   recogniser-output repair between the two stages is counted with the mode, on
+   the argument that it is sub-millisecond string work. Nothing has measured
+   that argument, and the split now on the record cannot settle it — the repair
+   sits on the mode's side of the one mark the runtime takes.
 2. **`LEDGER_DAY_ROWS` is 800 and nothing measured says it should be.** ADR 0243
    changed what the number means — the calendar's working set, not a bound on the
    product's memory — and deliberately did not change its value in the same
@@ -2252,8 +2374,14 @@ record is in the Stage H section.
    the same rule one step up — render the chart and look at it**, **and Stage E
    is one step up again: render the REAL workspace over the dev server with
    `__TAURI_INTERNALS__` stubbed and this machine's own `config.json`,
-   `activity.json` and `history.json` behind it.** Note that as of Stage J this
-   machine's store is EMPTY, so that technique needs the owner to dictate first.
+   `activity.json` and `history.jsonl` behind it.** Stage J emptied this
+   machine's store and it has refilled: 148 records and 147 counted waits as of
+   K4, which is enough for every reading on the block to draw. **K4 is the
+   fourth defect on this block that a green suite could not see and a rendered
+   page could**, and the recipe is fifty lines: stub `load_app_config`,
+   `read_activity_ledger` and the handful of status commands, resolve unknown
+   ones to a rejected promise so a missing stub is visible rather than silent,
+   disable animations, and set the viewport to 625 CSS px.
 9. **A migration runs on read and persists on the next write**, so a file checked
    too early still says the old schema and nothing is wrong. Neither
    `activity.json` nor `history.json` has ever had a test for its own
@@ -2266,6 +2394,11 @@ record is in the Stage H section.
     **And a case that fails because the behaviour was deliberately removed gets
     REWRITTEN, not deleted**: in Stage J two such rewrites caught a defect in the
     deletion itself, which deleting them would have shipped.
+    **Where a case does earn its place, its fixture may not be only the
+    endpoints.** Every case for the split table drew a row whose split covered
+    all of its runs or none, both green, and the state between them — the only
+    one a real installation is in — shipped a figure the screen could not
+    support. A range with two ends has three states.
 12. **An `Accepted` ADR is not a closed door.** Said in as many words on
     2026-08-19: a decision recorded as fixed is not fixed, and it gets revisited
     the moment something better exists. Stage I overruled ADR 0176's
@@ -2275,8 +2408,11 @@ record is in the Stage H section.
 
 **Validation:** `npm test`, `npm run build`, and `cd src-tauri && cargo test` if
 Rust moved. Quote the counts as a delta against the baselines you measure at the
-start. Baselines at the close of Stage K: **969 frontend cases over 58 files**
-and **1043 Rust cases**, with `npx tsc --noEmit` clean. **They are a sanity check
+start. Baselines at the close of K4: **971 frontend cases over 58 files** and
+**1046 Rust cases passing of 1053 listed**, 7 ignored, with `npx tsc --noEmit`
+clean. **Read the Rust figure off `cargo test -- --list` and not off the tail of
+a run**: Stage K recorded 1043 twice, in its record and in its commit message,
+against a tree that ran 1045. **They are a sanity check
 and not a baseline**, because seven other tracks write into this tree: Stage F
 closed with three of its five new Rust cases and one of its three new frontend
 cases belonging to one of them, counted as its own until the log said otherwise.
