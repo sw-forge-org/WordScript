@@ -1,6 +1,12 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-20 (**a draft does the work
+Status: created 2026-07-24, last drift check 2026-08-22 (**a wait is two
+stages**: the runtime stamps `heard_ms` when the provider returns, so the model
+cut of the turnaround carries the hearing and the mode cut carries the
+rewriting, each on its own histogram and each absent rather than nought where
+no split was measured; the metric detail states its reading in one lead line
+and draws one table with named columns instead of two tables of the same
+number under two headings (ADR 0247); before it **a draft does the work
 its instruction asks for**: the output contract stops reading "never answer"
 as "never derive", so an instruction that asks the mode to solve, find, rank or
 answer gets the worked-out result rather than its own words back; an echo is
@@ -1037,6 +1043,15 @@ no account. Entities:
   rows summing (ADR 0240, ADR 0243); and `mode_causes`, the same runs keyed by
   `effective_mode`. The two cause maps are **two one-dimensional cuts of one
   total and never a cross-tab.**
+  **Each cut also owns one stage of that total** (ADR 0247): a
+  `turnaround_causes` row carries `heard_buckets`, the same 400-bucket axis for
+  the hearing alone, and `mode_transform_causes` mirrors `mode_causes` with the
+  rewriting alone. The runtime measures the split once per dictation --
+  `heard_ms` is stamped the moment the provider returns, the rewriting is the
+  remainder up to delivery -- and a stage bucket is written ONLY for a run that
+  carried one. **An empty stage histogram means never measured, never nought.**
+  A stage median is read from its own histogram; `median(total) -
+  median(rewrite)` is not the hearing and no surface may compute it.
   `measured_from` maps a field to the first day it was written, so no series
   draws a zero for a period that predates its field; merging takes the EARLIER
   stamp.

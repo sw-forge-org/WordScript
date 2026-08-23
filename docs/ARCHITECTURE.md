@@ -256,7 +256,15 @@ The active product core lives in `src-tauri/src/core/`.
   cuts of the turnaround — `turnaround_causes` by `provider/model`, bounded at 64
   keys with an `other` row so the rows always sum, and `mode_causes` by
   `effective_mode`, which needs no bound because it is an enum (ADR 0240,
-  ADR 0243). `measured_from` records the first day each field was written, and a
+  ADR 0243). **Each cut also carries the stage it owns**, on a histogram of its
+  own on the same axis: `heard_buckets` inside a `turnaround_causes` row is how
+  long that model spent hearing, and `mode_transform_causes` mirrors
+  `mode_causes` with how long that mode spent rewriting (ADR 0247). A stage
+  bucket is written only for a run whose split was measured, so an empty stage
+  histogram means never measured and never nought — and a stage median is read
+  off its own histogram, because `median(total) - median(rewrite)` is not the
+  hearing and medians do not subtract.
+  `measured_from` records the first day each field was written, and a
   series may not draw a period that begins before its field's stamp.
   The file is written whole through a temporary and a rename, minified, on every
   dictation — it is a bounded accumulator with no second copy to replay from,

@@ -1570,6 +1570,10 @@ that is what a record is for (ADR 0123: one list per fact).
   There is no legacy in a developer build, so the retired tier, the prehistory stamp, the schema migrations and the duplicate language counter are deleted.
 - [0245](0245-a-draft-does-the-work-its-instruction-asks-for-an-echo-is-not-a-result-and-the-pill-calls-the-mode-what-every-other-surface-calls-it.md):
   A draft does the work its instruction asks for, an echo is not a result, and the pill calls the mode what every other surface calls it.
+- [0246](0246-a-failed-transcription-keeps-its-audio-and-a-plan-does-not-raise-an-attachment-limit.md):
+  A failed transcription keeps its audio, and a plan does not raise an attachment limit.
+- [0247](0247-a-wait-is-two-stages-so-the-runtime-measures-both-and-the-metric-detail-states-its-reading-before-it-draws-the-evidence.md):
+  A wait is two stages, so the runtime measures both, and every metric detail states its reading before it draws the evidence.
 
 ## Resolved: the number 0011 was used twice
 

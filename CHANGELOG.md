@@ -53,6 +53,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — a wait is two stages, and every metric detail says what it is reading before it draws it
+
+- **The turnaround detail no longer stacks two lists of the same number.**
+  `Which model heard it` and `What the mode cost` were fed the identical
+  end-to-end duration and filed under two keys, so the two figures agreed
+  because they were one measurement — leaving a reader to decide whether the
+  second was a component of the first or another view of it. They are now one
+  table with a `by model` / `by mode` toggle and columns that name what they
+  hold: **runs**, **heard in** / **rewrote in**, **in total** (ADR 0247).
+- **The runtime measures where the wait actually goes.** `heard_ms` is stamped
+  the moment the provider returns — before the session is tested for staleness,
+  so an aborted dictation measures the same interval a delivered one does — and
+  the rewriting is the remainder up to delivery. The model cut of the turnaround
+  carries the hearing, the mode cut carries the rewriting, each on its own
+  400-bucket histogram beside the total.
+- **A stage that was never measured is absent, not nought.** No stored record
+  holds the split, so nothing is backfilled and the stage columns start empty on
+  every installation. Where that is the case the column is not drawn at all and
+  one sentence says when it will appear, rather than a column of dashes or a row
+  of invented zeroes.
+- **Each of the four metric details opens with its reading in one line.**
+  Turnaround, languages, time saved and words per minute now put the figure
+  first in a single sentence, with the qualifiers on one line under it, and each
+  chart carries a title. The explanatory paragraphs under the lists are gone —
+  they arrived after the reader had already answered the question wrongly.
+
 ### Fixed — a failed dictation keeps its recording, and the ceiling is the one the provider honours
 
 - **A transcription that fails no longer takes your audio with it.** A 17:46

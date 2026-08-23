@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-20
+Status: 2026-08-22
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -213,7 +213,13 @@ Status: 2026-08-20
   off the records rather than the ledger, so it reached about five days; since
   ADR 0240 each `provider/model` keeps its own turnaround histogram in the
   ledger, on the same 25 ms axis as the bands, and the list is all-time like
-  everything beside it.
+  everything beside it. **Since ADR 0247 (2026-08-22) the wait is measured in
+  two stages** — the runtime stamps how long the provider took to hear, and the
+  rewriting is the remainder — so the model cut and the mode cut are one table
+  with named columns instead of two lists of the same number, and each of the
+  four metric details opens with its reading in one line rather than closing
+  with a paragraph. Nothing on disk holds the split, so the stage columns start
+  empty on every installation and are not drawn until a dictation fills them.
   While a metric is open the view dots are hidden rather than merely inert, and
   their space is held so nothing above them moves. That view is not persisted:
   the block opens on the remembered one of the two. **The display only spans days the history file can
