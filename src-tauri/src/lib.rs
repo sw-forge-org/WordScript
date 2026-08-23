@@ -1887,6 +1887,19 @@ fn handle_audio_ready<R: Runtime + 'static>(
 
         let pipeline_app_config = core::config::AppConfig::load_from_disk();
         let transcription = core::providers::transcribe_audio_file(request).await;
+        /* WHERE THE HEARING ENDED AND THE REWRITING BEGAN (ADR 0247).
+           `export_ms` is on this side because the encode exists to feed the
+           recogniser; everything past this line is the mode's. What sits between
+           this mark and the transform is the recogniser-output repair, which is
+           string work on text already in memory and does not reach a
+           millisecond — it is counted with the mode, and naming that here is
+           cheaper than a third stage nobody would read.
+
+           TAKEN BEFORE THE STALENESS CHECK BELOW, so an aborted session that
+           returns two lines down has still measured the same interval as one
+           that continues. A clock that only runs on the happy path measures the
+           happy path. */
+        let heard_ms = export_ms + pipeline_started_at.elapsed().as_millis() as u64;
 
         match transcription {
             Ok(response) => {
@@ -2116,6 +2129,10 @@ fn handle_audio_ready<R: Runtime + 'static>(
                    path has no observable end at all (decision 6). */
                 let turnaround_ms =
                     export_ms + pipeline_started_at.elapsed().as_millis() as u64;
+                /* THE WAIT AND ITS TWO HALVES, ASSEMBLED ONCE. Every record this
+                   pipeline writes takes the pair from here, so no branch can
+                   report a total without the split that explains it. */
+                let turnaround = core::history::TurnaroundFacts::measured(turnaround_ms, heard_ms);
 
                 core::runtime_log::record(format!(
                     "[WordScript] Native pipeline transform done elapsed_ms={} corrected={} output_len={} rules={}",
@@ -2193,7 +2210,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                used to write `None`, so the measurement taken
                                four lines above was thrown away on the product's
                                most common path. */
-                            Some(turnaround_ms),
+                            turnaround,
                         ) {
                             Ok(preview) => {
                                 core::runtime_log::record(format!(
@@ -2317,7 +2334,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 Some(effective_mode.clone()),
                                 naming.clone(),
                                 capture_facts.clone(),
-                                Some(turnaround_ms),
+                                turnaround,
                             )
                             .ok();
 
@@ -2433,7 +2450,7 @@ fn handle_audio_ready<R: Runtime + 'static>(
                                 Some(effective_mode.clone()),
                                 naming.clone(),
                                 capture_facts.clone(),
-                                Some(turnaround_ms),
+                                turnaround,
                             );
                             let error = result
                                 .error

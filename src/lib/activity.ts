@@ -294,6 +294,15 @@ export interface LedgerCause {
   model: string;
   /** Counted at `TURNAROUND_BUCKET_MS`, the same axis as `turnaround_buckets`. */
   buckets?: number[];
+  /** The recogniser's OWN share of those same waits — the audio export plus the
+   *  provider round trip, ending the moment there is text to transform
+   *  (ADR 0247). What `buckets` has left over belongs to the mode.
+   *
+   *  ABSENT ON EVERY RUN COUNTED BEFORE THE SPLIT WAS MEASURED, and no rebuild
+   *  can fill it: a history record kept one duration and never kept two. The
+   *  surface draws no figure where this is empty rather than dividing by a
+   *  number it does not have. */
+  heard_buckets?: number[];
 }
 
 export interface ActivityLedger {
@@ -322,6 +331,15 @@ export interface ActivityLedger {
    *  `turnaround_buckets`. Two one-dimensional cuts of one total, never a
    *  cross-tab. */
   mode_causes?: Record<string, number[]>;
+  /** The TRANSFORM's own share of those same waits, keyed the same way
+   *  (ADR 0247).
+   *
+   *  THE ONE READING THE OTHER TWO MAPS COULD NEVER GIVE. `turnaround_causes`
+   *  and `mode_causes` both hold the end-to-end wait, so a model row and a mode
+   *  row drew one number twice under two headings that each promised something
+   *  narrower. This is what a mode actually costs: the interval from the
+   *  recogniser answering to the text being final. */
+  mode_transform_causes?: Record<string, number[]>;
   /** The first day each accumulator was written, keyed by its row field
    *  (ADR 0243). A series may not draw a period beginning before its field's
    *  stamp: a zero there is the field not having existed, which is a different

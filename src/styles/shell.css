@@ -3973,71 +3973,133 @@
     color: var(--fg-dim);
   }
 
-  /* THE FACTS UNDER THE CHART — what the chart cannot say because it is not a
-     series: the lifetime figure, the best bucket, the assumption in the
-     divisor. */
-  .ws-metric-facts {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--s3);
+  /* WHAT THE CHART IS, ABOVE IT AND PERMANENTLY (ADR 0247). The read-out under
+     the plot is replaced the moment a pointer crosses it, so it can say what a
+     COLUMN is and never what the drawing is. */
+  .ws-chart-title {
     margin: 0;
     text-align: center;
-  }
-  .ws-metric-facts dt {
     font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-micro);
     color: var(--fg-muted);
   }
-  .ws-metric-facts dd { margin: 0; font-size: var(--t-body); color: var(--fg); }
-  /* WHERE THE WAIT CAME FROM (ADR 0236). Three columns on one row per model:
-     the name, how much of the record it is, and its own middle wait. A table
-     element would be the semantic answer and is the wrong one here — three
-     fields with no header row and no sorting is a list, and `<table>` would put
-     a scroll container inside a block that already has one at the chart. */
-  .ws-metric-causes { display: flex; flex-direction: column; gap: var(--s2); }
-  .ws-metric-causes-head {
-    display: flex; justify-content: space-between; align-items: baseline; gap: var(--s3);
+
+  /* ═══ THE READING, STATED FIRST ═══════════════════════════════════════════
+     A three-column `<dl>` of terse labels stood under the chart and a centred
+     paragraph of micro-type stood under that, and between them they held the
+     whole meaning of the number the reader had come to look at. Neither is a
+     place a person reads first. This is: one figure, one clause that says what
+     it is a figure of, one line of qualifiers.
+     ═══════════════════════════════════════════════════════════════════════ */
+  .ws-metric-lead {
+    display: flex; flex-direction: column; gap: var(--s1);
+    text-align: center;
+    max-width: 56ch;
+    align-self: center;
+  }
+  /* THE FIGURE IS BOLD AND THE CLAUSE IS NOT, ON ONE LINE THAT WRAPS AS ONE.
+     Two lines would make the clause a caption of the figure, which is the
+     label-plus-paragraph shape this block exists to replace — the sentence has
+     to read as a sentence. */
+  .ws-metric-lead-say {
+    margin: 0;
+    font-size: var(--t-body);
+    line-height: 1.45;
+    color: var(--fg-dim);
+    text-wrap: balance;
+  }
+  .ws-metric-lead-say b {
+    font-weight: inherit;
+    font-stretch: var(--w-label);
+    font-size: var(--t-lead, 1.35rem);
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
+  }
+  .ws-metric-lead-notes {
+    margin: 0;
+    font-size: var(--t-micro);
+    line-height: 1.5;
+    color: var(--fg-muted);
+    text-wrap: balance;
+  }
+  /* ═══ WHERE THE WAIT WENT (ADR 0236, rebuilt by ADR 0247) ════════════════
+     One table with a header row and a toggle, where two headerless tables used
+     to stand one under the other holding the same number under two headings
+     that promised different things. Four columns per row: the name, how many
+     runs it is, that row's own stage, and the whole wait.
+
+     A `<table>` would be the semantic answer and is still the wrong one — four
+     fields with no sorting is a list, and a table element would put a scroll
+     container inside a block that already has one at the chart. The header is a
+     `<p>` on the same grid, so the columns line up without either becoming the
+     other's parent.
+     ═══════════════════════════════════════════════════════════════════════ */
+  .ws-metric-split { display: flex; flex-direction: column; gap: var(--s2); }
+  .ws-metric-split-head {
+    display: flex; justify-content: space-between; align-items: center; gap: var(--s3);
+    flex-wrap: wrap;
+  }
+  .ws-metric-split-title {
     margin: 0;
     font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-micro);
     color: var(--fg-muted);
   }
-  .ws-metric-causes ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
-  .ws-metric-causes li {
+  .ws-metric-split ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+  /* ONE TEMPLATE FOR THE HEADER AND EVERY ROW. The name takes what is left; the
+     three figures are fixed so the decimal points line up down each column and
+     can be read without moving the eye. `data-staged` is what collapses the
+     table to three columns on a record whose runs were all counted before the
+     split existed — a column of dashes reads as a broken table. */
+  /* THE HEADER AND THE ROWS ARE SEPARATE GRIDS ON ONE TEMPLATE, and the widths
+     are therefore FIXED rather than `auto`. Auto-sized tracks size to their own
+     element's content, so a header saying `rewrote in` and a row saying `0.4 s`
+     would each be as wide as itself and the two would not line up — which is the
+     one thing a column of figures has to do. The three fixed tracks are sized
+     for the widest heading at 11 px, not for the widest figure.
+
+     `data-staged` sits on the block rather than on the list, so one attribute
+     drives both grids. Reaching from the header to the list with `:has(~ ul)`
+     worked and made the header's layout depend on a sibling's attribute, which
+     is a rule nobody would look for while editing either. */
+  .ws-metric-split-row {
     display: grid;
-    /* The name takes what is left; the two figures are fixed so the decimal
-       points line up down the column and can be read without moving the eye. */
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: minmax(0, 1fr) 3rem 5.5rem 4.5rem;
     align-items: baseline;
-    gap: var(--s3);
+    gap: var(--s2);
+    margin: 0;
     padding: var(--s2) 0;
-    border-top: 1px solid var(--border);
     font-size: var(--t-small);
   }
-  .ws-metric-cause-name {
+  .ws-metric-split:not([data-staged]) .ws-metric-split-row {
+    grid-template-columns: minmax(0, 1fr) 3rem 4.5rem;
+  }
+  .ws-metric-split li.ws-metric-split-row { border-top: 1px solid var(--border); }
+  .ws-metric-split-columns {
+    padding-bottom: 0;
+    font-stretch: var(--w-label); letter-spacing: var(--ls-label); font-size: var(--t-micro);
+    color: var(--fg-muted);
+  }
+  .ws-metric-split-columns span { text-align: right; white-space: nowrap; }
+  .ws-metric-split-name {
     display: flex; align-items: baseline; gap: var(--s2);
     min-width: 0;
     color: var(--fg);
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .ws-metric-cause-name em {
+  .ws-metric-split-name em {
     font-style: normal; font-size: var(--t-micro); color: var(--fg-muted);
   }
-  .ws-metric-cause-runs { color: var(--fg-muted); font-size: var(--t-micro); }
-  .ws-metric-cause-wait {
-    min-width: 5ch; text-align: right;
+  .ws-metric-split-runs, .ws-metric-split-stage, .ws-metric-split-total {
+    text-align: right;
     font-variant-numeric: tabular-nums;
-    color: var(--fg);
   }
-  .ws-metric-causes-rest {
+  .ws-metric-split-runs { color: var(--fg-muted); font-size: var(--t-micro); }
+  /* THE STAGE IS THE ANSWER AND THE TOTAL IS THE CONTEXT, so the stage carries
+     the ink. Drawn the other way round the eye lands on the number the reader
+     already had from the lead. */
+  .ws-metric-split-stage { color: var(--fg); }
+  .ws-metric-split-total { color: var(--fg-dim); }
+  .ws-metric-split-rest {
     margin: 0; font-size: var(--t-micro); color: var(--fg-muted);
-  }
-  .ws-metric-note {
-    margin: 0;
-    text-align: center;
-    max-width: 52ch;
-    align-self: center;
-    font-size: var(--t-micro);
-    color: var(--fg-muted);
-    line-height: 1.5;
   }
 
   /* ═══ THE ACTIVITY CALENDAR ═══════════════════════════════════════════════

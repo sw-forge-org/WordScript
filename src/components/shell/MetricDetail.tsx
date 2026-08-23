@@ -24,6 +24,7 @@ import {
   rateSeries,
   savedAllTime,
   savedSeries,
+  type CauseRow,
   type Period,
   type SeriesPoint,
 } from "@/lib/series";
@@ -43,6 +44,21 @@ import { SegmentControl } from "./SegmentControl";
  * surface to see that the three days were the whole record. This is that place,
  * and it is a view of the same block rather than a panel over it: the calendar
  * proved that a second view of one block is a shape this display already has.
+ *
+ * EVERY METRIC OPENS ON A SENTENCE, AND THAT IS ADR 0247's CORRECTION. Each of
+ * these four used to open on its chart and end in a centred paragraph of
+ * six-point prose, with a row of three-word labels in between — `Nine in ten
+ * under`, `Measured over`, `Named`, `Mostly`. The reading a person came for was
+ * assembled by combining a terse label with a paragraph most readers never
+ * reach, and the owner's verdict on it was that nobody works out what they are
+ * looking at. So the reading is now stated first, in one line, in words; the
+ * qualifiers that used to be a paragraph are one line of clauses under it; and
+ * the charts carry their own titles instead of relying on a hover.
+ *
+ * PROSE IS THE LAST RESORT AND NOT THE FIRST. Anything that can be a label on
+ * the thing it describes is a label on the thing it describes — a column header,
+ * a chart title, a clause in the lead. What survives as a sentence is what has
+ * no object to attach to.
  *
  * EVERY METRIC GETS A CHART AND, SINCE ADR 0243, A HISTORY. The ledger's rows
  * carry words, seconds, waits and languages, so all four readings walk over
@@ -83,16 +99,36 @@ export function spellDuration(minutes: number | null): string {
   return `${value} ${unit}`;
 }
 
-function Facts({ rows }: { rows: { label: string; value: string }[] }) {
+/** Milliseconds as the seconds a person waits in — one decimal, the same unit
+ *  the tile reads in (ADR 0191). */
+function spellWait(milliseconds: number | null): string {
+  return milliseconds === null ? "—" : `${(milliseconds / 1000).toFixed(1)} s`;
+}
+
+/**
+ * THE READING, STATED, BEFORE ANY EVIDENCE FOR IT.
+ *
+ * One figure, one clause saying what it is a figure OF, and one line of
+ * qualifiers under it. It replaces a three-column `<dl>` of terse labels and a
+ * centred paragraph, both of which asked the reader to assemble the sentence
+ * themselves.
+ *
+ * THE QUALIFIERS ARE CLAUSES AND NOT SENTENCES. `median of 138 dictations · 9 in
+ * 10 under 3.1 s` is read in one pass; the same content as two sentences of
+ * prose is read in none. Anything here that cannot survive as a clause did not
+ * belong on the surface — it belonged in the ADR.
+ */
+function Lead({ figure, says, notes }: { figure: string; says: string; notes: string[] }) {
+  const carried = notes.filter((note) => note.length > 0);
   return (
-    <dl className="ws-metric-facts">
-      {rows.map((row) => (
-        <div key={row.label}>
-          <dt>{row.label}</dt>
-          <dd>{row.value}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="ws-metric-lead">
+      <p className="ws-metric-lead-say">
+        <b>{figure}</b> {says}
+      </p>
+      {carried.length > 0 ? (
+        <p className="ws-metric-lead-notes">{carried.join(" · ")}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -118,6 +154,173 @@ function Grain({
   );
 }
 
+/**
+ * A VENDOR'S WRITTEN NAME, and the raw id where the catalogue has never heard
+ * of it.
+ *
+ * `providerLabel` throws on an unknown id, which is right where a lane is being
+ * configured and wrong here: this reads ids off records that are already on
+ * disk, including ones written by a build that named its providers differently.
+ * A row that cannot be spelled prettily is still a row worth showing.
+ */
+function vendorName(id: string): string {
+  return CATALOGUE.providers.find((entry) => entry.id === id)?.label ?? id;
+}
+
+/** Which cut of the same waits the split table is showing. */
+type Cut = "model" | "mode";
+
+/**
+ * WHERE THE WAIT WENT — one table, two cuts, and the correction ADR 0247 exists
+ * for.
+ *
+ * **THERE USED TO BE TWO TABLES HOLDING ONE NUMBER.** `Which model heard it` and
+ * `What the mode cost` sat one under the other, their headings differing in a
+ * single letter, and BOTH drew the same end-to-end wait — the ledger filed the
+ * whole duration under the recogniser AND under the mode, because a run only
+ * ever measured one duration. So a model row said `0.9 s` and a mode row said
+ * `0.9 s` and neither number meant what its heading promised: not what the model
+ * took, not what the mode cost, but what the dictation took, twice. The owner
+ * read it and asked, in order, whether those were total seconds or extracted
+ * ones, how long the model took, what the mode cost, which time, and whether the
+ * first model was in or out. Every one of those questions was unanswerable from
+ * the surface, and four of the five were unanswerable from the record.
+ *
+ * **THE RUNTIME NOW TAKES TWO READINGS AND THE TABLE STATES BOTH.** `heard in`
+ * is the recogniser's own interval and `rewrote in` is the mode's, each read off
+ * its own histogram; `in total` is the whole wait, standing beside them so that
+ * *are these the total seconds* is answered by the columns rather than by a
+ * paragraph. One heading, one toggle, one row per thing — the reader compares
+ * within a cut instead of across two blocks that were never comparable.
+ *
+ * **THE STAGE COLUMN IS ABSENT UNTIL SOMETHING FILLS IT.** No history record
+ * ever kept two durations, so a machine with a year of dictation behind it
+ * starts with the split measured on none of its runs and fills from the next
+ * one. A column of dashes would read as a broken table; no column at all, and a
+ * clause saying when it arrives, reads as what it is.
+ */
+function Split({
+  ledger,
+  runs,
+}: {
+  ledger: ActivityLedger | null;
+  runs: number;
+}) {
+  const models = useMemo(() => turnaroundCauses(ledger), [ledger]);
+  const modes = useMemo(() => modeCauses(ledger), [ledger]);
+  const [cut, setCut] = useState<Cut>("model");
+
+  const offered: Cut[] = [
+    ...(models.length > 0 ? (["model"] as Cut[]) : []),
+    ...(modes.length > 0 ? (["mode"] as Cut[]) : []),
+  ];
+  if (offered.length === 0) return null;
+  /* THE CUT ON OFFER, NOT THE ONE IN STATE. A ledger that loses its mode rows
+     between renders — a reset, an import — may not leave the table pointing at a
+     cut with nothing in it. Same rule `Grain` follows one component up. */
+  const showing = offered.includes(cut) ? cut : offered[0];
+  const rows = showing === "model" ? models : modes;
+  const covered = rows.reduce((sum, row) => sum + row.runs, 0);
+  /* WHETHER THIS CUT HAS ANY SPLIT AT ALL. Asked of the cut rather than of the
+     ledger, because the two fill together and a reader looking at one of them
+     should not be told about the other's coverage. */
+  const staged = rows.reduce((sum, row) => sum + row.staged, 0);
+
+  const name = (row: CauseRow) =>
+    showing === "mode"
+      ? (PROCESSING_MODE_LABELS[row.key as ProcessingMode] ?? row.key)
+      : row.model;
+
+  return (
+    <div className="ws-metric-split" data-staged={staged > 0 ? "" : undefined}>
+      <div className="ws-metric-split-head">
+        {/* THE HEADING ANSWERS *ARE THESE THE SAME RUNS* BEFORE IT IS ASKED. Two
+            blocks each ending in their own total read as components of one sum;
+            one heading over one toggle says outright that the toggle re-cuts a
+            set rather than showing a second one. Where the cut is short of the
+            whole — a run whose mode the record never named is in the histogram
+            and in no row here — the heading says so in the same breath rather
+            than in a footnote under the list. */}
+        <p className="ws-metric-split-title">
+          {covered === runs
+            ? `The same ${runs} ${runs === 1 ? "wait" : "waits"}`
+            : `${covered} of the same ${runs} waits`}
+        </p>
+        {offered.length > 1 ? (
+          <SegmentControl
+            className="ws-metric-split-cut"
+            aria-label="Which cut"
+            options={offered.map((each) => ({
+              value: each,
+              label: each === "model" ? "by model" : "by mode",
+            }))}
+            value={showing}
+            onChange={setCut}
+          />
+        ) : null}
+      </div>
+      {/* THE COLUMN HEADER IS THE WHOLE FIX AND IT COST THREE WORDS. The old
+          table had none: a name, a run count and a bare figure in seconds that
+          the reader had to guess the meaning of. Naming the columns puts the
+          answer where the number is. */}
+      <p className="ws-metric-split-row ws-metric-split-columns">
+        <span />
+        <span>runs</span>
+        {staged > 0 ? <span>{showing === "model" ? "heard in" : "rewrote in"}</span> : null}
+        <span>in total</span>
+      </p>
+      <ul>
+        {rows.slice(0, 5).map((row) => (
+          <li key={row.key} className="ws-metric-split-row">
+            {/* `via` IS THE WHOLE FIX FOR THIS CELL, AND IT COST A WORD. The
+                first build set the vendor beside the model with nothing between
+                them, and the owner read `whisper-large-v3-turbo openai` and
+                asked whether that was the model's author, the profile, or the
+                vendor. It is the vendor — the same recogniser is served by more
+                than one, at different speeds, which is exactly the comparison
+                this list is for. */}
+            <span className="ws-metric-split-name">
+              {name(row)}
+              {showing === "model" && row.provider && row.provider !== row.model ? (
+                <em>via {vendorName(row.provider)}</em>
+              ) : null}
+            </span>
+            <span className="ws-metric-split-runs">{row.runs}</span>
+            {staged > 0 ? (
+              <span
+                className="ws-metric-split-stage"
+                title={
+                  row.staged === 0
+                    ? "Not measured on any of these runs yet."
+                    : `Measured on ${row.staged} of ${row.runs}.`
+                }
+              >
+                {spellWait(row.stage)}
+              </span>
+            ) : null}
+            <span className="ws-metric-split-total">{spellWait(row.median)}</span>
+          </li>
+        ))}
+      </ul>
+      {rows.length > 5 ? (
+        <p className="ws-metric-split-rest">and {rows.length - 5} more</p>
+      ) : null}
+      {/* THE ONE SENTENCE ON THIS BLOCK, AND IT DELETES ITSELF. Nothing on disk
+          can fill the stage column — a history record kept one duration and
+          never two — so on any machine with dictation behind it the split starts
+          empty and fills from the next run. Saying when a column will appear is
+          the alternative to drawing a column of dashes and letting the reader
+          decide whether the table is broken. */}
+      {staged === 0 ? (
+        <p className="ws-metric-split-rest">
+          Hearing and rewriting are split from your next dictation onwards — no
+          record kept the two apart before now.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function SavedDetail({
   ledger,
   baseline,
@@ -137,7 +340,6 @@ function SavedDetail({
     () => savedSeries(ledger, period, baseline, now),
     [ledger, period, baseline, now],
   );
-  const drawn = points.reduce((sum, point) => sum + point.value, 0);
   const best = bestPoint(points);
   const allTime = savedAllTime(ledger, baseline);
 
@@ -153,30 +355,29 @@ function SavedDetail({
 
   return (
     <>
+      {/* WHAT IS NOT IN THE FIGURE, CARRIED AS A CLAUSE OF THE FIGURE. It used
+          to be the second sentence of a paragraph at the foot of the view, which
+          is where a reader arrives after they have already decided what the
+          number means. */}
+      <Lead
+        figure={spellDuration(allTime)}
+        says="of typing saved, all time"
+        notes={[
+          `against typing at ${baseline} wpm`,
+          "Draft and Prompt Enhance write their own prose and are counted in none of it",
+        ]}
+      />
       <Grain offered={offered} period={period} onPeriod={onPeriod} />
       <MetricChart
         bars={bars}
+        title={`Saved per ${period}`}
         ariaLabel={`Time saved per ${period}`}
-        fallback={`${spellDuration(drawn)} over the ${bars.length} ${period}s drawn`}
+        fallback={
+          best
+            ? `best ${period} so far: ${spellDuration(best.value)}, ${best.full}`
+            : `nothing credited over the ${bars.length} ${period}s drawn`
+        }
       />
-      <Facts
-        rows={[
-          { label: "All time", value: spellDuration(allTime) },
-          {
-            label: `Best ${period}`,
-            value: best ? `${spellDuration(best.value)} · ${best.full}` : "nothing yet",
-          },
-          { label: "Typing baseline", value: `${baseline} wpm` },
-        ]}
-      />
-      {/* WHAT IS NOT IN THE FIGURE, AND IT BELONGS HERE RATHER THAN IN A HOVER:
-          a reader who opened the detail is the reader asking why the number is
-          what it is. */}
-      <p className="ws-metric-note">
-        Your dictated words as typing time, less the time you spent dictating
-        them. Agent and Prompt Enhance write prose from an instruction, so their
-        output is counted in no figure here.
-      </p>
     </>
   );
 }
@@ -226,130 +427,42 @@ function RateDetail({
 
   return (
     <>
+      {/* WHAT THE RATE WAS MEASURED OVER, WHICH IS NOT EVERY DICTATION
+          (ADR 0243). The speech clock arrived with ADR 0177 and every run before
+          it carries only the open microphone, with no way to re-measure one: the
+          audio is not kept. That is a fact about the record rather than a
+          defect, and a metric states the population it was measured over. */}
+      <Lead
+        figure={median ? `${Math.round(median.value)} wpm` : "nothing yet"}
+        says="while you were actually speaking"
+        notes={[
+          `middle of ${totals.voiced} timed dictations`,
+          pause === null
+            ? ""
+            : `${Math.round(pause * 100)} % of your microphone time was pauses, and is left out`,
+          totals.voiced < totals.dictations
+            ? `${totals.dictations - totals.voiced} older runs cannot be timed — nothing kept their audio`
+            : "",
+        ]}
+      />
       <Grain offered={offered} period={period} onPeriod={onPeriod} />
+      {/* THE TITLE SAYS WHICH STATISTIC THE COLUMNS ARE, WHICH USED TO BE A
+          SENTENCE UNDERNEATH. The lead is a median over the all-time histogram;
+          a bucket holds no histogram of its own, so a column here is that
+          bucket's words over its speaking seconds — duration-weighted, and a
+          little lower wherever a long dictation sits in it. A reader who never
+          compares the two never needs the distinction, and one who does finds it
+          on the chart rather than three paragraphs away. */}
       <MetricChart
         bars={bars}
         variant="line"
+        title={`Each ${period}'s words over its speaking seconds`}
         ariaLabel={`Speaking rate per ${period}`}
         /* THE RANGE IS THE FALLBACK, because a line that does not start at
            nought has to say what it does start at. */
         fallback={rateRange(measured, period)}
       />
-      <Facts
-        rows={[
-          {
-            label: "Median, all time",
-            value: median ? `${Math.round(median.value)} wpm` : "nothing yet",
-          },
-          {
-            label: "Thinking pauses",
-            value: pause === null ? "not measured" : `${Math.round(pause * 100)} % of the mic`,
-          },
-          /* WHAT THE RATE WAS MEASURED OVER, WHICH IS NOT EVERY DICTATION
-             (ADR 0243, closing the oldest open item on this track). The speech
-             clock arrived with ADR 0177 and every run before it carries only the
-             open microphone — 69 runs on the reporting machine, and no way to
-             re-measure one: the audio is not kept. That is a fact about the
-             record rather than a defect, and the honest thing a surface can do
-             about it is say over how much of the record it speaks. */
-          {
-            label: "Measured over",
-            value: `${totals.voiced} of ${totals.dictations}`,
-          },
-        ]}
-      />
-      {/* THE TWO FIGURES ON THIS SCREEN ARE DIFFERENT STATISTICS AND THE READER
-          IS TOLD SO. The tile is a median over the all-time histogram; a bucket
-          holds no histogram of its own, so a column here is that bucket's words
-          over that bucket's speaking seconds — duration-weighted, and a little
-          lower wherever a long dictation sits in it. */}
-      <p className="ws-metric-note">
-        A column is that {period}&apos;s spoken words over its speaking seconds.
-        The tile above is the middle dictation of all time, which is a different
-        measurement of the same voice.
-        {totals.voiced < totals.dictations
-          ? " Dictations from before the speaking clock existed are in neither — nothing kept the audio, so they cannot be measured again."
-          : ""}
-      </p>
     </>
-  );
-}
-
-/**
- * WHERE THE WAIT CAME FROM — the one thing on this view that answers *why*.
- *
- * The owner's argument, and it is the right one: a spread tells you the wait is
- * two seconds and leaves you there. **The reason anybody opens turnaround is to
- * find out what is making it that.** The record can answer it per model, and the
- * answer on this machine is worth the block on its own — one dictation on a
- * second vendor took 5.8 s and is the whole tail the bands above end in.
- *
- * IT COVERS EVERYTHING THE HISTOGRAM ABOVE IT DOES, AND THAT IS NEW (ADR 0240).
- * The first build read the history records — the only place a wait and the model
- * that produced it ever sat together — and history was capped at a thousand
- * then, which on the reporting machine was about five days. So a lifetime median
- * stood above a five-day list, the two disagreed by design, and the head had to
- * say so. (The same ADR took that cap to five thousand; the fix is the ledger
- * either way, because any cap is shorter than all time.) The ledger now
- * keeps the same distribution split by recogniser, the rows sum to the bands,
- * and the sentence explaining the discrepancy could go rather than be reworded.
- */
-/**
- * A VENDOR'S WRITTEN NAME, and the raw id where the catalogue has never heard
- * of it.
- *
- * `providerLabel` throws on an unknown id, which is right where a lane is being
- * configured and wrong here: this reads ids off records that are already on
- * disk, including ones written by a build that named its providers differently.
- * A row that cannot be spelled prettily is still a row worth showing.
- */
-function vendorName(id: string): string {
-  return CATALOGUE.providers.find((entry) => entry.id === id)?.label ?? id;
-}
-
-function Causes({ ledger }: { ledger: ActivityLedger | null }) {
-  const rows = useMemo(() => turnaroundCauses(ledger), [ledger]);
-  /* NOTHING WHERE THERE IS NOTHING. `null` is the ledger that has not been read
-     yet; an empty map is a machine that has dictated only on builds that never
-     recorded a pair. Neither is a table with no rows. */
-  const timed = rows.reduce((sum, row) => sum + row.runs, 0);
-  if (timed === 0) return null;
-
-  return (
-    <div className="ws-metric-causes">
-      <p className="ws-metric-causes-head">
-        <span>Which model heard it</span>
-        <span>
-          {timed} {timed === 1 ? "run" : "runs"} all time
-        </span>
-      </p>
-      <ul>
-        {rows.slice(0, 5).map((row) => (
-          <li key={row.key}>
-            {/* `via` IS THE WHOLE FIX, AND IT COST A WORD. The first build set
-                the vendor beside the model with nothing between them, and the
-                owner read `whisper-large-v3-turbo openai` and asked whether that
-                was the model's author, the profile, or the vendor. It is the
-                vendor — the same recogniser is served by more than one, at
-                different speeds, which is exactly the comparison this list is
-                for — and an unlabelled second word could be any of the three. */}
-            <span className="ws-metric-cause-name">
-              {row.model}
-              {row.provider && row.provider !== row.model ? (
-                <em>via {vendorName(row.provider)}</em>
-              ) : null}
-            </span>
-            <span className="ws-metric-cause-runs">
-              {row.runs} {row.runs === 1 ? "run" : "runs"}
-            </span>
-            <span className="ws-metric-cause-wait">{(row.median / 1000).toFixed(1)} s</span>
-          </li>
-        ))}
-      </ul>
-      {rows.length > 5 ? (
-        <p className="ws-metric-causes-rest">and {rows.length - 5} more</p>
-      ) : null}
-    </div>
   );
 }
 
@@ -389,10 +502,9 @@ function TurnaroundDetail({
 
   /* THE HISTORY THIS VIEW SPENT THREE STAGES SAYING IT COULD NOT HAVE
      (ADR 0243). A day row holds a wait now — two counters and a log histogram —
-     so the same question every other metric answers is answerable here, and the
-     sentence explaining its absence is deleted rather than softened. It starts
-     at the day the field arrived and not at the record's own beginning, which
-     is what `measured_from` is for. */
+     so the same question every other metric answers is answerable here. It
+     starts at the day the field arrived and not at the record's own beginning,
+     which is what `measured_from` is for. */
   const points = useMemo(() => turnaroundSeries(ledger, period, now), [ledger, period, now]);
   const drawn = points.filter((point) => !point.empty);
   const seriesBars: ChartBar[] = points.map((point) => ({
@@ -402,22 +514,35 @@ function TurnaroundDetail({
     empty: point.empty,
     hint: point.empty
       ? `${point.full} · nothing timed`
-      : `${point.full} · median ${(point.value / 1000).toFixed(1)} s · ${point.runs} dictations${
+      : `${point.full} · median ${spellWait(point.value)} · ${point.runs} dictations${
           point.note ? ` · ${point.note}` : ""
         }`,
   }));
 
   return (
     <>
+      {/* THE WHOLE INTERVAL, NAMED AT BOTH ENDS, IN THE FIRST LINE. It was the
+          opening sentence of the paragraph at the bottom of this view, under two
+          charts and two tables — which is to say that the definition of the
+          measurement stood after every use of it. */}
+      <Lead
+        figure={spellWait(median)}
+        says="from you stopping to the text being ready"
+        notes={[
+          `middle of ${runs} ${runs === 1 ? "dictation" : "dictations"}`,
+          p90 === null ? "" : `9 in 10 came back under ${spellWait(p90)}`,
+        ]}
+      />
       {seriesBars.length > 0 && (
         <>
           <Grain offered={offered} period={period} onPeriod={onPeriod} />
           <MetricChart
             bars={seriesBars}
+            title={`The middle wait per ${period}`}
             ariaLabel={`The middle wait per ${period}`}
             fallback={
               drawn.length > 0
-                ? `the middle wait over the ${drawn.length} ${period}s the record timed`
+                ? `over the ${drawn.length} ${period}s the record timed`
                 : "nothing timed yet"
             }
           />
@@ -425,99 +550,16 @@ function TurnaroundDetail({
       )}
       <MetricChart
         bars={bars}
+        title="How long the wait was, over every dictation"
         ariaLabel="How long the wait was, over every dictation"
         fallback={
           runs > 0
-            ? `${runs} dictations · seconds from you stopping to the text being ready`
+            ? `${runs} dictations, in bands of seconds — the lit column holds the middle one`
             : "nothing timed yet"
         }
       />
-      <Facts
-        rows={[
-          { label: "Median", value: median === null ? "nothing yet" : `${(median / 1000).toFixed(1)} s` },
-          { label: "Nine in ten under", value: p90 === null ? "nothing yet" : `${(p90 / 1000).toFixed(1)} s` },
-          { label: "Runs timed", value: String(runs) },
-        ]}
-      />
-      <Causes ledger={ledger} />
-      {/* THE MODEL LIST'S TOTAL, COMPUTED HERE RATHER THAN REPORTED UP. A child
-          that tells its parent what it drew is a render-time write to a
-          sibling's state; the sum is pure and cheap, so the parent takes it. */}
-      <Modes
-        ledger={ledger}
-        against={turnaroundCauses(ledger).reduce((sum, row) => sum + row.runs, 0)}
-      />
-      {/* THE ONE THING THE LISTS ABOVE CANNOT SAY FOR THEMSELVES (ADR 0182),
-          and it is now a smaller claim than it was: the clock stops when the
-          TEXT exists, so a mode that rewrites what you said has a second model
-          inside the same wait and the MODEL list names only the one that heard
-          you. The mode list is the other cut of the same runs, which is what
-          makes that difference readable rather than merely disclosed.
-
-          TWO SENTENCES THAT USED TO BE HERE ARE GONE. One apologised for the
-          list covering fewer runs than the spread — answered by ADR 0240. One
-          said a day row holds no wait — answered by ADR 0243. A sentence
-          explaining a limit outlives the limit unless somebody deletes it. */}
-      <p className="ws-metric-note">
-        The wait runs from you stopping to the text being ready. Where a mode
-        rewrote the text, a second model is inside it that the model list does
-        not name — which is what the mode list beside it is for.
-      </p>
+      <Split ledger={ledger} runs={runs} />
     </>
-  );
-}
-
-/**
- * THE SAME WAITS, CUT BY THE MODE THAT RAN (ADR 0243).
- *
- * Two one-dimensional cuts of one total and never a cross-tab. This one answers
- * *what does this mode cost me*, which is a question the reader can act on — the
- * model list answers *which recogniser is slow*, which is one they can only
- * change by switching lanes.
- */
-function Modes({ ledger, against }: { ledger: ActivityLedger | null; against: number }) {
-  const rows = useMemo(() => modeCauses(ledger), [ledger]);
-  const timed = rows.reduce((sum, row) => sum + row.runs, 0);
-  /* ONE ROW IS NOT A COMPARISON. A reader who has only ever run one mode learns
-     nothing from a list of it, and the figure is already the median above —
-     which is the same argument `Grain` makes about a control with one option. */
-  if (timed === 0 || rows.length < 2) return null;
-
-  return (
-    <div className="ws-metric-causes">
-      {/* THE ONE THING THE READER ASKED FOR (ADR 0244). Two blocks with the
-          same shape, each ending in a total, read as components of one — the
-          owner asked outright whether these add up or are already split. They
-          are the SAME runs cut a second way, and the heading is where that
-          belongs; a sentence under the second list arrives after the question
-          has already been answered wrongly.
-
-          A RUN WITH NO NAMED MODE IS COUNTED IN THE HISTOGRAM AND IN NO ROW
-          HERE, so this cut can be short of the other one. That used to be
-          disclosed only in a source comment claiming the surface stated it. */}
-      <p className="ws-metric-causes-head">
-        <span>What the mode cost</span>
-        <span>
-          {timed === against
-            ? `the same ${timed} ${timed === 1 ? "run" : "runs"}`
-            : `${timed} of the same ${against} ${against === 1 ? "run" : "runs"}`}
-        </span>
-      </p>
-      <ul>
-        {rows.slice(0, 5).map((row) => (
-          <li key={row.key}>
-            <span className="ws-metric-cause-name">{PROCESSING_MODE_LABELS[row.key as ProcessingMode] ?? row.key}</span>
-            <span className="ws-metric-cause-runs">
-              {row.runs} {row.runs === 1 ? "run" : "runs"}
-            </span>
-            <span className="ws-metric-cause-wait">{(row.median / 1000).toFixed(1)} s</span>
-          </li>
-        ))}
-      </ul>
-      {rows.length > 5 ? (
-        <p className="ws-metric-causes-rest">and {rows.length - 5} more</p>
-      ) : null}
-    </div>
   );
 }
 
@@ -546,11 +588,14 @@ function LanguagesDetail({
      `asked` IS THE DENOMINATOR AND NOT THE DICTATION COUNT. The runtime
      increments exactly one of these two on every counted run, so their sum is
      the population a language was asked of and the two rows always account for
-     it. Same shape as the speaking rate's `Measured over: n of m` — a metric
-     states the population it was measured over, and the lifetime dictation
-     count belongs to the tiles, where it answers a different question. */
+     it. Same shape as the speaking rate's population clause — a metric states
+     what it was measured over, and the lifetime dictation count belongs to the
+     tiles, where it answers a different question. */
   const refused = totals.language_refused ?? 0;
   const asked = measured + refused;
+  const share = measured > 0 && languages.length > 0
+    ? Math.min(99, Math.round((languages[0].count / measured) * 100))
+    : 0;
   const points = useMemo(() => languageSeries(ledger, period, now), [ledger, period, now]);
   const seriesBars: ChartBar[] = points.map((point) => ({
     key: point.key,
@@ -570,18 +615,38 @@ function LanguagesDetail({
 
   return (
     <>
+      {/* THE EXCLUSIVE WORD IS NEVER SPENT HERE (ADR 0186). `only German` is a
+          claim about every dictation, and this reading has never read every
+          dictation: a text under about eight words is in no language bucket at
+          all. Somebody who had dictated in English twice — five words and one —
+          was told *only German* and correctly concluded the measurement was
+          wrong, when what was wrong was the sentence. The population it was
+          measured over stands in the same line as the claim. */}
+      <Lead
+        figure={String(languages.length || "nothing yet")}
+        says={
+          languages.length === 1 ? "language in what you dictated" : "languages in what you dictated"
+        }
+        notes={[
+          languages.length > 0 ? `mostly ${languageLabel(languages[0].code)}, ${share} %` : "",
+          `named on ${measured} of ${asked} dictations, ${refused} being too short to tell`,
+          "read off the text you spoke, never off your language setting",
+        ]}
+      />
       {seriesBars.length > 0 && (
         <>
           <Grain offered={offered} period={period} onPeriod={onPeriod} />
           <MetricChart
             bars={seriesBars}
+            title={`How many were named per ${period}`}
             ariaLabel={`How many dictations were named per ${period}`}
-            fallback={`what was named over the ${seriesBars.length} ${period}s the record can speak for`}
+            fallback={`over the ${seriesBars.length} ${period}s the record can speak for`}
           />
         </>
       )}
       <MetricChart
         bars={bars}
+        title="Dictations per language, all time"
         ariaLabel="How many dictations came back in each language"
         fallback={
           languages.length > 0
@@ -589,27 +654,6 @@ function LanguagesDetail({
             : "nothing measured yet"
         }
       />
-      <Facts
-        rows={[
-          {
-            label: "Mostly",
-            value: languages.length > 0 ? languageLabel(languages[0].code) : "nothing yet",
-          },
-          { label: "Named", value: `${measured} of ${asked}` },
-          { label: "Too short to name", value: String(refused) },
-        ]}
-      />
-      {/* A THIRD ROW STOOD HERE AND IT IS GONE (ADR 0244). *Never asked* was
-          sold as the runs from before the record kept an answer; it actually
-          measured how far back the SEED could reach, was non-zero on exactly
-          one machine in the world, and is structurally zero on every
-          installation from here on — every counted run increments one of the
-          two rows above. */}
-      <p className="ws-metric-note">
-        Measured on the text you spoke, never on your language setting.{" "}
-        <em>Too short to name</em> was asked and came back empty, and it moves
-        with every brief dictation.
-      </p>
     </>
   );
 }

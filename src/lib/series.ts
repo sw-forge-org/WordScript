@@ -623,6 +623,19 @@ export interface CauseRow {
    *  drawn above the list, so a row can never disagree with the band it falls
    *  in (ADR 0181, one structure further out). */
   median: number;
+  /** THIS ROW'S OWN STAGE, in milliseconds on the same axis (ADR 0247): the
+   *  hearing where the row is a recogniser, the rewriting where it is a mode.
+   *
+   *  `null` where the split was never measured for these runs, which is every
+   *  run counted before the runtime learned to take two readings. It is not
+   *  zero, and a surface may not draw it as one: nought is what Verbatim
+   *  genuinely costs, and a row that never measured is not a row that measured
+   *  nothing. */
+  stage: number | null;
+  /** How many of `runs` carried a split. Below `runs` on any machine that
+   *  dictated before the measurement existed, and the difference is what a
+   *  reader is owed before they compare two rows. */
+  staged: number;
 }
 
 /**
@@ -661,12 +674,19 @@ export function turnaroundCauses(ledger: ActivityLedger | null | undefined): Cau
     if (runs === 0) continue;
     const median = bucketQuantile(buckets, TURNAROUND_BUCKET_MS, 0.5);
     if (median === null) continue;
+    /* THE HEARING, WHERE THE RUNTIME TOOK TWO READINGS (ADR 0247). Read off its
+       own histogram rather than subtracted from the total: medians do not
+       subtract, and `median(total) - median(transform)` is a number with no
+       referent that would nonetheless have looked entirely plausible. */
+    const heard = cause.heard_buckets ?? [];
     rows.push({
       key,
       model: cause.model || cause.provider,
       provider: cause.provider,
       runs,
       median,
+      stage: bucketQuantile(heard, TURNAROUND_BUCKET_MS, 0.5),
+      staged: heard.reduce((sum, count) => sum + (count ?? 0), 0),
     });
   }
 
@@ -692,7 +712,18 @@ export function modeCauses(ledger: ActivityLedger | null | undefined): CauseRow[
     if (runs === 0) continue;
     const median = bucketQuantile(counts, TURNAROUND_BUCKET_MS, 0.5);
     if (median === null) continue;
-    rows.push({ key, model: key, provider: key, runs, median });
+    /* WHAT THIS MODE ITSELF COST, on the same terms as the recogniser's row
+       above — its own histogram, never a difference of two medians. */
+    const added = ledger?.mode_transform_causes?.[key] ?? [];
+    rows.push({
+      key,
+      model: key,
+      provider: key,
+      runs,
+      median,
+      stage: bucketQuantile(added, TURNAROUND_BUCKET_MS, 0.5),
+      staged: added.reduce((sum, count) => sum + (count ?? 0), 0),
+    });
   }
 
   return rows.sort((left, right) => right.runs - left.runs || right.median - left.median);

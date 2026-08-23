@@ -164,6 +164,20 @@ pub struct TranscriptionHistoryEntry {
     /// delivery, whose delay is the park's rather than the runtime's.
     #[serde(default)]
     pub turnaround_ms: Option<u64>,
+    /// How much of that wait was spent GETTING THE WORDS — the audio export plus
+    /// the recogniser's round trip, ending the moment there is text to
+    /// transform. Whatever the total has left over is the mode.
+    ///
+    /// TWO DURATIONS RATHER THAN ONE, because a single figure could not answer
+    /// the question this record is actually read with: not *how long did I wait*
+    /// but *what was I waiting for*. A wait split into hearing and rewriting is
+    /// a wait somebody can act on — turn the mode off, or change the lane.
+    ///
+    /// `None` on every path with no such clock, and on every record written
+    /// before the split was measured. It is never zero to mean absent: Verbatim
+    /// genuinely rewrites in no time at all, and that is a reading.
+    #[serde(default)]
+    pub heard_ms: Option<u64>,
     /// What the microphone delivered into this transcription: peak, mean and
     /// the speech threshold they are read against.
     ///
@@ -373,9 +387,9 @@ pub struct RecordHistoryEntryRequest {
     /// What the capture measured about itself (ADR 0079). `None` on the paths
     /// that have no capture of their own to report — a retry above all.
     pub capture_integrity: Option<CaptureIntegrity>,
-    /// Milliseconds from the audio arriving to the text existing. `None`
+    /// The wait and what it was spent on (ADR 0247). `TurnaroundFacts::default()`
     /// wherever the caller ran no such clock.
-    pub turnaround_ms: Option<u64>,
+    pub turnaround: TurnaroundFacts,
     /// What the microphone delivered, from the same capture and on the same
     /// terms.
     pub input_level: Option<InputLevelSummary>,
@@ -385,6 +399,44 @@ pub struct RecordHistoryEntryRequest {
     /// Why the recording ended, when the user did not end it. `None` on every
     /// ordinary stop and on every path with no recording of its own.
     pub capture_stop_reason: Option<String>,
+}
+
+/// THE WAIT, AND WHAT IT WAS SPENT ON (ADR 0247).
+///
+/// One parameter rather than two for exactly the reason `CaptureFacts` below is
+/// one rather than three: the pair travels together on every path that measures
+/// it and is absent together on every path that does not, and the alternative is
+/// two adjacent `Option<u64>` in a signature that already has nine arguments —
+/// where nothing but their order says which is which. That mistake is silent:
+/// swap them and every wait becomes a hearing, every hearing a wait, and the
+/// only symptom is a plausible figure.
+///
+/// THE SPLIT IS THE POINT. Until this existed the surface could report how long
+/// a dictation took and nothing whatever about WHY, so its two cause lists —
+/// one keyed by recogniser, one by mode — both drew the same end-to-end number
+/// under headings that promised otherwise. A reader comparing them was comparing
+/// a figure with itself.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct TurnaroundFacts {
+    /// Milliseconds from the capture stopping to the text being final. `None`
+    /// wherever no clock ran.
+    pub total_ms: Option<u64>,
+    /// How much of that was spent GETTING THE WORDS — the audio export plus the
+    /// recogniser's round trip, ending the moment there is text to transform.
+    /// Whatever the total has left over belongs to the mode.
+    ///
+    /// `None` is *not measured* and zero is *measured as nothing*, and the two
+    /// may never collapse into each other: Verbatim runs no model and genuinely
+    /// rewrites in no time at all, which is a reading a reader can act on.
+    pub heard_ms: Option<u64>,
+}
+
+impl TurnaroundFacts {
+    /// A measured pair. The only constructor a pipeline needs, and it takes them
+    /// in the one order that cannot be got wrong — the whole, then the part.
+    pub fn measured(total_ms: u64, heard_ms: u64) -> Self {
+        Self { total_ms: Some(total_ms), heard_ms: Some(heard_ms.min(total_ms)) }
+    }
 }
 
 /// The three things a CAPTURE knows about itself, carried as one.
@@ -1205,7 +1257,8 @@ fn record_entry_with_work_mode(
         audio_path: request.audio_path,
         fallback_acknowledged: false,
         capture_integrity: request.capture_integrity,
-        turnaround_ms: request.turnaround_ms,
+        turnaround_ms: request.turnaround.total_ms,
+        heard_ms: request.turnaround.heard_ms,
         input_level: request.input_level,
         speech_seconds: request.speech_seconds,
         capture_stop_reason: request.capture_stop_reason,
@@ -1259,6 +1312,12 @@ fn record_entry_with_work_mode(
                 .map(|integrity| integrity.recorded_seconds),
             speech_seconds: entry.speech_seconds,
             turnaround_ms: entry.turnaround_ms,
+            /* THE STAGE SPLIT, STRAIGHT OFF THE RECORD (ADR 0247). The funnel
+               counts what the record says happened, exactly as it does for the
+               provider, the mode and the language — and a record that predates
+               the split says nothing, which the ledger reads as *not measured*
+               rather than as an instant hearing. */
+            heard_ms: entry.heard_ms,
             /* WHO ANSWERED, so the turnaround histogram can be split by the
                thing that caused it (ADR 0240). The record already names both;
                reading them here rather than re-resolving the active profile is
@@ -1715,7 +1774,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 // it has no capture of its own to report. The original record
                 // keeps the verdict that belongs to it.
                 capture_integrity: None,
-                turnaround_ms: None,
+                turnaround: TurnaroundFacts::default(),
                 input_level: None,
                 speech_seconds: None,
                 capture_stop_reason: None,
@@ -1760,7 +1819,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
             // copied forward onto a run that never made a capture — and neither
             // is a turnaround, which would time a re-run rather than a dictation.
             CaptureFacts::none(),
-            None,
+            TurnaroundFacts::default(),
         )?;
 
         if insert_result.ok {
@@ -1825,10 +1884,10 @@ pub fn history_entry_from_insert_result(
     // level, and the speech clock (ADR 0177). `CaptureFacts::none()` on a retry,
     // which has no capture of its own.
     capture: CaptureFacts,
-    // Milliseconds from the capture STOPPING to the text existing (ADR 0181).
-    // `None` wherever the caller did not run that clock — a retry, and the
-    // parked path, whose delay is the park's rather than the runtime's.
-    turnaround_ms: Option<u64>,
+    // The wait and its split (ADR 0181, ADR 0247). Defaulted wherever the caller
+    // did not run that clock — a retry, and the parked path, whose delay is the
+    // park's rather than the runtime's.
+    turnaround: TurnaroundFacts,
 ) -> Result<TranscriptionHistoryEntry, String> {
     let attribution = SpeechAttribution::for_retry(app_config, retry.as_ref());
 
@@ -1880,7 +1939,7 @@ pub fn history_entry_from_insert_result(
                product's main path reported no turnaround at all and the
                histogram behind the tile could never fill. Found when the tile
                stayed dark on a machine with sixty dictations in it. */
-            turnaround_ms,
+            turnaround,
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
         naming.language,
@@ -1938,7 +1997,7 @@ pub fn record_insert_failure(
             capture_stop_reason: capture.stop_reason.clone(),
             /* No turnaround on this path and that is not an oversight: the text
                never reached the reader, so there is no wait that ended. */
-            turnaround_ms: None,
+            turnaround: TurnaroundFacts::default(),
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
         naming.language,
@@ -2000,7 +2059,7 @@ pub fn record_transcription_failure(
             input_level: capture.input_level,
             speech_seconds: capture.speech_seconds,
             capture_stop_reason: capture.stop_reason.clone(),
-            turnaround_ms: None,
+            turnaround: TurnaroundFacts::default(),
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
         // Nothing was transcribed, so there is no language to name.
@@ -2058,7 +2117,7 @@ pub fn record_empty_result(
             input_level: capture.input_level,
             speech_seconds: capture.speech_seconds,
             capture_stop_reason: capture.stop_reason.clone(),
-            turnaround_ms: None,
+            turnaround: TurnaroundFacts::default(),
         },
         Some(app_config.resolved_active_text_profile_work_mode()),
         // An empty result has no text, so nothing to name and no language.
@@ -2663,7 +2722,7 @@ mod tests {
                 error: None,
                 audio_path: None,
                 capture_integrity: None,
-                turnaround_ms: None,
+                turnaround: TurnaroundFacts::default(),
                 input_level: None,
                 speech_seconds: None,
                 capture_stop_reason: None,
@@ -2726,7 +2785,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
-            turnaround_ms: None,
+            turnaround: TurnaroundFacts::default(),
             input_level: None,
             speech_seconds: None,
             capture_stop_reason: None,
@@ -2763,7 +2822,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
-            turnaround_ms: None,
+            turnaround: TurnaroundFacts::default(),
             input_level: None,
             speech_seconds: None,
             capture_stop_reason: None,
@@ -2818,7 +2877,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
-            turnaround_ms: None,
+            turnaround: TurnaroundFacts::default(),
             input_level: None,
             speech_seconds: None,
             capture_stop_reason: None,
@@ -2856,7 +2915,7 @@ mod tests {
             error: Some("Model missing".to_string()),
             audio_path: None,
             capture_integrity: None,
-            turnaround_ms: None,
+            turnaround: TurnaroundFacts::default(),
             input_level: None,
             speech_seconds: None,
             capture_stop_reason: None,
@@ -2924,7 +2983,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
-            turnaround_ms: None,
+            turnaround: TurnaroundFacts::default(),
             input_level: None,
             speech_seconds: None,
             capture_stop_reason: None,
@@ -2961,7 +3020,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
-            turnaround_ms: None,
+            turnaround: TurnaroundFacts::default(),
             input_level: None,
             speech_seconds: None,
             capture_stop_reason: None,
@@ -3032,6 +3091,7 @@ mod tests {
                 input_level: None,
                 speech_seconds: None,
                 turnaround_ms: None,
+                heard_ms: None,
             },
             TranscriptionHistoryEntry {
                 capture_stop_reason: None,
@@ -3074,6 +3134,7 @@ mod tests {
                 input_level: None,
                 speech_seconds: None,
                 turnaround_ms: None,
+                heard_ms: None,
             },
             TranscriptionHistoryEntry {
                 capture_stop_reason: None,
@@ -3116,6 +3177,7 @@ mod tests {
                 input_level: None,
                 speech_seconds: None,
                 turnaround_ms: None,
+                heard_ms: None,
             },
         ]);
 
@@ -3188,7 +3250,7 @@ mod tests {
             None,
             super::super::transcript_store::TranscriptNaming::default(),
             CaptureFacts::none(),
-            None,
+            TurnaroundFacts::default(),
         )
         .expect("history entry from insert result");
 
@@ -3265,7 +3327,7 @@ mod tests {
             error: None,
             audio_path: None,
             capture_integrity: None,
-            turnaround_ms: None,
+            turnaround: TurnaroundFacts::default(),
             input_level: None,
             speech_seconds: None,
             capture_stop_reason: None,
@@ -4212,6 +4274,7 @@ mod tests {
             input_level: None,
             speech_seconds: None,
             turnaround_ms: None,
+            heard_ms: None,
         }
     }
 }

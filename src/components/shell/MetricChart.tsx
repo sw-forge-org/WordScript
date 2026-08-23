@@ -105,12 +105,21 @@ export function scaleOf(bars: ChartBar[], line: boolean): { floor: number; ceili
 export function MetricChart({
   bars,
   fallback,
+  title,
   ariaLabel,
   variant = "bars",
 }: {
   bars: ChartBar[];
   /** What the read-out says when nothing is under the cursor. */
   fallback: ReactNode;
+  /** WHAT THIS CHART IS, ABOVE IT, PERMANENTLY (ADR 0247).
+   *
+   *  The read-out below carries what a COLUMN is and is replaced the moment a
+   *  pointer crosses the plot; the same line therefore could not also carry what
+   *  the whole drawing is. Four charts on this surface went untitled, their
+   *  subject stated only in an `aria-label` — which is to say stated to a screen
+   *  reader and to nobody looking at it. */
+  title?: ReactNode;
   ariaLabel: string;
   variant?: "bars" | "line";
 }) {
@@ -145,6 +154,7 @@ export function MetricChart({
 
   return (
     <div className="ws-chart">
+      {title ? <p className="ws-chart-title">{title}</p> : null}
       <div
         className="ws-chart-plot"
         data-line={line ? "" : undefined}

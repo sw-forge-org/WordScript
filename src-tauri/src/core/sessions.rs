@@ -159,7 +159,7 @@ struct PendingTranscriptionPreview {
     /// histogram behind the tile could never fill. The wait ended when the text
     /// existed; how long the reader then took to press a button is a different
     /// interval and is not added to this one.
-    turnaround_ms: Option<u64>,
+    turnaround: history::TurnaroundFacts,
     /// Which staging this preview came from. The deadline armed for one preview
     /// may not commit another: an abort inside the deadline window frees the
     /// session for a new capture, and that capture can stage its own preview
@@ -258,7 +258,7 @@ impl NativeSessionState {
         transformed: NativeTransformResult,
         effective_mode: Option<ProcessingMode>,
         capture: history::CaptureFacts,
-        turnaround_ms: Option<u64>,
+        turnaround: history::TurnaroundFacts,
     ) -> Result<(u64, PendingTranscriptionPreviewEvent), String> {
         if !matches!(self.stage, NativeSessionStage::Processing) || self.active_session.is_none() {
             return Err("No native session is waiting for a preview commit.".to_string());
@@ -272,7 +272,7 @@ impl NativeSessionState {
             transformed,
             effective_mode,
             capture,
-            turnaround_ms,
+            turnaround,
             epoch: self.preview_counter,
             commit_at_ms: now_ms().saturating_add(PREVIEW_COMMIT_DEADLINE_MS),
             occurred_at_ms: now_ms(),
@@ -719,7 +719,7 @@ pub async fn commit_pending_preview<R: Runtime>(
                    auto-paste — which is every dictation on a clipboard-only
                    machine — reported no turnaround, and the tile stayed dark
                    over fifty records. */
-                preview.turnaround_ms,
+                preview.turnaround,
             )
             .ok();
 
@@ -837,7 +837,7 @@ pub async fn commit_pending_preview<R: Runtime>(
                    failed, and the text still came into existence when it did —
                    the record states what the wait was, and the failure is its
                    own field. */
-                preview.turnaround_ms,
+                preview.turnaround,
             );
             let error = result
                 .error
@@ -917,8 +917,8 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
     effective_mode: Option<ProcessingMode>,
     capture: history::CaptureFacts,
     // What the pipeline measured before it staged this preview (ADR 0181), so
-    // the commit can report it (ADR 0182).
-    turnaround_ms: Option<u64>,
+    // the commit can report it (ADR 0182) — the wait and its split (ADR 0247).
+    turnaround: history::TurnaroundFacts,
 ) -> Result<PendingTranscriptionPreviewEvent, String> {
     let (epoch, payload, session_id) = {
         let state = app
@@ -932,7 +932,7 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
             transformed,
             effective_mode,
             capture,
-            turnaround_ms,
+            turnaround,
         )?;
         (epoch, payload, state.processing_session_id())
     };
@@ -1389,7 +1389,7 @@ mod tests {
                 },
                 None,
                 history::CaptureFacts::none(),
-                Some(1_210),
+                history::TurnaroundFacts::measured(1_210, 900),
             )
             .unwrap();
         epoch
@@ -1407,7 +1407,7 @@ mod tests {
         stage_preview(&mut state, "Final transcript");
 
         let (_, preview) = state.take_pending_preview(None).unwrap();
-        assert_eq!(preview.turnaround_ms, Some(1_210));
+        assert_eq!(preview.turnaround.total_ms, Some(1_210));
     }
 
     #[test]
@@ -1429,7 +1429,7 @@ mod tests {
                 },
                 None,
                 history::CaptureFacts::none(),
-                Some(1_210),
+                history::TurnaroundFacts::measured(1_210, 900),
             )
             .unwrap();
 

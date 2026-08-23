@@ -478,6 +478,18 @@ pub struct ActivityLedger {
     /// difference readable instead of merely disclosed in a note.
     #[serde(default)]
     pub mode_causes: BTreeMap<String, Vec<u32>>,
+    /// The TRANSFORM's own share of those same waits, keyed the same way.
+    ///
+    /// WHAT NEITHER OF THE TWO MAPS ABOVE COULD EVER SAY. `turnaround_causes`
+    /// and `mode_causes` both hold the WHOLE wait — one quantity filed under two
+    /// different keys — so a model row and a mode row were the same number twice
+    /// and a reader comparing them learnt nothing. Neither could answer *how much
+    /// of this is the rewrite*, which is the only question a mode row is opened
+    /// for. This map is the interval from the recogniser answering to the text
+    /// being final; `LedgerCause::heard_buckets` is the interval before it. Same
+    /// axis as every other turnaround histogram in this file.
+    #[serde(default)]
+    pub mode_transform_causes: BTreeMap<String, Vec<u32>>,
 }
 
 /// One recogniser's own turnaround distribution (ADR 0240).
@@ -497,6 +509,17 @@ pub struct LedgerCause {
     /// further out.
     #[serde(default)]
     pub buckets: Vec<u32>,
+    /// The recogniser's OWN share of the same waits — the audio export plus the
+    /// provider round trip, ending the moment there is text to transform.
+    /// `buckets` holds the whole wait for exactly these runs, so what separates
+    /// the two is what the mode cost.
+    ///
+    /// EMPTY FOR EVERY RUN COUNTED BEFORE THE SPLIT EXISTED, and no seed can
+    /// fill it: a history record keeps one duration and never kept two. A row
+    /// with counts here and a row without are both honest, and the surface draws
+    /// the second without a figure rather than inventing one for it.
+    #[serde(default)]
+    pub heard_buckets: Vec<u32>,
 }
 
 impl ActivityLedger {
@@ -517,6 +540,20 @@ impl ActivityLedger {
            whole reason this tile reports a median. */
         let index = ((rate / RATE_BUCKET_WPM) as usize).min(RATE_BUCKETS - 1);
         self.rate_buckets[index] += 1;
+    }
+
+    /// One duration into one turnaround histogram, on the shared axis.
+    ///
+    /// Written once and called from the stage splits rather than copied a fifth
+    /// time: a bucket index computed in five places is five chances to compute
+    /// it differently, which is precisely the failure ADR 0181 recorded.
+    fn count_turnaround(buckets: &mut Vec<u32>, milliseconds: u64) {
+        if buckets.len() != TURNAROUND_BUCKETS {
+            *buckets = vec![0; TURNAROUND_BUCKETS];
+        }
+        let index =
+            ((milliseconds as f64 / TURNAROUND_BUCKET_MS) as usize).min(TURNAROUND_BUCKETS - 1);
+        buckets[index] += 1;
     }
 
     fn add_turnaround(&mut self, milliseconds: u64) {
@@ -542,7 +579,16 @@ impl ActivityLedger {
     /// that cost exactly two runs out of 422: the seed skips a record that
     /// delivered no words, and the live funnel counts its wait. The gap is fixed
     /// at seed time and never widens.
-    fn add_turnaround_cause(&mut self, provider: &str, model: Option<&str>, milliseconds: u64) {
+    fn add_turnaround_cause(
+        &mut self,
+        provider: &str,
+        model: Option<&str>,
+        milliseconds: u64,
+        /* THE SAME RUN'S HEARING TIME, where the run measured one. Passed beside
+           the total rather than derived from it, because the difference between
+           them belongs to the mode and this row is not the mode's. */
+        heard_ms: Option<u64>,
+    ) {
         let provider = provider.trim();
         /* A RECORD WITH NO MODEL NAME IS FILED UNDER ITS PROVIDER, which is what
            the frontend already did with the same records: the vendor is the
@@ -573,19 +619,33 @@ impl ActivityLedger {
             provider,
             model,
             buckets: Vec::new(),
+            heard_buckets: Vec::new(),
         });
-        if cause.buckets.len() != TURNAROUND_BUCKETS {
-            cause.buckets = vec![0; TURNAROUND_BUCKETS];
+        Self::count_turnaround(&mut cause.buckets, milliseconds);
+        /* THE SPLIT IS COUNTED ONLY WHERE IT WAS MEASURED, and the two
+           histograms are therefore allowed to disagree on how many runs they
+           hold. That is the honest shape: a machine that dictated before the
+           split existed has a full `buckets` and an empty `heard_buckets`, and
+           the surface reads the second as *not measured* rather than as *nought
+           seconds*. */
+        if let Some(heard) = heard_ms {
+            Self::count_turnaround(&mut cause.heard_buckets, heard.min(milliseconds));
         }
-        let index =
-            ((milliseconds as f64 / TURNAROUND_BUCKET_MS) as usize).min(TURNAROUND_BUCKETS - 1);
-        cause.buckets[index] += 1;
     }
 
     /// Count one wait against the MODE that produced it (ADR 0243). Same funnel,
     /// same condition and the same axis as `add_turnaround`, so this cut and the
     /// model cut describe the same set of runs from the day both exist.
-    fn add_mode_cause(&mut self, mode: Option<&str>, milliseconds: u64) {
+    fn add_mode_cause(
+        &mut self,
+        mode: Option<&str>,
+        milliseconds: u64,
+        /* WHAT THIS MODE ITSELF COST — the interval after the recogniser
+           answered. `Some(0)` is a real reading and not a missing one: Verbatim
+           runs no model and genuinely adds nothing, which is a fact worth
+           drawing. `None` is a run counted before the split was measured. */
+        transform_ms: Option<u64>,
+    ) {
         let Some(mode) = mode.map(str::trim).filter(|value| !value.is_empty()) else {
             /* A run whose mode the record does not name is counted in the
                histogram and in no row of this cut, exactly as a run with no
@@ -594,13 +654,16 @@ impl ActivityLedger {
                total, which the surface states rather than papers over. */
             return;
         };
-        let buckets = self.mode_causes.entry(mode.to_string()).or_default();
-        if buckets.len() != TURNAROUND_BUCKETS {
-            *buckets = vec![0; TURNAROUND_BUCKETS];
+        Self::count_turnaround(
+            self.mode_causes.entry(mode.to_string()).or_default(),
+            milliseconds,
+        );
+        if let Some(transform) = transform_ms {
+            Self::count_turnaround(
+                self.mode_transform_causes.entry(mode.to_string()).or_default(),
+                transform.min(milliseconds),
+            );
         }
-        let index =
-            ((milliseconds as f64 / TURNAROUND_BUCKET_MS) as usize).min(TURNAROUND_BUCKETS - 1);
-        buckets[index] += 1;
     }
 
     /// The middle dictation's wait, in milliseconds.
@@ -735,13 +798,19 @@ impl ActivityLedger {
                 provider: cause.provider.clone(),
                 model: cause.model.clone(),
                 buckets: Vec::new(),
+                heard_buckets: Vec::new(),
             });
             raise_buckets(&mut own.buckets, &cause.buckets, TURNAROUND_BUCKETS);
+            raise_buckets(&mut own.heard_buckets, &cause.heard_buckets, TURNAROUND_BUCKETS);
         }
         /* NO CAP ON THIS ONE, because the key is an enum and not a wire value —
            see the field's own note. */
         for (mode, buckets) in &other.mode_causes {
             let own = self.mode_causes.entry(mode.clone()).or_default();
+            raise_buckets(own, buckets, TURNAROUND_BUCKETS);
+        }
+        for (mode, buckets) in &other.mode_transform_causes {
+            let own = self.mode_transform_causes.entry(mode.clone()).or_default();
             raise_buckets(own, buckets, TURNAROUND_BUCKETS);
         }
         /* THE EARLIER STAMP WINS, and for the same reason `started_on` does: an
@@ -916,12 +985,18 @@ fn migrate(ledger: &mut ActivityLedger) {
             day.turnaround_ms_sum = 0;
         }
     }
-    for buckets in ledger.mode_causes.values_mut() {
+    for buckets in ledger
+        .mode_causes
+        .values_mut()
+        .chain(ledger.mode_transform_causes.values_mut())
+        .chain(ledger.turnaround_causes.values_mut().map(|cause| &mut cause.heard_buckets))
+    {
         if !buckets.is_empty() && buckets.len() != TURNAROUND_BUCKETS {
             *buckets = Vec::new();
         }
     }
     ledger.mode_causes.retain(|_, buckets| !buckets.is_empty());
+    ledger.mode_transform_causes.retain(|_, buckets| !buckets.is_empty());
 
     ledger.schema = LEDGER_SCHEMA;
 }
@@ -1082,6 +1157,13 @@ pub struct SeedRecord {
     pub spoken_words: u64,
     pub recorded_seconds: Option<f64>,
     pub turnaround_ms: Option<u64>,
+    /// The recogniser's own share of that wait. ALWAYS `None` from a history
+    /// record and the field is here anyway: the seed and the live funnel take
+    /// the same shape, so the one place that decides what a stage split means is
+    /// `add_turnaround_cause` rather than two callers agreeing by accident. What
+    /// it costs is one word per record; what leaving it out costs is a rebuild
+    /// that quietly files pre-split runs as nought-second hearings.
+    pub heard_ms: Option<u64>,
     /// The pair that produced it, for the cause histogram (ADR 0240).
     pub provider: String,
     pub model: Option<String>,
@@ -1114,6 +1196,14 @@ pub struct LedgerContribution {
     /// Milliseconds from the capture stopping to the text existing. `None` on
     /// every path that never ran that clock.
     pub turnaround_ms: Option<u64>,
+    /// How much of that wait was spent GETTING THE WORDS — the audio export plus
+    /// the provider round trip. What is left over is the mode transform, and the
+    /// two together are the whole figure above.
+    ///
+    /// `None` wherever the run predates the split. It is not zero, and the
+    /// difference matters at the surface: a missing reading draws no figure, a
+    /// zero draws one.
+    pub heard_ms: Option<u64>,
     /// Who produced the text, so the wait above can be filed under it
     /// (ADR 0240). Read straight off the record being written, which is the
     /// same pair the record itself names.
@@ -1226,12 +1316,21 @@ pub fn record(contribution: LedgerContribution) -> Result<(), String> {
         ledger.add_turnaround(milliseconds);
         /* ONE CONDITION FOR ALL THREE, so no live run can ever land in one and
            not the others (ADR 0240, extended by ADR 0243). */
+        /* THE TWO STAGES, DERIVED ONCE AND HANDED TO BOTH CUTS. The recogniser's
+           share is measured; the transform's is what the total has left over, so
+           the pair can never sum to something other than the wait the histogram
+           above just counted. Saturating because a clock read twice can come
+           back out of order by a millisecond, and a wrapped u64 here would land
+           in the top bucket as a fifty-eight-thousand-year rewrite. */
+        let heard = contribution.heard_ms.map(|heard| heard.min(milliseconds));
+        let transform = heard.map(|heard| milliseconds.saturating_sub(heard));
         ledger.add_turnaround_cause(
             &contribution.provider,
             contribution.model.as_deref(),
             milliseconds,
+            heard,
         );
-        ledger.add_mode_cause(contribution.mode.as_deref(), milliseconds);
+        ledger.add_mode_cause(contribution.mode.as_deref(), milliseconds, transform);
         ledger.stamp_measured("turnaround_runs", &key);
     }
     /* THE STAMP GOES DOWN WHETHER OR NOT A LANGUAGE WAS NAMED, because what it
@@ -1355,6 +1454,13 @@ pub fn read_activity_ledger() -> Result<ActivityLedger, String> {
                         .as_ref()
                         .map(|integrity| integrity.recorded_seconds),
                     turnaround_ms: entry.turnaround_ms,
+                    /* WHATEVER THE RECORD KEPT, WHICH FOR EVERY RUN OLDER THAN
+                       the split is nothing. Read rather than hardcoded to
+                       `None`: from here on records DO carry it, and a rebuild
+                       that threw the split away would leave a reseeded machine
+                       permanently unable to draw a column its own records could
+                       fill. */
+                    heard_ms: entry.heard_ms,
                     provider: entry.provider.clone(),
                     model: entry.model.clone(),
                     credited: super::history::mode_credits_typing(entry.effective_mode.as_ref()),
@@ -1628,12 +1734,17 @@ pub fn seed_from_history(records: &[SeedRecord]) -> Result<(), String> {
                     &record.provider,
                     record.model.as_deref(),
                     milliseconds,
+                    record.heard_ms,
                 );
             }
         }
         if seed_modes {
             if let Some(milliseconds) = record.turnaround_ms {
-                ledger.add_mode_cause(record.mode.as_deref(), milliseconds);
+                ledger.add_mode_cause(
+                    record.mode.as_deref(),
+                    milliseconds,
+                    record.heard_ms.map(|heard| milliseconds.saturating_sub(heard)),
+                );
             }
         }
     }
@@ -1741,6 +1852,7 @@ mod tests {
             recorded_seconds: seconds,
             speech_seconds: seconds,
             turnaround_ms: None,
+            heard_ms: None,
             provider: "groq".into(),
             model: Some("whisper-large-v3-turbo".into()),
             credited: true,
@@ -1883,8 +1995,8 @@ mod tests {
         reset_for_tests();
 
         let records = [
-            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: Some(1200), provider: "groq".into(), model: Some("whisper-large-v3".into()), credited: true, mode: Some("cleanup".into()), language: Some("de".into()) },
-            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 50, recorded_seconds: None, turnaround_ms: None, provider: "groq".into(), model: None, credited: true, mode: Some("cleanup".into()), language: None },
+            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: Some(1200), heard_ms: None, provider: "groq".into(), model: Some("whisper-large-v3".into()), credited: true, mode: Some("cleanup".into()), language: Some("de".into()) },
+            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 50, recorded_seconds: None, turnaround_ms: None, heard_ms: None, provider: "groq".into(), model: None, credited: true, mode: Some("cleanup".into()), language: None },
         ];
         seed_from_history(&records).unwrap();
         /* Second call, same records: a ledger with rows in it is already seeded
@@ -1912,6 +2024,7 @@ mod tests {
             spoken_words: 100,
             recorded_seconds: Some(60.0),
             turnaround_ms: None,
+            heard_ms: None,
             provider: "groq".into(),
             model: None,
             credited: true,
@@ -1946,10 +2059,10 @@ mod tests {
         std::fs::write(&path, raw).unwrap();
 
         seed_from_history(&[
-            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: None, provider: "groq".into(), model: None, credited: true, mode: Some("cleanup".into()), language: None },
+            SeedRecord { created_at_ms: AUG_16, words: 100, spoken_words: 104, recorded_seconds: Some(60.0), turnaround_ms: None, heard_ms: None, provider: "groq".into(), model: None, credited: true, mode: Some("cleanup".into()), language: None },
             /* Generated prose. Its words are on the day and may not be credited
                against typing (ADR 0178). */
-            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 8, recorded_seconds: Some(30.0), turnaround_ms: None, provider: "groq".into(), model: None, credited: false, mode: Some("cleanup".into()), language: None },
+            SeedRecord { created_at_ms: AUG_16, words: 50, spoken_words: 8, recorded_seconds: Some(30.0), turnaround_ms: None, heard_ms: None, provider: "groq".into(), model: None, credited: false, mode: Some("cleanup".into()), language: None },
         ])
         .unwrap();
 
@@ -1988,6 +2101,7 @@ mod tests {
             spoken_words: 104,
             recorded_seconds: Some(60.0),
             turnaround_ms: None,
+            heard_ms: None,
             provider: "groq".into(),
             model: None,
             credited: true,
@@ -2132,6 +2246,7 @@ mod tests {
             recorded_seconds: Some(60.0),
             speech_seconds: Some(40.0),
             turnaround_ms: None,
+            heard_ms: None,
             provider: "groq".into(),
             model: Some("whisper-large-v3-turbo".into()),
             credited: false,
@@ -2158,6 +2273,7 @@ mod tests {
             recorded_seconds: Some(60.0),
             speech_seconds: Some(40.0),
             turnaround_ms: None,
+            heard_ms: None,
             provider: "groq".into(),
             model: Some("whisper-large-v3-turbo".into()),
             credited: false,
@@ -2210,6 +2326,19 @@ mod tests {
         model: Option<&str>,
         turnaround_ms: u64,
     ) -> LedgerContribution {
+        split(created_at_ms, provider, model, turnaround_ms, None)
+    }
+
+    /// The same dictation with its stage split stated. `None` is a run counted
+    /// before the split was measured, which is every run this machine already
+    /// holds.
+    fn split(
+        created_at_ms: u64,
+        provider: &str,
+        model: Option<&str>,
+        turnaround_ms: u64,
+        heard_ms: Option<u64>,
+    ) -> LedgerContribution {
         LedgerContribution {
             created_at_ms,
             words: 100,
@@ -2217,6 +2346,7 @@ mod tests {
             recorded_seconds: Some(60.0),
             speech_seconds: Some(40.0),
             turnaround_ms: Some(turnaround_ms),
+            heard_ms,
             provider: provider.into(),
             model: model.map(str::to_string),
             credited: true,
@@ -2269,6 +2399,71 @@ mod tests {
             median_of(&slow.buckets, TURNAROUND_BUCKET_MS),
             Some(5_800.0),
             "the row is read on the same axis as the bands above it",
+        );
+    }
+
+    /// ADR 0247. A wait that was measured in two stages is filed as two stages,
+    /// and the row that hears is not the row that rewrites.
+    ///
+    /// THIS IS THE CASE THE SURFACE USED TO GET WRONG WITHOUT SAYING SO. Both
+    /// cause maps held the same end-to-end figure, so a 1.2 s dictation put 1.2 s
+    /// against the recogniser AND 1.2 s against the mode — two rows, one number,
+    /// and a reader comparing them was comparing a figure with itself.
+    #[test]
+    fn a_measured_wait_splits_into_the_hearing_and_the_rewriting() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(split(AUG_16, "groq", Some("whisper-large-v3-turbo"), 1_200, Some(700))).unwrap();
+
+        let ledger = snapshot().unwrap();
+        let row = ledger.turnaround_causes.get("groq/whisper-large-v3-turbo").unwrap();
+        assert_eq!(
+            median_of(&row.buckets, TURNAROUND_BUCKET_MS),
+            Some(1_200.0),
+            "the whole wait is still the whole wait",
+        );
+        assert_eq!(
+            median_of(&row.heard_buckets, TURNAROUND_BUCKET_MS),
+            Some(700.0),
+            "the recogniser is charged only for the part it was there for",
+        );
+        assert_eq!(
+            median_of(ledger.mode_transform_causes.get("cleanup").unwrap(), TURNAROUND_BUCKET_MS),
+            Some(500.0),
+            "and the mode is charged the remainder rather than the total",
+        );
+        assert_eq!(
+            median_of(ledger.mode_causes.get("cleanup").unwrap(), TURNAROUND_BUCKET_MS),
+            Some(1_200.0),
+            "while the end-to-end cut keeps reporting end to end",
+        );
+    }
+
+    /// A run counted before the split existed leaves the stage histograms EMPTY,
+    /// and that is the whole distinction the surface reads.
+    ///
+    /// Nought is a reading — Verbatim genuinely rewrites in no time — so a run
+    /// that was never measured may not be counted as an instant one. Filed as
+    /// zero it would drag every median on the machine towards nothing and the
+    /// column would look measured.
+    #[test]
+    fn a_wait_with_no_split_measured_is_absent_from_the_stages_rather_than_nought() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(split(AUG_16, "groq", Some("whisper-large-v3-turbo"), 1_200, None)).unwrap();
+
+        let ledger = snapshot().unwrap();
+        let row = ledger.turnaround_causes.get("groq/whisper-large-v3-turbo").unwrap();
+        assert_eq!(row.buckets.iter().map(|count| *count as u64).sum::<u64>(), 1);
+        assert!(
+            row.heard_buckets.iter().all(|count| *count == 0),
+            "the recogniser's own share was never measured, so nothing is claimed about it",
+        );
+        assert!(
+            ledger.mode_transform_causes.get("cleanup").is_none(),
+            "and the mode's share is a row that does not exist rather than a row of nought",
         );
     }
 
@@ -2571,6 +2766,7 @@ mod tests {
             spoken_words: 100,
             recorded_seconds: Some(60.0),
             turnaround_ms: Some(1_200),
+            heard_ms: None,
             provider: "groq".into(),
             model: Some("whisper-large-v3".into()),
             credited: true,
@@ -2671,6 +2867,7 @@ mod tests {
             spoken_words: 100,
             recorded_seconds: Some(60.0),
             turnaround_ms: Some(900),
+            heard_ms: None,
             provider: "groq".into(),
             model: Some("whisper-large-v3".into()),
             credited: true,
