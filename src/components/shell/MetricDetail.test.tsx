@@ -407,6 +407,88 @@ describe("where the wait went", () => {
     expect(splitRow("fast-recogniser")).toEqual(["fast-recogniservia vendor-one", "2", "1.0 s"]);
     expect(screen.getByText(/split from your next dictation onwards/)).toBeInTheDocument();
   });
+
+  /* THE THIRD STATE, AND THE ONLY ONE A REAL MACHINE IS IN FOR MONTHS. Every
+     case above this one was written with the split measured on ALL of a row's
+     runs or on none — which is why the first build of this table shipped a
+     five-run median standing beside a hundred-and-forty-seven-run one with
+     nothing but a hover tooltip between them. A reader subtracts those and gets
+     a number that is wrong twice: medians do not subtract, and these two are
+     not over the same runs. Both figures the table now prints for that state
+     are asserted here. */
+  it("prints the stage figure's own basis while the split is short of the runs", () => {
+    const short = new Array<number>(400).fill(0);
+    short[40] = 4;
+    draw(
+      "turnaround",
+      ledger(
+        { [iso(1)]: row() },
+        {
+          turnaround_buckets: short,
+          turnaround_causes: {
+            "vendor-one/fast-recogniser": cause(
+              "vendor-one",
+              "fast-recogniser",
+              [1000, 1000, 1000, 1000],
+              [600],
+            ),
+          },
+          mode_causes: { cleanup: modeBuckets([1000, 1000, 1000, 1000]) },
+          mode_transform_causes: { cleanup: modeBuckets([400]) },
+        },
+      ),
+    );
+
+    /* THE COLUMN IS DRAWN — one run measured is enough to have something true to
+       say — and the count cell says which run count each figure rests on. */
+    expect(splitColumns()).toEqual(["runs", "heard in", "in total"]);
+    expect(splitRow("fast-recogniser")).toEqual([
+      "fast-recogniservia vendor-one",
+      "1/4",
+      "0.6 s",
+      "1.0 s",
+    ]);
+    expect(
+      screen.getByText("The same 4 waits · heard in measured on 1 so far"),
+    ).toBeInTheDocument();
+    /* AND THE CLAUSE NAMES THE COLUMN OF THE CUT ON SCREEN, not the one behind
+       the toggle: the two fill together but are counted apart, and a reader
+       looking at the mode cut is owed the mode cut's coverage. */
+    fireEvent.click(screen.getByRole("button", { name: "by mode" }));
+    expect(splitRow("Cleanup")).toEqual(["Cleanup", "1/4", "0.4 s", "1.0 s"]);
+    expect(
+      screen.getByText("The same 4 waits · rewrote in measured on 1 so far"),
+    ).toBeInTheDocument();
+  });
+
+  /* AND THE PAIR COLLAPSES BACK TO ONE COUNT once the split covers the row, so
+     the machine that has only ever known the split never sees the apparatus at
+     all. The same fixture as the case at the top of this block, asserted for
+     what it does NOT print. */
+  it("says nothing about coverage once every run carries a split", () => {
+    const whole = new Array<number>(400).fill(0);
+    whole[40] = 2;
+    draw(
+      "turnaround",
+      ledger(
+        { [iso(1)]: row() },
+        {
+          turnaround_buckets: whole,
+          turnaround_causes: {
+            "vendor-one/fast-recogniser": cause(
+              "vendor-one",
+              "fast-recogniser",
+              [1000, 1000],
+              [600, 600],
+            ),
+          },
+        },
+      ),
+    );
+
+    expect(screen.getByText("The same 2 waits")).toBeInTheDocument();
+    expect(splitRow("fast-recogniser")?.[1]).toBe("2");
+  });
 });
 
 /* THE LANGUAGE POPULATIONS, WHICH ADR 0244 CUT FROM THREE TO TWO. The third —

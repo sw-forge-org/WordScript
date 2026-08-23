@@ -985,11 +985,22 @@ fn migrate(ledger: &mut ActivityLedger) {
             day.turnaround_ms_sum = 0;
         }
     }
+    /* EVERY HISTOGRAM ON THE SHARED AXIS, INCLUDING THE ONE A CAUSE ROW KEEPS
+       BESIDE ITS STAGE. ADR 0247 added `heard_buckets` to this walk and left
+       `buckets` — the total that sits in the same struct — out of it, which made
+       one field of a pair defended and its sibling not. The top-level
+       `turnaround_buckets` above is dropped on an axis change and these are read
+       against the same constant, so they answer to the same rule. */
     for buckets in ledger
         .mode_causes
         .values_mut()
         .chain(ledger.mode_transform_causes.values_mut())
-        .chain(ledger.turnaround_causes.values_mut().map(|cause| &mut cause.heard_buckets))
+        .chain(
+            ledger
+                .turnaround_causes
+                .values_mut()
+                .flat_map(|cause| [&mut cause.buckets, &mut cause.heard_buckets]),
+        )
     {
         if !buckets.is_empty() && buckets.len() != TURNAROUND_BUCKETS {
             *buckets = Vec::new();
@@ -997,6 +1008,11 @@ fn migrate(ledger: &mut ActivityLedger) {
     }
     ledger.mode_causes.retain(|_, buckets| !buckets.is_empty());
     ledger.mode_transform_causes.retain(|_, buckets| !buckets.is_empty());
+    /* A CAUSE ROW WITH NOTHING LEFT TO COUNT IS A ROW, NOT A GAP. It can only
+       arise from the guard above having just emptied it, and it would otherwise
+       sit in the file carrying a provider and a model and no runs. The mode cuts
+       beside it have dropped theirs since ADR 0243. */
+    ledger.turnaround_causes.retain(|_, cause| !cause.buckets.is_empty());
 
     ledger.schema = LEDGER_SCHEMA;
 }
@@ -2464,6 +2480,51 @@ mod tests {
         assert!(
             ledger.mode_transform_causes.get("cleanup").is_none(),
             "and the mode's share is a row that does not exist rather than a row of nought",
+        );
+    }
+
+    /// ONE ROW, TWO POPULATIONS — the state every installation is in from the
+    /// day the split ships until the day its old runs age out, and neither of
+    /// the two cases above it.
+    ///
+    /// The surface prints both counts because of what this asserts: the total
+    /// histogram carries every run and the stage histogram carries only the ones
+    /// that measured a stage, in ONE row, so a median off each is a median over a
+    /// different set. Read as though they shared a denominator, `heard in`
+    /// subtracted from `in total` is a rewriting time nobody measured.
+    #[test]
+    fn one_row_can_hold_more_runs_than_it_holds_splits() {
+        let _guard = test_lock().lock().unwrap_or_else(|error| error.into_inner());
+        reset_for_tests();
+
+        record(split(AUG_16, "groq", Some("whisper-large-v3-turbo"), 1_200, None)).unwrap();
+        record(split(AUG_16, "groq", Some("whisper-large-v3-turbo"), 1_200, None)).unwrap();
+        record(split(AUG_16, "groq", Some("whisper-large-v3-turbo"), 1_000, Some(600))).unwrap();
+
+        let ledger = snapshot().unwrap();
+        let row = ledger.turnaround_causes.get("groq/whisper-large-v3-turbo").unwrap();
+        assert_eq!(
+            row.buckets.iter().map(|count| *count as u64).sum::<u64>(),
+            3,
+            "every run is in the total, split or not",
+        );
+        assert_eq!(
+            row.heard_buckets.iter().map(|count| *count as u64).sum::<u64>(),
+            1,
+            "and only the measured one is in the stage",
+        );
+        assert_eq!(
+            median_of(&row.heard_buckets, TURNAROUND_BUCKET_MS),
+            Some(600.0),
+            "the stage median is read off the runs that have one and not off the rest",
+        );
+        assert_eq!(
+            ledger
+                .mode_transform_causes
+                .get("cleanup")
+                .map(|buckets| buckets.iter().map(|count| *count as u64).sum::<u64>()),
+            Some(1),
+            "the mode cut counts the same one, so the two cuts agree on what is missing",
         );
     }
 

@@ -4060,9 +4060,17 @@
      drives both grids. Reaching from the header to the list with `:has(~ ul)`
      worked and made the header's layout depend on a sibling's attribute, which
      is a rule nobody would look for while editing either. */
+  /* THE COUNT TRACK IS SIZED FOR `1234/5678` AND NOT FOR `6`, because while the
+     split is short of the runs that cell holds both populations — the stage
+     figure's own basis, in the cell that already counts runs. Sized at 11 px
+     tabular figures with the widest count this table can reach; a narrower
+     track would wrap the pair onto two lines and break the baseline the whole
+     grid exists to hold. It stays this wide in the collapsed three-column
+     template too, where the pair never appears, so the run counts do not shift
+     sideways when the first split lands. */
   .ws-metric-split-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 3rem 5.5rem 4.5rem;
+    grid-template-columns: minmax(0, 1fr) 4rem 5.5rem 4.5rem;
     align-items: baseline;
     gap: var(--s2);
     margin: 0;
@@ -4070,7 +4078,7 @@
     font-size: var(--t-small);
   }
   .ws-metric-split:not([data-staged]) .ws-metric-split-row {
-    grid-template-columns: minmax(0, 1fr) 3rem 4.5rem;
+    grid-template-columns: minmax(0, 1fr) 4rem 4.5rem;
   }
   .ws-metric-split li.ws-metric-split-row { border-top: 1px solid var(--border); }
   .ws-metric-split-columns {

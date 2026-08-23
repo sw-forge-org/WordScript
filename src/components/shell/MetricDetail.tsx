@@ -198,6 +198,17 @@ type Cut = "model" | "mode";
  * starts with the split measured on none of its runs and fills from the next
  * one. A column of dashes would read as a broken table; no column at all, and a
  * clause saying when it arrives, reads as what it is.
+ *
+ * **AND THERE IS A THIRD STATE BETWEEN THOSE TWO, WHICH IS WHERE EVERY REAL
+ * MACHINE LIVES.** The first build of this table had two: nothing measured, or
+ * measured. Rendered against the reporting machine's own ledger the day the
+ * runtime learned to split, it drew `heard in 0.5 s` beside `in total 0.9 s`
+ * for one recogniser — the first figure over five runs, the second over a
+ * hundred and forty-seven, with nothing on the screen saying so and a `title`
+ * attribute that says it only on hover. The reader subtracts, and the 0.4 s
+ * they get is a difference of two medians over two different populations. So
+ * while the split is short of the runs, the count cell carries both figures and
+ * the heading names the column that is thin.
  */
 function Split({
   ledger,
@@ -225,6 +236,16 @@ function Split({
      ledger, because the two fill together and a reader looking at one of them
      should not be told about the other's coverage. */
   const staged = rows.reduce((sum, row) => sum + row.staged, 0);
+  /* AND WHETHER IT HAS ONE FOR EVERY RUN, WHICH IS A DIFFERENT QUESTION AND THE
+     ONE THE FIRST BUILD OF THIS TABLE DID NOT ASK. Between *nothing measured*
+     and *everything measured* sits the state every installation is actually in
+     for months: a stage column read off a handful of runs standing beside a
+     total read off all of them. Drawn without a word, `heard in 0.5 s` beside
+     `in total 0.9 s` invites the one subtraction that is wrong twice over —
+     medians do not subtract, and these two are not even over the same runs.
+     Measured here on the reporting machine the day the split shipped: five runs
+     of a hundred and forty-seven. */
+  const partial = staged > 0 && staged < covered;
 
   const name = (row: CauseRow) =>
     showing === "mode"
@@ -242,9 +263,21 @@ function Split({
             and in no row here — the heading says so in the same breath rather
             than in a footnote under the list. */}
         <p className="ws-metric-split-title">
-          {covered === runs
-            ? `The same ${runs} ${runs === 1 ? "wait" : "waits"}`
-            : `${covered} of the same ${runs} waits`}
+          {[
+            covered === runs
+              ? `The same ${runs} ${runs === 1 ? "wait" : "waits"}`
+              : `${covered} of the same ${runs} waits`,
+            /* THE CLAUSE THAT NAMES WHICH COLUMN IS THIN, and it deletes itself
+               the day the split reaches every run — the same self-deleting
+               shape as the sentence under the table, one state later. It says
+               which column rather than how many rows, because the count per row
+               is in the row. */
+            ...(partial
+              ? [
+                  `${showing === "model" ? "heard in" : "rewrote in"} measured on ${staged} so far`,
+                ]
+              : []),
+          ].join(" · ")}
         </p>
         {offered.length > 1 ? (
           <SegmentControl
@@ -285,7 +318,16 @@ function Split({
                 <em>via {vendorName(row.provider)}</em>
               ) : null}
             </span>
-            <span className="ws-metric-split-runs">{row.runs}</span>
+            {/* THE ROW'S OWN TWO POPULATIONS, IN THE CELL THAT ALREADY COUNTS
+                RUNS. `1/6` says at a glance what a tooltip said only on hover:
+                that this row's stage figure is one dictation and its total is
+                six. It costs no line of prose — the owner's standing objection
+                to this screen was the number of small texts on it — and it
+                collapses back to a plain count the moment the split covers the
+                row. */}
+            <span className="ws-metric-split-runs">
+              {staged > 0 && row.staged !== row.runs ? `${row.staged}/${row.runs}` : row.runs}
+            </span>
             {staged > 0 ? (
               <span
                 className="ws-metric-split-stage"
