@@ -120,6 +120,21 @@ Status: 2026-08-23
   (ADR 0086), and is absent rather than zero on a retry, an upload and every
   record older than the measurement. `Show transcripts in file manager` acts on
   History, on Home and in the palette.
+- **A record's `Heard` is the recogniser's own output and its `Written` is the
+  delivery** (ADR 0249, 2026-08-23). The heard text is taken before the
+  confidence gate, before the recogniser repair and before any mode; the written
+  text is `insert_result.text`, the string the clipboard or the keystroke driver
+  was handed. Between them the confidence gate STATES what it removed rather
+  than subtracting it: every rejected segment is on the record with its reason,
+  its start and its end, the panel's foot names that stage from
+  `low_confidence_dropped`, and the record's own Markdown file lists the
+  segments under `## Dropped`. A retry transforms the text the gate left. Before
+  this the heard text was taken below the gate and the rejections went only to a
+  log that rotates, so no record could be asked whether its text had been edited
+  before it was stored. **There is no backfill**: a record written before
+  2026-08-23 carries the post-gate text and nothing on it says so — on this
+  machine the gate has never fired in 4.4 MB of runtime log or 157 records, so
+  nothing here changes meaning in practice.
 - **The index is read when it changes and a row carries what a row needs**
   (ADR 0240, 2026-08-19). History and Home re-read on the three
   `wordscript-event` payloads that write a record — `transcription`, `error`,

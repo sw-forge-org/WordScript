@@ -180,6 +180,23 @@ status change. Resolved bugs remain as references for the same failure class.
   scope in `rawOf`, and is not read for the sentence. The mirror case — equal
   texts with a stage that ran — was found the same way on 2026-08-10 and does
   have a sentence; this fourth case was never added.
+- [heard-names-two-different-boundaries-and-the-text-one-is-later.md](heard-names-two-different-boundaries-and-the-text-one-is-later.md):
+  **fixed 2026-08-23 (ADR 0249), found the same day** — the word `heard` marked
+  two instants one stage apart. `heard_ms`, the turnaround detail's `heard in`,
+  was taken before `apply_confidence_gate`; `heard_text`, the History panel's
+  **Heard**, was taken after it, and the gate overwrote `response.text` whenever
+  it rejected a segment. The recogniser's own output was stored nowhere and
+  `low_confidence_segments` reached no record — so no record could be asked
+  whether its **Heard** column had been edited before it was stored, and a
+  segment WordScript's own filter dropped was indistinguishable from one the
+  recogniser never returned, which is exactly what the panel's *nothing was
+  reworded* claim cannot see. It was a decision before a repair, and the
+  decision was to move the boundary: `heard_text` is taken before the gate, the
+  gate stores what it removed with reason, start and end, and
+  `low_confidence_dropped` on `applied_rules` lets the panel name that stage. No
+  backfill — records written before carry the old meaning and cannot say so. The
+  sweep the fix required found a third boundary on the re-transcription retry
+  and one path teaching vocabulary from the wrong text; both are in the ADR.
 - [the-record-names-the-connection-model-not-the-one-that-listened.md](the-record-names-the-connection-model-not-the-one-that-listened.md):
   **open, found 2026-08-16** — `active_model_for_provider` reads `config.model`
   while the capture path sends the active profile's `speech.model`. All 50

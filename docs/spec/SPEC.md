@@ -1,6 +1,11 @@
 # Spec -- WordScript
 
-Status: created 2026-07-24, last drift check 2026-08-23 (**a stage figure
+Status: created 2026-07-24, last drift check 2026-08-23 (**`Heard` is the
+recogniser's own output**: the record's heard text is taken before the
+confidence gate, before the recogniser repair and before any mode, and the gate
+stores what it removed instead of editing the text the record keeps; `Written`
+is the delivery byte for byte; a retry transforms the text the gate left
+(ADR 0249); before it **a stage figure
 carries the runs it was measured on** while that count is short of the row's
 own runs, because the stage histogram and the total histogram in one row are
 over different populations (ADR 0248); before it **a wait is two
@@ -323,7 +328,7 @@ Rust core modules in `src-tauri/src/core/`:
 - `providers/registry.rs` -- the role traits (`Provider`, `SpeechProvider`, `ChatProvider`, `VoiceProvider`) and the frozen id-to-implementation table; adding a provider is a module plus one entry (ADR 0094)
 - `providers/groq.rs` -- cloud-first production lane (BYOK, secret store, Groq HTTP errors)
 - `providers/local.rs` -- local runtime lane (whisper-cli STT, Ollama cleanup, native model discovery, probe-based runner health)
-- `confidence_gate.rs` -- drops segments Whisper's own metrics mark as invented; cloud lane only, thresholds are constants (ADR 0016)
+- `confidence_gate.rs` -- drops segments Whisper's own metrics mark as invented; cloud lane only, thresholds are constants (ADR 0016). It cuts BELOW the boundary the record keeps and states what it took: the heard text is the pre-gate one, and `ConfidenceGateRecord` carries the kept text plus every dropped segment with its reason, start and end (ADR 0249)
 - `hallucination_detect.rs` -- repetition collapse, artifact-pattern filter, language-switch observation; a language mismatch alone never discards text (ADR 0016)
 - `transform.rs` -- detection stage, exact-string hallucination filter, optional AI cleanup (correction guardrail stack), dictionary, snippets
 - `agent.rs` -- hybrid intent detection (heuristic + LLM classifier), agent execution; routing layer before `transform.rs`
@@ -894,7 +899,9 @@ no account. Entities:
   `~/WordScript/transcripts/<YYYY>/<MM>/<DD-HHMM>-<slug>.md`, with frontmatter
   (`id`, `created`, `profile`, `mode`, `provider`, `model`, `duration_ms`,
   `delivery`, and `audio` while a capture is kept) and the written text as the
-  body; the heard text follows under `## Heard` only where the two differ.
+  body; the heard text follows under `## Heard` only where the two differ, and
+  what the confidence gate removed from it follows under `## Dropped` only where
+  it removed something (ADR 0249).
   `duration_ms` is the capture's `recorded_seconds` — the audio rather than the
   clock — and is left out rather than written as zero wherever nothing measured
   one, which is a retry, an upload, and any record older than ADR 0079's
@@ -1097,7 +1104,12 @@ no account. Entities:
    calls its speech role -- `groq` or `local` today. The request comes
    from `NativeCaptureConfig::resolve_transcription_request`, the single place a
    provider request is derived from a capture (ADR 0015).
-6b. `confidence_gate.rs` drops low-confidence segments (cloud lane only).
+6b. `confidence_gate.rs` drops low-confidence segments (cloud lane only). The
+   record's heard text is taken **before** this step and the gate's removals are
+   stored beside it — reason, start and end per segment — rather than subtracted
+   from it (ADR 0249). Every stage below the gate sees
+   `confidence_gate.kept_text`, and a run whose gate fired carries
+   `low_confidence_dropped` first in `applied_rules`.
 7. `hallucination_detect.rs` collapses repetition and filters artifact patterns,
    then `transform.rs` filters and cleans (exact-string hallucination guard, then
    AI cleanup via the correction guardrail stack unless the mode's preset

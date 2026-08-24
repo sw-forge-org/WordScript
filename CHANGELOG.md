@@ -53,6 +53,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — `Heard` is the recogniser's own output and `Written` is the delivery
+
+- **The word `Heard` named a boundary one stage later than it promised.** The
+  runtime took the record's heard text nine lines BELOW `apply_confidence_gate`,
+  and that gate is not a passive reading: where the recogniser's own metrics
+  reject a segment it overwrites the text with the survivors rejoined. So the
+  column labelled **Heard** was the recogniser's output minus whatever
+  WordScript's own filter had removed, and a dropped segment was
+  indistinguishable from one the recogniser never returned — on every surface
+  and in every record ever written. `heard_text` is now taken before the gate,
+  before the recogniser repair and before any mode (ADR 0249).
+- **The gate records what it removed instead of logging it to a file that
+  rotates.** Every rejected segment is stored on the record with its reason, its
+  start and its end, alongside the text the transform actually ran on. A record
+  can now be asked whether its **Heard** was edited before it was stored; none
+  ever could.
+- **The panel's foot names the gate as WordScript's own stage.** A run whose
+  gate fired carries `low_confidence_dropped` first in `applied_rules`, so its
+  removal is no longer read as the AI stage's — the misattribution ADR 0204 was
+  written against, one stage further up.
+- **The record's own Markdown file carries the whole account.** What the gate
+  removed follows the transcript under `## Dropped`, one line per segment with
+  its place in the audio and the metric that rejected it. No third column on the
+  panel: that plane is the narrowest text column on the surface.
+- **A retry transforms the text the gate left, not the text that was heard.**
+  Without it, moving the boundary would have made every retry re-admit exactly
+  the segments the live run threw out.
+- **The re-transcription retry ran the repair, skipped the gate entirely, and
+  stored the repaired text as the record's heard text** — a third meaning for
+  one word, and a path on which a retry could deliver the hallucination the
+  original run had removed. It now runs the same two stages the live pipeline
+  runs, in the same order.
+- **The parked delivery taught vocabulary from the unrepaired text** while the
+  insert path deliberately uses the repaired one, on the reasoning that learning
+  handed the unrepaired text could propose WordScript's own stripped prompt as
+  profile vocabulary. Both paths now pass the same thing.
+- **Verbatim's row on Models stopped claiming more than the mode does.** It read
+  *what the recognizer heard, with nothing after it*; the gate, the recogniser
+  repair and the profile's text rules all run on it.
+- **No backfill, and there cannot be one.** A record written before this carries
+  the post-gate text under its heard field and nothing on it says so — the
+  removal was never stored. On the reporting machine the gate has never fired in
+  4.4 MB of runtime log or 157 records, so nothing there changes meaning in
+  practice; that is a fact about this store, not about the product.
+
 ### Fixed — a stage figure says how many runs it was measured on
 
 - **`heard in 0.5 s` beside `in total 0.9 s` was two medians over two different

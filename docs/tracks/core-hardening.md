@@ -348,6 +348,70 @@ rather than compacted, because the items are cited by number elsewhere.
     attribution every rate on this track carries. Fix the model resolution
     before the next per-model number is quoted.
 
+11. **`Heard` was not the hearing, and the same word meant something else one
+    screen over.** Added 2026-08-23, out of verifying ADR 0247 on the real
+    store; **closed the same day** — the finding is stated in the past tense
+    below and the decision that closed it is at the foot of the item. The
+    turnaround detail's `heard in` column was measured *before* the confidence
+    gate; the History panel's **Heard** text was taken *after* it, and
+    `apply_confidence_gate` overwrote `response.text` whenever it rejected a
+    segment. So one word marked two boundaries one stage apart, and the text one
+    was the later of the two. The recogniser's own output was stored nowhere.
+
+    Nothing on a record said the gate had fired: `low_confidence_segments`
+    reached `mode_transform_config` and never the record, and the rejected
+    segments went to the runtime log only. On this machine's records the string
+    `low_confidence` appeared in none — which was the hole, not a reassurance.
+
+    Why it belongs to this cluster rather than to the Home activity track: the
+    panel's whole claim (*every word of Written appears in Heard, therefore
+    nothing was reworded*) is a statement about the interval between two stored
+    texts, and a segment the gate dropped falls outside it. A captured,
+    transcribed segment removed by WordScript's own filter is indistinguishable
+    from one the recogniser never returned. That is this track's subject.
+
+    Two doc comments asserted the opposite and were drift rather than the
+    contract — `lib.rs` above `heard_text`, and the header of `rawOf` in
+    `src/screens/History.tsx`. Both are corrected, and the decision below made
+    both of them true rather than merely accurate about the old behaviour.
+
+    **It is a decision before it is a repair.** Moving the boundary above the
+    gate changes what every stored record means; naming the gate on the surface
+    does not. Do not pick one on the way past.
+
+    **Done 2026-08-23, [ADR 0249](../decisions/0249-heard-is-the-recognisers-own-output-so-the-boundary-moves-above-the-gate-and-the-gate-records-what-it-removed.md).**
+    The owner took the boundary: `Heard` is what was heard, before anything of
+    WordScript's runs over it, and `Written` is what came out at the end. So
+    `heard_text` moves above the gate, and the gate — which now cuts below a
+    boundary the record keeps — stores what it removed with reason, start and
+    end rather than editing the text and logging to a file that rotates.
+    `low_confidence_dropped` on `applied_rules` lets the panel's foot name that
+    stage, so its removal can no longer be read as the AI stage's. A retry
+    transforms `confidence_gate.kept_text`, not the heard text, or it would
+    re-admit exactly what the live run threw out. No backfill: a record written
+    before today carries the old meaning and nothing on it says so.
+
+    The three measurements the item asked for, in order. **Does the gate fire
+    here** — no: 4.4 MB of runtime log holds no `Confidence gate rejected
+    segment` line and the 157 records now in the store hold no `low_confidence`,
+    while the coverage instrument on the same runs reports verdicts that need
+    segments. So it is live, it evaluates real metrics, and it has never
+    rejected one on this machine. **What `Written` is** — the delivery, byte for
+    byte: every path stores `insert_result.text`, which is
+    `format_text_for_insert` over the trimmed transform output, so it is the
+    string the clipboard or the keystroke driver was handed. Nothing was wrong
+    there. **The sweep** — two more found and both fixed in the same ADR:
+    `transcribe_retained_capture` named a THIRD boundary (repair run, gate not
+    run at all, repaired text stored as the record's heard text), and the parked
+    commit taught vocabulary from the unrepaired text where the insert path
+    deliberately uses the repaired one. Verbatim's row on Models also claimed
+    *what the recognizer heard, with nothing after it* over a mode that runs the
+    gate, the repair and the profile's text rules.
+
+    [`known-issues/heard-names-two-different-boundaries-and-the-text-one-is-later.md`](../known-issues/heard-names-two-different-boundaries-and-the-text-one-is-later.md)
+    carries the verification and the four-stage funnel, and its status block says
+    which of its statements the fix retired.
+
 ## The rule the owner stated, 2026-08-16
 
 Reported alongside the screenshot, and it applies to **every processing mode**,

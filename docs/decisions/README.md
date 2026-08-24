@@ -1576,6 +1576,8 @@ that is what a record is for (ADR 0123: one list per fact).
   A wait is two stages, so the runtime measures both, and every metric detail states its reading before it draws the evidence.
 - [0248](0248-a-stage-figure-carries-the-runs-it-was-measured-on-because-a-partly-measured-column-is-not-a-measured-one.md):
   A stage figure carries the runs it was measured on, because a partly measured column is not a measured one.
+- [0249](0249-heard-is-the-recognisers-own-output-so-the-boundary-moves-above-the-gate-and-the-gate-records-what-it-removed.md):
+  Heard is the recogniser's own output, so the boundary moves above the confidence gate and the gate records what it removed.
 
 ## Resolved: the number 0011 was used twice
 
