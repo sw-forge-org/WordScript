@@ -3127,7 +3127,7 @@ function ModelsTab({
               <JobList>
                 <JobNone
                   name="Verbatim"
-                  why="What the recognizer heard, with nothing after it. Nothing to set — that is the point of it."
+                  why="No model runs over the text. WordScript's own repairs and the profile's text rules still do, as on every mode."
                   control={<StatusBadge tone="plan">No model</StatusBadge>}
                 />
                 <JobNone

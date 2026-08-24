@@ -14,6 +14,30 @@ import type {
 export type { CaptureIntegrity, CaptureIntegrityVerdict, InputLevelSummary } from "./ipc";
 
 export type TranscriptionHistoryStatus = "completed" | "empty" | "failed";
+
+/** One segment WordScript's confidence gate removed before any mode ran
+ *  (ADR 0249) — with where in the audio it was and which of the recogniser's
+ *  own metrics rejected it. */
+export interface DroppedSegment {
+  text: string;
+  start: number;
+  end: number;
+  reason: string;
+}
+
+/** WHAT THE CONFIDENCE GATE TOOK OUT OF A HEARING (ADR 0249).
+ *
+ *  `raw_transcript` is the recogniser's own output, taken before this stage.
+ *  Where the gate rejected a segment the transform ran on `kept_text` instead,
+ *  and the difference between the two is `dropped`.
+ *
+ *  `null` on every record the gate left alone — and on every record written
+ *  before ADR 0249, where it is also the honest answer: those kept the
+ *  post-gate text under `raw_transcript` and nothing said so. */
+export interface ConfidenceGateRecord {
+  kept_text: string;
+  dropped: DroppedSegment[];
+}
 export type TranscriptionHistorySource = "native_pipeline" | "retry";
 
 export interface TranscriptionHistoryQuery {
@@ -177,8 +201,16 @@ export interface TranscriptionHistoryEntry {
   local_prompt_carry: boolean | null;
   local_beam_size: number | null;
   local_best_of: number | null;
+  /** The recogniser's own output — before the confidence gate, before the
+   *  recogniser repair and before any mode (ADR 0249). This is the boundary
+   *  every surface means by *Heard*. */
   raw_transcript: string | null;
+  /** What was delivered, byte for byte: the string the clipboard or the
+   *  keystroke driver was handed. `null` on the paths that delivered nothing. */
   transformed_transcript: string | null;
+  /** What the gate removed from `raw_transcript`, and the text it left the
+   *  transform (ADR 0249). `null` wherever it removed nothing. */
+  confidence_gate?: ConfidenceGateRecord | null;
   corrected: boolean;
   applied_rules: string[];
   transform_warning: string | null;

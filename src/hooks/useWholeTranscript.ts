@@ -1,11 +1,18 @@
 import { useEffect, useState } from "react";
-import type { TranscriptionHistoryEntry } from "../types/history";
+import type { DroppedSegment, TranscriptionHistoryEntry } from "../types/history";
 
 /** The two texts of one record, whole — never the row's 160-character cut. */
 export interface WholeTranscript {
   id: string;
   heard: string;
   written: string;
+  /** What the confidence gate removed from `heard` before the transform saw it
+   *  (ADR 0249). Empty on every record it left alone, which is the ordinary
+   *  case — and empty on every record written before the removal was stored,
+   *  where nothing can be said about it either way. It is on the WHOLE record
+   *  rather than on the row for the reason the texts are: the row carries what
+   *  a list needs, and this is read in the panel. */
+  dropped: DroppedSegment[];
 }
 
 /**
@@ -49,7 +56,12 @@ export function useWholeTranscript(
          text where a mode wrote one and the heard text otherwise. A second
          rule here would put a different pair in the panel than in the row. */
       const heard = found.raw_transcript ?? "";
-      setWhole({ id, heard, written: found.transformed_transcript ?? heard });
+      setWhole({
+        id,
+        heard,
+        written: found.transformed_transcript ?? heard,
+        dropped: found.confidence_gate?.dropped ?? [],
+      });
     });
 
     return () => {

@@ -231,7 +231,10 @@ export interface LedgerDay {
   dictations: number;
   /** Words that reached the cursor — the transformed text. */
   words: number;
-  /** Words the recogniser heard, before any mode transform (ADR 0177). */
+  /** Words the recogniser heard: its own output, before the confidence gate and
+   *  before any mode (ADR 0177, boundary settled by ADR 0249). Records written
+   *  before that decision counted the post-gate text — the difference is the
+   *  segments the gate dropped, and no record from then says how many. */
   spoken_words: number;
   /** The open microphone, thinking pauses included. */
   recorded_seconds: number;

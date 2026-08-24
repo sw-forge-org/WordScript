@@ -1908,7 +1908,32 @@ fn handle_audio_ready<R: Runtime + 'static>(
                     return;
                 }
 
-                let (mut response, low_confidence_segments) = apply_confidence_gate(response);
+                /* THE RECOGNISER'S OWN OUTPUT, TAKEN BEFORE ANYTHING OF
+                   WORDSCRIPT'S RUNS OVER IT (ADR 0249).
+
+                   This line used to stand nine lines further down, below the
+                   confidence gate — so the word *Heard* named the time boundary
+                   on one screen and a boundary one stage later in text on
+                   another, and the one thing that most needed to be visible,
+                   audio that was captured, transcribed and then dropped by
+                   WordScript's own filter, left no mark anywhere.
+
+                   `heard_text` is now the top of the funnel: before the gate,
+                   before the recogniser repair, before any mode. What the gate
+                   removes is recorded beside it rather than subtracted from it,
+                   and `gate.kept_text` is what every stage below actually saw. */
+                let heard_text = response.text.clone();
+                let (mut response, confidence_gate) = apply_confidence_gate(response);
+                let low_confidence_segments = confidence_gate.is_some();
+                /* THE STAGE, NAMED WHERE THE OTHER TWO REPAIRS ARE NAMED. Without
+                   it the panel's shape claim — every word of Written appears in
+                   Heard, so nothing was reworded — would attribute the gate's
+                   removal to the AI stage, which is the misattribution this
+                   whole cluster exists against. */
+                let gate_rules: Vec<String> = confidence_gate
+                    .as_ref()
+                    .map(|_| vec!["low_confidence_dropped".to_string()])
+                    .unwrap_or_default();
 
                 core::runtime_log::record(format!(
                     "[WordScript] Native pipeline transcription ready elapsed_ms={} text_len={} provider_duration={:?}",
@@ -1923,12 +1948,14 @@ fn handle_audio_ready<R: Runtime + 'static>(
                    made this urgent was a leaked prompt sentence reaching an
                    agent AS AN INSTRUCTION.
 
-                   `heard_text` is the recogniser's own output and is what the
-                   record keeps. Repairing the record as well as the delivery
+                   IT WRITES INTO `response.text` AND LEAVES `heard_text` ALONE,
+                   deliberately: repairing the record as well as the delivery
                    would erase the only evidence these defects leave — the leak
                    is measurable today precisely because `raw_transcript` has
-                   been carrying it. */
-                let heard_text = response.text.clone();
+                   been carrying it. The gate above is the one stage that used to
+                   cross that boundary, and since ADR 0249 it does not: it
+                   records what it removed instead of editing the text the record
+                   keeps. */
                 /* The DETECTED language first, the profile's pinned one second.
                    WordScript dictates in more than one language and one of the
                    two repairs below is German morphology, so it may only run
@@ -2108,8 +2135,13 @@ fn handle_audio_ready<R: Runtime + 'static>(
                    every delivery and be reported on none of them, which is the
                    invisible-damage failure this whole leg is against. */
                 let mut transformed = transformed;
-                if repair_signals.changed_text() {
-                    let mut rules = repair_signals.applied_rules();
+                if repair_signals.changed_text() || !gate_rules.is_empty() {
+                    /* IN PIPELINE ORDER, AND THE GATE IS FIRST. It runs on the
+                       provider's answer, before the repair does; a rule list
+                       that put them the other way round would read as a claim
+                       about which stage saw the text first. */
+                    let mut rules = gate_rules.clone();
+                    rules.append(&mut repair_signals.applied_rules());
                     rules.append(&mut transformed.applied_rules);
                     transformed.applied_rules = rules;
                 }
@@ -2161,7 +2193,10 @@ fn handle_audio_ready<R: Runtime + 'static>(
                 if text.is_empty() {
                     let _ = core::history::record_empty_result(
                         &app_config,
-                        heard_text.clone(),
+                        core::history::HeardFacts::recognized(
+                            heard_text.clone(),
+                            confidence_gate.clone(),
+                        ),
                         transformed,
                         Some(effective_mode.clone()),
                         capture_facts.clone(),
@@ -2199,7 +2234,19 @@ fn handle_audio_ready<R: Runtime + 'static>(
                             &app,
                             app_config.clone(),
                             provider.clone(),
-                            heard_text.clone(),
+                            core::history::HeardFacts::recognized(
+                                heard_text.clone(),
+                                confidence_gate.clone(),
+                            ),
+                            /* THE REPAIRED TEXT, CARRIED SEPARATELY (ADR 0249).
+                               The commit at the other end learns vocabulary from
+                               the raw/final pair, and handed the UNREPAIRED text
+                               it would read WordScript's own stripped prompt as
+                               something the correction removed — the exact
+                               reasoning the insert path below already follows.
+                               This branch passed the heard text and so got it
+                               wrong on the product's most common path. */
+                            response.text.clone(),
                             transformed.clone(),
                             Some(effective_mode.clone()),
                             capture_facts.clone(),
@@ -2328,7 +2375,10 @@ fn handle_audio_ready<R: Runtime + 'static>(
                             let history_entry = core::history::history_entry_from_insert_result(
                                 &app_config,
                                 None,
-                                Some(heard_text.clone()),
+                                core::history::HeardFacts::recognized(
+                                    heard_text.clone(),
+                                    confidence_gate.clone(),
+                                ),
                                 transformed.clone(),
                                 &result,
                                 Some(effective_mode.clone()),
@@ -2444,7 +2494,10 @@ fn handle_audio_ready<R: Runtime + 'static>(
                             let _ = core::history::history_entry_from_insert_result(
                                 &app_config,
                                 None,
-                                Some(heard_text.clone()),
+                                core::history::HeardFacts::recognized(
+                                    heard_text.clone(),
+                                    confidence_gate.clone(),
+                                ),
                                 transformed.clone(),
                                 &result,
                                 Some(effective_mode.clone()),
@@ -2516,7 +2569,10 @@ fn handle_audio_ready<R: Runtime + 'static>(
 
                             let _ = core::history::record_insert_failure(
                                 &app_config,
-                                heard_text.clone(),
+                                core::history::HeardFacts::recognized(
+                                    heard_text.clone(),
+                                    confidence_gate.clone(),
+                                ),
                                 text.clone(),
                                 transformed.clone(),
                                 error.clone(),
@@ -2686,27 +2742,36 @@ fn log_stale_pipeline_result<R: Runtime>(app: &AppHandle<R>, session_id: &str, c
 /// Drops segments the model's own confidence metrics mark as invented before
 /// anything downstream sees the transcript. Only the cloud lane returns these
 /// metrics; a provider without them passes through untouched.
+/// Run the confidence gate over a response and report what it took.
+///
+/// THE RETURN IS THE EVIDENCE, NOT A FLAG (ADR 0249). This used to answer
+/// `bool`, the rejections went to the runtime log and nowhere else, and the log
+/// rotates -- so no record on disk could be asked whether its text had been
+/// edited before it was stored, and a segment WordScript itself removed was
+/// indistinguishable from one the recogniser never returned. The caller keeps
+/// the record beside the pre-gate text it belongs to.
 fn apply_confidence_gate(
     mut response: core::providers::TranscriptionResponse,
-) -> (core::providers::TranscriptionResponse, bool) {
+) -> (
+    core::providers::TranscriptionResponse,
+    Option<core::confidence_gate::ConfidenceGateRecord>,
+) {
     let outcome = core::confidence_gate::evaluate_segments(response.segments.as_deref());
+    let Some(record) = core::confidence_gate::ConfidenceGateRecord::of(&outcome, &response.text)
+    else {
+        return (response, None);
+    };
 
-    if outcome.rejected.is_empty() {
-        return (response, false);
-    }
-
-    for rejected in &outcome.rejected {
+    for rejected in &record.dropped {
         core::runtime_log::record(format!(
             "[WordScript] Confidence gate rejected segment start={:.2} end={:.2} reason={} text={:?}",
             rejected.start, rejected.end, rejected.reason, rejected.text,
         ));
     }
 
-    if let Some(text) = outcome.text {
-        response.text = text;
-    }
+    response.text = record.kept_text.clone();
 
-    (response, true)
+    (response, Some(record))
 }
 
 fn runtime_transcription_timeout_ms(audio_duration_seconds: Option<f64>) -> u64 {
@@ -3303,6 +3368,96 @@ pub fn run() {
 mod tests {
     use super::*;
     use crate::core::capture::NativeCaptureConfig;
+
+    fn gate_segment(
+        text: &str,
+        start: f64,
+        end: f64,
+        no_speech: f64,
+        logprob: f64,
+    ) -> core::providers::TranscriptionSegment {
+        core::providers::TranscriptionSegment {
+            id: 0,
+            start,
+            end,
+            text: text.to_string(),
+            avg_logprob: Some(logprob),
+            no_speech_prob: Some(no_speech),
+            compression_ratio: Some(1.2),
+        }
+    }
+
+    fn gated_response() -> core::providers::TranscriptionResponse {
+        core::providers::TranscriptionResponse {
+            text: "Der Termin ist am Freitag. Thank you for watching!".to_string(),
+            language: Some("de".to_string()),
+            duration: Some(4.0),
+            segments: Some(vec![
+                gate_segment("Der Termin ist am Freitag.", 0.0, 2.5, 0.02, -0.2),
+                gate_segment("Thank you for watching!", 2.5, 4.0, 0.91, -1.4),
+            ]),
+        }
+    }
+
+    /// ADR 0249. The word *Heard* names the recogniser's own output, and the
+    /// gate stands BELOW that boundary rather than across it: what it removes is
+    /// recorded, never subtracted from the text the record keeps.
+    ///
+    /// The defect this pins: `heard_text` was taken nine lines further down, so
+    /// a segment WordScript captured, transcribed and then dropped with its own
+    /// filter looked exactly like a segment the recogniser never returned — on
+    /// every surface and in every stored record.
+    #[test]
+    fn the_heard_text_is_taken_before_the_gate_and_the_gate_records_what_it_took() {
+        let response = gated_response();
+        let heard_text = response.text.clone();
+
+        let (gated, record) = apply_confidence_gate(response);
+
+        let record = record.expect("a rejected segment must leave a record");
+        assert_eq!(
+            heard_text, "Der Termin ist am Freitag. Thank you for watching!",
+            "the heard text is the recogniser's own output, gate or no gate"
+        );
+        assert_eq!(
+            gated.text, "Der Termin ist am Freitag.",
+            "every stage below the gate sees the kept text"
+        );
+        assert_eq!(record.kept_text, gated.text);
+        assert_eq!(record.dropped.len(), 1);
+        assert_eq!(record.dropped[0].text, "Thank you for watching!");
+        assert_eq!(record.dropped[0].start, 2.5);
+        assert_eq!(record.dropped[0].end, 4.0);
+        assert!(
+            record.dropped[0].reason.contains("no_speech_prob"),
+            "the reason states which metric rejected it: {}",
+            record.dropped[0].reason
+        );
+    }
+
+    /// The ordinary case, and it must stay free: a run the gate left alone
+    /// carries no record, so `confidence_gate` on a record means the gate FIRED
+    /// rather than that the gate ran.
+    #[test]
+    fn a_hearing_the_gate_leaves_alone_carries_no_record_at_all() {
+        let response = core::providers::TranscriptionResponse {
+            text: "Der Termin ist am Freitag.".to_string(),
+            language: Some("de".to_string()),
+            duration: Some(2.5),
+            segments: Some(vec![gate_segment(
+                "Der Termin ist am Freitag.",
+                0.0,
+                2.5,
+                0.02,
+                -0.2,
+            )]),
+        };
+
+        let (kept, record) = apply_confidence_gate(response);
+
+        assert!(record.is_none());
+        assert_eq!(kept.text, "Der Termin ist am Freitag.");
+    }
 
     #[test]
     fn runtime_transcription_timeout_stays_interactive() {

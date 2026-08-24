@@ -19,9 +19,12 @@ import { StatusDot, type StatusDotTone } from "./StatusDot";
  * actions for the same horizontal run and the row reflowed on hover.
  *
  * `raw` OPENS UNDER THE ROW. A transcript has two texts — what was heard and
- * what was written — and the difference is the only evidence that the AI stage
- * did anything at all. It is not a second row and not a dialog: it is the same
- * record, unfolded.
+ * what was written — and the difference is the evidence that anything happened
+ * to it at all. WHICH stage is a claim neither text supports on its own, which
+ * is what `note` is for: since ADR 0249 the runtime names its own stages on the
+ * record, so the panel can say *WordScript did this* instead of leaving every
+ * difference to be read as the AI stage's. It is not a second row and not a
+ * dialog: it is the same record, unfolded.
  */
 
 export type ListItemBadge = { text: string; tone: StatusTone };

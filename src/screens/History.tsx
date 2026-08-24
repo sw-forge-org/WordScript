@@ -181,9 +181,20 @@ export function badgesFor(entry: TranscriptionHistorySummary): ListItemBadge[] {
 }
 
 /**
- * The record's two texts. `heard` is what the recogniser returned — the
- * provider's `response.text`, before any transform — and `written` is what was
- * delivered.
+ * The record's two texts, and the boundary each one stands on.
+ *
+ * `heard` IS THE RECOGNISER'S OWN OUTPUT: the provider's `response.text`,
+ * before the confidence gate, before the recogniser repair and before any mode
+ * (ADR 0249). This sentence was in this header before that decision and was
+ * not true of the code — the runtime took the heard text nine lines below the
+ * gate, so a segment WordScript captured, transcribed and then dropped with its
+ * own filter was indistinguishable here from one the recogniser never
+ * returned. The gate now records what it removed instead of subtracting it, and
+ * the note below names that stage rather than letting the difference be read as
+ * the AI stage's.
+ *
+ * `written` IS THE DELIVERY, byte for byte: the runtime stores the string the
+ * clipboard or the keystroke driver was handed, not a cut taken in front of it.
  *
  * THE FOOT'S SENTENCE IS NOT A STRING COMPARISON, and getting that wrong was a
  * real defect. `RawPanel`'s default reads "Identical — no AI stage ran on this
@@ -241,10 +252,14 @@ export function rawOf(
       captureGapNote(entry) ??
       entry.transform_warning ??
       (identical
-        ? stageRan
-          ? "The AI stage ran and changed nothing."
-          : undefined
-        : changedTextNote(entry, heard, written, Boolean(whole))),
+        ? /* THE GATE OUTRANKS THE STAGE SENTENCE (ADR 0249). Two texts can be
+             identical while a segment was still removed — the gate cuts before
+             the mode runs, so a mode that changed nothing leaves the pair equal
+             — and *the AI stage ran and changed nothing* over a hearing that
+             lost a segment is the reassurance this cluster exists against. */
+          droppedNote(entry, whole) ??
+          (stageRan ? "The AI stage ran and changed nothing." : undefined)
+        : changedTextNote(entry, heard, written, Boolean(whole), whole)),
   };
 }
 
@@ -271,6 +286,40 @@ export function rawOf(
  * and one trailing space, so "a rule fired" is not evidence of a rewrite and is
  * not treated as one.
  */
+/**
+ * WHAT WORDSCRIPT'S OWN FILTER TOOK OUT BEFORE ANY MODE RAN, or nothing at all
+ * (ADR 0249).
+ *
+ * The gate drops segments the recogniser's own metrics mark as invented, and
+ * until ADR 0249 it did so by editing the text the record then stored — so its
+ * removal left no mark anywhere a reader could see, and the panel's shape claim
+ * silently attributed it to the AI stage. The removal is now recorded beside
+ * the pre-gate text, and this sentence is what says so.
+ *
+ * THE COUNT COMES FROM THE WHOLE RECORD AND THE STAGE FROM THE ROW, which is
+ * why the sentence has two forms. `applied_rules` travels with every row, so
+ * the stage can be named the instant the panel opens; the segments themselves
+ * are on the record and arrive a round trip later (ADR 0240). A sentence that
+ * waited for the count would say nothing at all for the first frame, and a
+ * sentence that guessed one would be this cluster's own defect.
+ */
+function droppedNote(
+  entry: TranscriptionHistorySummary,
+  whole?: WholeTranscript | null,
+): string | undefined {
+  if (!entry.applied_rules.includes("low_confidence_dropped")) return undefined;
+
+  const count = whole?.dropped.length ?? 0;
+  if (count === 0) {
+    return "WordScript dropped what the recogniser was not confident in, before any mode ran.";
+  }
+  return (
+    `WordScript dropped ${count === 1 ? "a segment" : `${count} segments`} the ` +
+    "recogniser was not confident in, before any mode ran. The words are in the " +
+    "record's own file."
+  );
+}
+
 function changedTextNote(
   entry: TranscriptionHistorySummary,
   heard: string,
@@ -282,8 +331,20 @@ function changedTextNote(
    *  reworded everything after it. Where the record has not come back, the
    *  claim is withheld and the panel falls back to its own default. */
   whole: boolean,
+  /** The whole record, where it has come back — the only place the gate's own
+   *  segments are (ADR 0249). */
+  record?: WholeTranscript | null,
 ): string | undefined {
+  /* IN PIPELINE ORDER, AND THE GATE IS FIRST. It runs on the provider's answer,
+     ahead of both repairs, and a reader following the sentence is following the
+     text through the product. */
+  const dropped = record?.dropped.length ?? 0;
   const repairs = [
+    entry.applied_rules.includes("low_confidence_dropped")
+      ? dropped === 0
+        ? "dropped what the recogniser was not confident in"
+        : `dropped ${dropped === 1 ? "a segment" : `${dropped} segments`} the recogniser was not confident in`
+      : undefined,
     entry.applied_rules.includes("prompt_echo_stripped")
       ? "removed its own prompt from this"
       : undefined,
@@ -303,11 +364,19 @@ function changedTextNote(
   }
 
   return (
-    `WordScript ${repairs.join(" and ")}. ` +
+    `WordScript ${listed(repairs)}. ` +
     (removedOnly
       ? "Nothing else was added or reworded."
       : "Anything else that differs is the AI stage's.")
   );
+}
+
+/** Two clauses join with *and*; three with commas and a final *and*. The list
+ *  can hold three since ADR 0249 put the gate in it, and `join(" and ")` on
+ *  three reads as one run-on claim. */
+function listed(clauses: string[]): string {
+  if (clauses.length <= 2) return clauses.join(" and ");
+  return `${clauses.slice(0, -1).join(", ")} and ${clauses[clauses.length - 1]}`;
 }
 
 /**

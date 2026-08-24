@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime};
 
 use super::capture::{CaptureIntegrity, InputLevelSummary};
+use super::confidence_gate::ConfidenceGateRecord;
 use super::config::{AppConfig, ProcessingMode, TextProfileWorkMode};
 use super::insertion::{
     insert_transcription_from_legacy, NativeClipboardRestoreStatus, NativeInsertDriver,
@@ -115,6 +116,21 @@ pub struct TranscriptionHistoryEntry {
     pub local_best_of: Option<u8>,
     pub raw_transcript: Option<String>,
     pub transformed_transcript: Option<String>,
+    /// WHAT THE CONFIDENCE GATE TOOK OUT OF THIS HEARING (ADR 0249).
+    ///
+    /// `raw_transcript` above is the recogniser's own output, taken before this
+    /// stage. Where the gate rejected a segment, the transform ran on
+    /// `confidence_gate.kept_text` instead, and the difference between the two
+    /// is the segments listed here -- each with the reason its own metrics gave
+    /// and where in the audio it was.
+    ///
+    /// `None` on every record where the gate changed nothing, which is the
+    /// ordinary case, and on every record written before ADR 0249 -- where it
+    /// is also the honest answer, because those records kept the post-gate text
+    /// under `raw_transcript` and nothing said so. There is no backfill and
+    /// there cannot be one: the removal was never stored.
+    #[serde(default)]
+    pub confidence_gate: Option<ConfidenceGateRecord>,
     pub corrected: bool,
     pub applied_rules: Vec<String>,
     pub transform_warning: Option<String>,
@@ -369,7 +385,15 @@ pub struct RecordHistoryEntryRequest {
     pub local_prompt_carry: Option<bool>,
     pub local_beam_size: Option<u8>,
     pub local_best_of: Option<u8>,
-    pub raw_transcript: Option<String>,
+    /// The recogniser's own output and what the confidence gate took out of it,
+    /// as ONE value (ADR 0249). They travel together on every path because they
+    /// are one fact about one hearing: the text a surface calls *Heard*, and the
+    /// only account of the difference between it and the text the transform ran
+    /// on. Passing the two separately is what let them drift apart in the first
+    /// place -- the record kept the post-gate text under a word that promised
+    /// the pre-gate one, and the removal itself was written to a log that
+    /// rotates.
+    pub heard: HeardFacts,
     pub transformed_transcript: Option<String>,
     pub corrected: bool,
     pub applied_rules: Vec<String>,
@@ -399,6 +423,73 @@ pub struct RecordHistoryEntryRequest {
     /// Why the recording ended, when the user did not end it. `None` on every
     /// ordinary stop and on every path with no recording of its own.
     pub capture_stop_reason: Option<String>,
+}
+
+/// WHAT THE RECOGNISER SAID, AND WHAT WORDSCRIPT'S FIRST STAGE REMOVED FROM IT
+/// (ADR 0249).
+///
+/// One value rather than two adjacent arguments, for the reason `CaptureFacts`
+/// and `TurnaroundFacts` are one each: the pair is meaningless apart. `text` is
+/// the boundary every surface means by *Heard* -- the provider's own answer,
+/// before the confidence gate, before the recogniser repair and before any mode
+/// -- and `gate` is the only account of what stood between it and the text the
+/// transform was handed.
+///
+/// The rule this type exists to enforce: **a caller that states a heard text
+/// states what the gate did to it.** Before ADR 0249 the two were separate, the
+/// second reached no record at all, and the first silently named a boundary one
+/// stage later than the word on the screen.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct HeardFacts {
+    /// The recogniser's own output. `None` on the paths that never got one --
+    /// a transcription that failed outright.
+    pub text: Option<String>,
+    /// What the gate removed, and the text it left behind. `None` wherever the
+    /// gate changed nothing, which is the ordinary case.
+    pub gate: Option<ConfidenceGateRecord>,
+}
+
+impl HeardFacts {
+    /// Nothing was heard: a transcription that never returned text.
+    pub fn none() -> Self {
+        Self::default()
+    }
+
+    /// A hearing no gate touched -- the shape every path that never runs the
+    /// gate has, and the shape a live run has whenever nothing was rejected.
+    pub fn ungated(text: impl Into<String>) -> Self {
+        Self {
+            text: Some(text.into()),
+            gate: None,
+        }
+    }
+
+    /// A hearing and the gate's verdict on it.
+    pub fn recognized(text: impl Into<String>, gate: Option<ConfidenceGateRecord>) -> Self {
+        Self {
+            text: Some(text.into()),
+            gate,
+        }
+    }
+
+    /// What the record already holds, read back for a retry.
+    pub fn of_entry(entry: &TranscriptionHistoryEntry) -> Self {
+        Self {
+            text: entry.raw_transcript.clone(),
+            gate: entry.confidence_gate.clone(),
+        }
+    }
+
+    /// THE TEXT A TRANSFORM RUNS ON, which is not the heard text wherever the
+    /// gate fired. A retry reading `raw_transcript` directly would re-admit the
+    /// segments the gate threw out and deliver them, so the live run's output
+    /// and its own retry would differ for no reason a reader could see.
+    pub fn transform_input(&self) -> Option<&str> {
+        self.gate
+            .as_ref()
+            .map(|gate| gate.kept_text.as_str())
+            .or(self.text.as_deref())
+    }
 }
 
 /// THE WAIT, AND WHAT IT WAS SPENT ON (ADR 0247).
@@ -1154,7 +1245,18 @@ fn record_entry_with_work_mode(
             id: id.clone(),
             created_at_ms,
             written: request.transformed_transcript.clone().unwrap_or_default(),
-            heard: request.raw_transcript.clone(),
+            heard: request.heard.text.clone(),
+            /* WHAT THE FILE SAYS WENT MISSING (ADR 0249). The archive is a text
+               file with room for it, so the reader's own copy carries the
+               removal in full -- reason, start and end -- where the surface
+               only names the stage and the count. Empty on every record the
+               gate left alone, which is where the section is left out. */
+            dropped: request
+                .heard
+                .gate
+                .as_ref()
+                .map(|gate| gate.dropped.clone())
+                .unwrap_or_default(),
             profile: request.active_profile.clone(),
             // What ran, falling back to what the profile was set to. The
             // fallback is only reached on paths that never resolved a mode,
@@ -1206,12 +1308,13 @@ fn record_entry_with_work_mode(
         let delivered = request
             .transformed_transcript
             .as_deref()
-            .or(request.raw_transcript.as_deref())
+            .or(request.heard.text.as_deref())
             .unwrap_or_default();
         contributed_language(
             named_language,
             request
-                .raw_transcript
+                .heard
+                .text
                 .as_deref()
                 .map(str::trim)
                 .filter(|raw| !raw.is_empty())
@@ -1240,8 +1343,9 @@ fn record_entry_with_work_mode(
         local_prompt_carry: request.local_prompt_carry,
         local_beam_size: request.local_beam_size,
         local_best_of: request.local_best_of,
-        raw_transcript: request.raw_transcript,
+        raw_transcript: request.heard.text,
         transformed_transcript: request.transformed_transcript,
+        confidence_gate: request.heard.gate,
         corrected: request.corrected,
         applied_rules: request.applied_rules,
         transform_warning: request.transform_warning,
@@ -1561,15 +1665,34 @@ pub fn export_transcription_history(
     })
 }
 
-/// Re-transcribe the capture an entry kept, and return the raw text.
+/// A re-transcription's two texts: what the recogniser said, and what the
+/// transform is about to run on (ADR 0249).
+///
+/// They are two values because two stages stand between them and neither is
+/// stored: the confidence gate, whose removals ARE stored beside the heard text
+/// in `heard.gate`, and the recogniser repair, whose output deliberately is not
+/// -- the record keeps the unrepaired text so a leak stays measurable.
+struct RetranscribedCapture {
+    heard: HeardFacts,
+    transform_input: String,
+}
+
+/// Re-transcribe the capture an entry kept.
 ///
 /// The retry path for a failure that never produced a transcript. It rebuilds
 /// the provider request from the *current* capture config rather than the one
 /// the original run used: the retry happens because something was wrong, and
 /// the fix is often a setting the user changed in between.
+///
+/// THE SAME TWO STAGES THE LIVE PIPELINE RUNS, IN THE SAME ORDER (ADR 0249).
+/// This path used to run the repair and not the gate, and to return the
+/// repaired text as the record's heard text -- so the word *Heard* named a
+/// third boundary here, one stage LATER than the live path's and with the gate
+/// missing altogether. A retry that skipped the gate could deliver the
+/// hallucination the original run's gate had removed.
 async fn transcribe_retained_capture(
     entry: &TranscriptionHistoryEntry,
-) -> Result<String, String> {
+) -> Result<RetranscribedCapture, String> {
     let audio_path = entry
         .audio_path
         .clone()
@@ -1618,8 +1741,27 @@ async fn transcribe_retained_capture(
         .await
         .map_err(|error| error.message)?;
 
+    /* THE RECOGNISER'S OWN OUTPUT, HELD BEFORE ANY STAGE TOUCHES IT. This is
+       what the record will carry as its heard text and what a surface means by
+       *Heard*: no gate, no repair, no mode (ADR 0249). */
+    let heard_text = response.text.clone();
+    let gate = super::confidence_gate::ConfidenceGateRecord::of(
+        &super::confidence_gate::evaluate_segments(response.segments.as_deref()),
+        &heard_text,
+    );
+    for dropped in gate.iter().flat_map(|gate| gate.dropped.iter()) {
+        runtime_log::record(format!(
+            "[WordScript] Confidence gate rejected segment entry_id={} start={:.2} end={:.2} reason={} text={:?}",
+            entry.id, dropped.start, dropped.end, dropped.reason, dropped.text,
+        ));
+    }
+    let gated_text = gate
+        .as_ref()
+        .map(|gate| gate.kept_text.as_str())
+        .unwrap_or(heard_text.as_str());
+
     let (repaired, signals) = super::recognizer_repair::repair_recognizer_output(
-        &response.text,
+        gated_text,
         recognizer_prompt.as_deref(),
         // Detected first, configured second — the same order the pipeline uses,
         // and for the same reason: the German-only repair may not run over text
@@ -1636,17 +1778,20 @@ async fn transcribe_retained_capture(
             "[WordScript] Recognizer repair applied entry_id={} rules={} heard_len={} repaired_len={}",
             entry.id,
             signals.applied_rules().join(","),
-            response.text.len(),
+            gated_text.len(),
             repaired.len(),
         ));
     }
 
-    let text = repaired.trim().to_string();
-    if text.is_empty() {
+    let transform_input = repaired.trim().to_string();
+    if transform_input.is_empty() {
         return Err("The recording was transcribed but produced no text.".to_string());
     }
 
-    Ok(text)
+    Ok(RetranscribedCapture {
+        heard: HeardFacts::recognized(heard_text, gate),
+        transform_input,
+    })
 }
 
 #[tauri::command]
@@ -1663,16 +1808,38 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
     // run got. With a transcript, only the transform re-runs. Without one — a
     // transcription that timed out — the retry starts from the audio the
     // runtime kept, which is the whole reason it is kept.
-    let (raw_transcript, retry_origin) = match existing
+    /* THE HEARING THIS RETRY REPEATS, AND WHAT THE GATE DID TO IT (ADR 0249).
+       Carried as one because the retry needs both halves and for opposite
+       reasons: the new record states the same heard text the retried one did,
+       and the transform re-runs on the text the gate left rather than on the
+       heard text -- which are the same string on every record where the gate
+       changed nothing. */
+    let (heard, transform_input, retry_origin) = match existing
         .raw_transcript
-        .clone()
-        .filter(|value| !value.trim().is_empty())
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
     {
-        Some(transcript) => (transcript, RetryOrigin::Transformed(&existing)),
-        None => (
-            transcribe_retained_capture(&existing).await?,
-            RetryOrigin::Retranscribed(&existing),
-        ),
+        Some(_) => {
+            let heard = HeardFacts::of_entry(&existing);
+            /* THE TEXT THE ORIGINAL TRANSFORM RAN ON, not the heard text
+               (ADR 0249). On a record whose gate fired they are different
+               strings, and re-running from the heard one would re-admit the
+               segments the gate threw out -- so a retry would deliver what the
+               live run deliberately did not. The recogniser repair is NOT
+               re-applied here and was not before: its output is not stored, on
+               purpose, so that the record keeps the evidence of what leaked. */
+            let input = heard.transform_input().unwrap_or_default().to_string();
+            (heard, input, RetryOrigin::Transformed(&existing))
+        }
+        None => {
+            let retranscribed = transcribe_retained_capture(&existing).await?;
+            (
+                retranscribed.heard,
+                retranscribed.transform_input,
+                RetryOrigin::Retranscribed(&existing),
+            )
+        }
     };
 
     let app_config = AppConfig::load_from_disk();
@@ -1722,7 +1889,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
     // retried entry would come back without the profile's dictionary applied.
     let transformed = finalize_with_text_rules(
         super::mode_router::apply_mode_transform(
-            &raw_transcript,
+            &transform_input,
             &retry_mode,
             &transform_config,
             &app_config,
@@ -1755,7 +1922,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
                 local_prompt_carry: attribution.local.local_prompt_carry,
                 local_beam_size: attribution.local.local_beam_size,
                 local_best_of: attribution.local.local_best_of,
-                raw_transcript: Some(raw_transcript),
+                heard,
                 transformed_transcript: None,
                 corrected: transformed.corrected,
                 applied_rules: transformed.applied_rules,
@@ -1809,7 +1976,7 @@ pub async fn retry_transcription_history_entry<R: Runtime>(
         let entry = history_entry_from_insert_result(
             &app_config,
             Some(retry_origin),
-            Some(raw_transcript),
+            heard,
             transformed,
             &insert_result,
             Some(retry_mode.clone()),
@@ -1870,7 +2037,9 @@ pub fn history_entry_from_insert_result(
     // the id because the kind is what decides whose recogniser the record
     // names: a transform-only retry sent no audio anywhere.
     retry: Option<RetryOrigin<'_>>,
-    raw_transcript: Option<String>,
+    // The recogniser's own output and the gate's verdict on it, as one
+    // (ADR 0249). `HeardFacts::none()` on a path that heard nothing.
+    heard: HeardFacts,
     transformed: NativeTransformResult,
     insert_result: &NativeInsertResult,
     // The mode the transform ran in, where the caller resolved one. `None` on
@@ -1915,7 +2084,13 @@ pub fn history_entry_from_insert_result(
             local_prompt_carry: attribution.local.local_prompt_carry,
             local_beam_size: attribution.local.local_beam_size,
             local_best_of: attribution.local.local_best_of,
-            raw_transcript,
+            heard,
+            /* WHAT WAS ACTUALLY DELIVERED, BYTE FOR BYTE. `insert_result.text`
+               is the string the clipboard or the keystroke driver was handed --
+               `format_text_for_insert` applied to the trimmed transform output
+               -- so the column a surface calls *Written* is the delivery and not
+               a cut taken in front of it. Verified across all four record paths
+               on 2026-08-23. */
             transformed_transcript: Some(insert_result.text.clone()),
             corrected: transformed.corrected,
             applied_rules: transformed.applied_rules,
@@ -1948,7 +2123,7 @@ pub fn history_entry_from_insert_result(
 
 pub fn record_insert_failure(
     app_config: &AppConfig,
-    raw_transcript: String,
+    heard: HeardFacts,
     transformed_text: String,
     transformed: NativeTransformResult,
     error: String,
@@ -1976,7 +2151,7 @@ pub fn record_insert_failure(
             local_prompt_carry: local_history.local_prompt_carry,
             local_beam_size: local_history.local_beam_size,
             local_best_of: local_history.local_best_of,
-            raw_transcript: Some(raw_transcript),
+            heard,
             transformed_transcript: Some(transformed_text),
             corrected: transformed.corrected,
             applied_rules: transformed.applied_rules,
@@ -2040,7 +2215,7 @@ pub fn record_transcription_failure(
             local_prompt_carry: local_history.local_prompt_carry,
             local_beam_size: local_history.local_beam_size,
             local_best_of: local_history.local_best_of,
-            raw_transcript: None,
+            heard: HeardFacts::none(),
             transformed_transcript: None,
             corrected: false,
             applied_rules: Vec::new(),
@@ -2069,7 +2244,7 @@ pub fn record_transcription_failure(
 
 pub fn record_empty_result(
     app_config: &AppConfig,
-    raw_transcript: String,
+    heard: HeardFacts,
     transformed: NativeTransformResult,
     effective_mode: Option<ProcessingMode>,
     // What the capture measured about itself, carried as one (ADR 0177).
@@ -2095,7 +2270,7 @@ pub fn record_empty_result(
             local_prompt_carry: local_history.local_prompt_carry,
             local_beam_size: local_history.local_beam_size,
             local_best_of: local_history.local_best_of,
-            raw_transcript: Some(raw_transcript),
+            heard,
             transformed_transcript: None,
             corrected: transformed.corrected,
             applied_rules: transformed.applied_rules,
@@ -2706,7 +2881,7 @@ mod tests {
                 local_prompt_carry: None,
                 local_beam_size: None,
                 local_best_of: None,
-                raw_transcript: Some(format!("raw-{index}")),
+                heard: HeardFacts::ungated(format!("raw-{index}")),
                 transformed_transcript: Some(format!("final-{index}")),
                 corrected: false,
                 applied_rules: Vec::new(),
@@ -2769,7 +2944,7 @@ mod tests {
             local_prompt_carry: None,
             local_beam_size: None,
             local_best_of: None,
-            raw_transcript: Some("eins".to_string()),
+            heard: HeardFacts::ungated("eins".to_string()),
             transformed_transcript: Some("eins".to_string()),
             corrected: false,
             applied_rules: Vec::new(),
@@ -2806,7 +2981,7 @@ mod tests {
             local_prompt_carry: None,
             local_beam_size: None,
             local_best_of: None,
-            raw_transcript: Some("zwei".to_string()),
+            heard: HeardFacts::ungated("zwei".to_string()),
             transformed_transcript: Some("zwei".to_string()),
             corrected: false,
             applied_rules: Vec::new(),
@@ -2861,7 +3036,7 @@ mod tests {
             local_prompt_carry: None,
             local_beam_size: None,
             local_best_of: None,
-            raw_transcript: Some("ship release notes".to_string()),
+            heard: HeardFacts::ungated("ship release notes".to_string()),
             transformed_transcript: Some("Ship release notes.".to_string()),
             corrected: true,
             applied_rules: Vec::new(),
@@ -2899,7 +3074,7 @@ mod tests {
             local_prompt_carry: Some(true),
             local_beam_size: Some(5),
             local_best_of: Some(5),
-            raw_transcript: Some("follow up".to_string()),
+            heard: HeardFacts::ungated("follow up".to_string()),
             transformed_transcript: None,
             corrected: false,
             applied_rules: Vec::new(),
@@ -2967,7 +3142,7 @@ mod tests {
             local_prompt_carry: None,
             local_beam_size: None,
             local_best_of: None,
-            raw_transcript: Some("eins".to_string()),
+            heard: HeardFacts::ungated("eins".to_string()),
             transformed_transcript: Some("eins".to_string()),
             corrected: false,
             applied_rules: Vec::new(),
@@ -3004,7 +3179,7 @@ mod tests {
             local_prompt_carry: Some(false),
             local_beam_size: Some(1),
             local_best_of: Some(1),
-            raw_transcript: Some("zwei".to_string()),
+            heard: HeardFacts::ungated("zwei".to_string()),
             transformed_transcript: Some("zwei".to_string()),
             corrected: false,
             applied_rules: Vec::new(),
@@ -3073,6 +3248,7 @@ mod tests {
                 local_best_of: None,
                 raw_transcript: Some("old".to_string()),
                 transformed_transcript: Some("old".to_string()),
+                confidence_gate: None,
                 corrected: false,
                 applied_rules: Vec::new(),
                 transform_warning: None,
@@ -3116,6 +3292,7 @@ mod tests {
                 local_best_of: None,
                 raw_transcript: Some("fresh-a".to_string()),
                 transformed_transcript: Some("fresh-a".to_string()),
+                confidence_gate: None,
                 corrected: false,
                 applied_rules: Vec::new(),
                 transform_warning: None,
@@ -3159,6 +3336,7 @@ mod tests {
                 local_best_of: None,
                 raw_transcript: Some("fresh-b".to_string()),
                 transformed_transcript: Some("fresh-b".to_string()),
+                confidence_gate: None,
                 corrected: false,
                 applied_rules: Vec::new(),
                 transform_warning: None,
@@ -3206,7 +3384,7 @@ mod tests {
         let entry = history_entry_from_insert_result(
             &AppConfig::default(),
             None,
-            Some("raw text".to_string()),
+            HeardFacts::ungated("raw text"),
             NativeTransformResult {
                 text: "final text".to_string(),
                 corrected: false,
@@ -3311,7 +3489,7 @@ mod tests {
             local_prompt_carry: None,
             local_beam_size: None,
             local_best_of: None,
-            raw_transcript: Some(format!("{text} uh")),
+            heard: HeardFacts::ungated(format!("{text} uh")),
             transformed_transcript: Some(text.to_string()),
             corrected: true,
             applied_rules: Vec::new(),
@@ -3334,6 +3512,122 @@ mod tests {
         }
     }
 
+    fn dropped_segment() -> super::super::confidence_gate::RejectedSegment {
+        super::super::confidence_gate::RejectedSegment {
+            text: "Thank you for watching!".to_string(),
+            start: 2.5,
+            end: 4.0,
+            reason: "no_speech_prob=0.91 avg_logprob=-1.40".to_string(),
+        }
+    }
+
+    /// ADR 0249. The record's Heard is the recogniser's own output and the
+    /// gate's removal stands beside it, so a reader can tell a dropped segment
+    /// from one the recogniser never returned. Before this the record kept the
+    /// post-gate text under that word and the removal reached a log that
+    /// rotates.
+    #[test]
+    fn a_record_keeps_the_pre_gate_text_and_what_the_gate_took_out_of_it() {
+        let _guard = test_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        prepare_test_history_path("confidence-gate-record");
+
+        let mut request = completed_request("Der Termin ist am Freitag.");
+        request.heard = HeardFacts::recognized(
+            "Der Termin ist am Freitag. Thank you for watching!",
+            Some(ConfidenceGateRecord {
+                kept_text: "Der Termin ist am Freitag.".to_string(),
+                dropped: vec![dropped_segment()],
+            }),
+        );
+
+        let recorded = record_entry_with_work_mode(request, None, None).expect("record");
+
+        assert_eq!(
+            recorded.raw_transcript.as_deref(),
+            Some("Der Termin ist am Freitag. Thank you for watching!"),
+            "Heard is the recogniser's own output, before the gate"
+        );
+        let gate = recorded
+            .confidence_gate
+            .as_ref()
+            .expect("the gate fired, so the record states it");
+        assert_eq!(gate.kept_text, "Der Termin ist am Freitag.");
+        assert_eq!(gate.dropped.len(), 1);
+        assert_eq!(gate.dropped[0].reason, "no_speech_prob=0.91 avg_logprob=-1.40");
+    }
+
+    /// ADR 0249. A retry re-runs the transform, and re-running it from the
+    /// heard text would re-admit exactly the segments the gate threw out — the
+    /// live run and its own retry would then deliver different text for no
+    /// reason a reader could see.
+    #[test]
+    fn a_retry_transforms_the_text_the_gate_left_not_the_text_that_was_heard() {
+        let gated = HeardFacts::recognized(
+            "Der Termin ist am Freitag. Thank you for watching!",
+            Some(ConfidenceGateRecord {
+                kept_text: "Der Termin ist am Freitag.".to_string(),
+                dropped: vec![dropped_segment()],
+            }),
+        );
+
+        assert_eq!(
+            gated.transform_input(),
+            Some("Der Termin ist am Freitag."),
+            "the transform runs on what the gate left"
+        );
+        assert_eq!(
+            HeardFacts::ungated("Der Termin ist am Freitag.").transform_input(),
+            Some("Der Termin ist am Freitag."),
+            "with no gate record the two texts are one text"
+        );
+        assert_eq!(HeardFacts::none().transform_input(), None);
+    }
+
+    /// Every record written before ADR 0249 lacks the field, and there is no
+    /// backfill: those records kept the POST-gate text under `raw_transcript`
+    /// and nothing on them says whether anything was removed. `None` is the
+    /// honest answer and the store has to read them without it.
+    #[test]
+    fn a_record_written_before_the_gate_was_stored_still_loads() {
+        let entry: TranscriptionHistoryEntry = serde_json::from_value(serde_json::json!({
+            "id": "history-1-0",
+            "created_at_ms": 1_786_000_000_000u64,
+            "status": "completed",
+            "source": "native_pipeline",
+            "retry_of": null,
+            "provider": "groq",
+            "model": "whisper-large-v3-turbo",
+            "language": "de",
+            "active_profile": "General writing",
+            "work_mode": null,
+            "effective_mode": null,
+            "provider_profile": null,
+            "local_prompt_strength": null,
+            "local_prompt_carry": null,
+            "local_beam_size": null,
+            "local_best_of": null,
+            "raw_transcript": "Alles da.",
+            "transformed_transcript": "Alles da.",
+            "corrected": false,
+            "applied_rules": [],
+            "transform_warning": null,
+            "insert_mode": null,
+            "active_driver": null,
+            "pasted": null,
+            "fallback_available": null,
+            "fallback_reason": null,
+            "recovery_action": null,
+            "recovery_message": null,
+            "clipboard_restore": null,
+            "error": null
+        }))
+        .expect("a record from before the field must still load");
+
+        assert!(entry.confidence_gate.is_none());
+    }
+
     /// ADR 0240. The list is a wire shape and the record is storage; a case that
     /// only checked the row would let the cut become a data loss silently.
     #[test]
@@ -3349,7 +3643,7 @@ mod tests {
         let long = "Über Größen und Maße: ".repeat(40);
         assert!(long.chars().count() > PREVIEW_CHARS);
         let mut request = completed_request(&long);
-        request.raw_transcript = Some(long.clone());
+        request.heard = HeardFacts::ungated(long.clone());
         let recorded = record_entry_with_work_mode(
             request,
             Some(TextProfileWorkMode {
@@ -4256,6 +4550,7 @@ mod tests {
             local_best_of: None,
             raw_transcript: Some("Bitte den Absatz aufraeumen.".to_string()),
             transformed_transcript: None,
+            confidence_gate: None,
             corrected: false,
             applied_rules: Vec::new(),
             transform_warning: None,

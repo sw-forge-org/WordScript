@@ -48,6 +48,18 @@ pub struct TranscriptDocument {
     /// and printing it twice would make every Verbatim file claim an AI stage
     /// ran over it.
     pub heard: Option<String>,
+    /// What the confidence gate removed from the hearing above (ADR 0249).
+    ///
+    /// Written under a `## Dropped` heading, one line per segment with its
+    /// place in the audio and the reason its own metrics gave. Empty on every
+    /// record the gate left alone, where the section is left out entirely --
+    /// which on the reporting machine is every record there has ever been.
+    ///
+    /// It is in the FILE and not only on a screen because this is the copy the
+    /// reader keeps: the surface names the stage and the count, and the whole
+    /// account of what a filter of WordScript's own took out belongs where the
+    /// text it took it from is.
+    pub dropped: Vec<super::confidence_gate::RejectedSegment>,
     pub profile: Option<String>,
     pub mode: Option<ProcessingMode>,
     pub provider: String,
@@ -432,6 +444,27 @@ fn render(document: &TranscriptDocument) -> Option<String> {
             out.push_str("\n## Heard\n\n");
             out.push_str(heard);
             out.push('\n');
+        }
+    }
+
+    /* AFTER `## Heard`, BECAUSE IT IS A STATEMENT ABOUT IT (ADR 0249). These
+       segments were in the heard text above and are in no other text in this
+       file: the gate removed them before the transform ran. A file with no such
+       section had nothing removed -- the absence is the ordinary case and it
+       says so by being absent, not by a line claiming it. */
+    if !document.dropped.is_empty() {
+        out.push_str("\n## Dropped\n\n");
+        out.push_str(
+            "WordScript's confidence gate removed these before any mode ran, on the\nrecogniser's own metrics for each segment.\n\n",
+        );
+        for dropped in &document.dropped {
+            out.push_str(&format!(
+                "- {:.2}s-{:.2}s ({}): {}\n",
+                dropped.start,
+                dropped.end,
+                dropped.reason,
+                dropped.text.trim(),
+            ));
         }
     }
 
@@ -1026,6 +1059,7 @@ mod tests {
             created_at_ms: 1_786_000_000_000,
             written: written.to_string(),
             heard: None,
+            dropped: Vec::new(),
             profile: Some("General writing".to_string()),
             mode: Some(ProcessingMode::Cleanup),
             provider: "groq".to_string(),
@@ -1035,6 +1069,41 @@ mod tests {
             audio_path: None,
             title: None,
         }
+    }
+
+    /// ADR 0249. The archive is the copy the reader keeps, and it is a text
+    /// file with room for the whole account: what the confidence gate removed,
+    /// where in the audio it was and on which metric. The surface names the
+    /// stage and the count; this names the segments.
+    #[test]
+    fn the_file_states_what_the_confidence_gate_removed() {
+        let mut doc = document("Der Termin ist am Freitag.");
+        doc.heard = Some("Der Termin ist am Freitag. Thank you for watching!".to_string());
+        doc.dropped = vec![super::super::confidence_gate::RejectedSegment {
+            text: "Thank you for watching!".to_string(),
+            start: 2.5,
+            end: 4.0,
+            reason: "no_speech_prob=0.91 avg_logprob=-1.40".to_string(),
+        }];
+
+        let body = render(&doc).expect("a document with written text renders");
+
+        assert!(body.contains("## Heard"));
+        assert!(body.contains("## Dropped"));
+        assert!(
+            body.contains("- 2.50s-4.00s (no_speech_prob=0.91 avg_logprob=-1.40): Thank you for watching!"),
+            "the line carries the place and the reason: {body}"
+        );
+    }
+
+    /// The ordinary case, and the section has to be absent rather than empty:
+    /// a heading over nothing reads as a removal that did not happen.
+    #[test]
+    fn a_file_the_gate_left_alone_carries_no_dropped_section() {
+        let body = render(&document("Der Termin ist am Freitag."))
+            .expect("a document with written text renders");
+
+        assert!(!body.contains("## Dropped"));
     }
 
     #[test]

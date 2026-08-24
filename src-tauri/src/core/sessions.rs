@@ -136,7 +136,20 @@ struct ActiveSession {
 struct PendingTranscriptionPreview {
     app_config: AppConfig,
     provider: String,
-    raw_text: String,
+    /// What the recogniser said and what the confidence gate took out of it
+    /// (ADR 0249). The record this preview commits states both.
+    heard: history::HeardFacts,
+    /// The same hearing after the recogniser repair, which the record
+    /// deliberately does not keep (ADR 0080, ADR 0081).
+    ///
+    /// Carried because vocabulary learning needs it and nothing else does: it
+    /// reads the raw/final pair as evidence that a correction repaired a term,
+    /// and given the unrepaired text it would see WordScript's own stripped
+    /// prompt as something the correction removed — and could then propose that
+    /// prompt as profile vocabulary. The insert path has passed the repaired
+    /// text since ADR 0081; this path passed the heard text, on the branch a
+    /// clipboard-only profile takes for every dictation.
+    repaired_text: String,
     transformed: NativeTransformResult,
     /// The mode this text was produced under. Carried on the preview rather
     /// than re-derived at commit time: a preview can sit on screen while the
@@ -182,7 +195,7 @@ impl PendingTranscriptionPreview {
             provider: self.provider.clone(),
             active_profile: self.app_config.active_text_profile_label(),
             work_mode: self.app_config.resolved_active_text_profile_work_mode(),
-            raw_text: self.raw_text.clone(),
+            raw_text: self.heard.text.clone().unwrap_or_default(),
             text: self.transformed.text.trim().to_string(),
             corrected: self.transformed.corrected,
             transform: PendingTranscriptionPreviewTransform {
@@ -254,7 +267,8 @@ impl NativeSessionState {
         &mut self,
         app_config: AppConfig,
         provider: String,
-        raw_text: String,
+        heard: history::HeardFacts,
+        repaired_text: String,
         transformed: NativeTransformResult,
         effective_mode: Option<ProcessingMode>,
         capture: history::CaptureFacts,
@@ -268,7 +282,8 @@ impl NativeSessionState {
         let preview = PendingTranscriptionPreview {
             app_config,
             provider,
-            raw_text,
+            heard,
+            repaired_text,
             transformed,
             effective_mode,
             capture,
@@ -703,7 +718,7 @@ pub async fn commit_pending_preview<R: Runtime>(
             let history_entry = history::history_entry_from_insert_result(
                 &preview.app_config,
                 None,
-                Some(preview.raw_text.clone()),
+                preview.heard.clone(),
                 preview.transformed.clone(),
                 &result,
                 preview.effective_mode.clone(),
@@ -736,7 +751,16 @@ pub async fn commit_pending_preview<R: Runtime>(
                     super::vocabulary_learning::LearnFromSessionRequest {
                         profile_id: preview.app_config.active_text_profile_id.clone(),
                         observation_id: entry.id.clone(),
-                        raw_transcript: preview.raw_text.clone(),
+                        /* THE REPAIRED TEXT, DELIBERATELY UNLIKE THE RECORD
+                           ABOVE, and for the reason the insert path states:
+                           learning reads the raw/final pair as evidence that a
+                           correction repaired a term, and handed the unrepaired
+                           text it would see WordScript's own stripped prompt as
+                           something the correction removed. This read
+                           `preview.raw_text` — the heard text — on the branch a
+                           clipboard-only profile takes for every dictation
+                           (ADR 0249). */
+                        raw_transcript: preview.repaired_text.clone(),
                         final_text: final_text.clone(),
                         known_terms: super::vocabulary_learning::known_terms(
                             &active_profile.vocabulary_phrases(),
@@ -785,7 +809,7 @@ pub async fn commit_pending_preview<R: Runtime>(
                             "provider": preview.provider,
                             "active_profile": preview.app_config.active_text_profile_label(),
                             "work_mode": preview.app_config.resolved_active_text_profile_work_mode(),
-                            "raw_text": preview.raw_text,
+                            "raw_text": preview.heard.text.clone().unwrap_or_default(),
                             "transform": {
                                 "applied_rules": preview.transformed.applied_rules,
                                 "warning": preview.transformed.warning,
@@ -827,7 +851,7 @@ pub async fn commit_pending_preview<R: Runtime>(
             let _ = history::history_entry_from_insert_result(
                 &preview.app_config,
                 None,
-                Some(preview.raw_text.clone()),
+                preview.heard.clone(),
                 preview.transformed.clone(),
                 &result,
                 preview.effective_mode.clone(),
@@ -863,7 +887,7 @@ pub async fn commit_pending_preview<R: Runtime>(
         Err(error) => {
             let _ = history::record_insert_failure(
                 &preview.app_config,
-                preview.raw_text,
+                preview.heard,
                 final_text,
                 preview.transformed,
                 error.clone(),
@@ -912,7 +936,11 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
     app: &AppHandle<R>,
     app_config: AppConfig,
     provider: String,
-    raw_text: String,
+    // What was heard and what the gate took out of it, as one (ADR 0249).
+    heard: history::HeardFacts,
+    // The same hearing after the recogniser repair, which the record does not
+    // keep and vocabulary learning needs (ADR 0249).
+    repaired_text: String,
     transformed: NativeTransformResult,
     effective_mode: Option<ProcessingMode>,
     capture: history::CaptureFacts,
@@ -928,7 +956,8 @@ pub fn stage_pending_transcription_preview<R: Runtime>(
         let (epoch, payload) = state.stage_pending_preview(
             app_config,
             provider,
-            raw_text,
+            heard,
+            repaired_text,
             transformed,
             effective_mode,
             capture,
@@ -1380,6 +1409,7 @@ mod tests {
             .stage_pending_preview(
                 AppConfig::default(),
                 "groq".to_string(),
+                history::HeardFacts::ungated("raw transcript"),
                 "raw transcript".to_string(),
                 NativeTransformResult {
                     text: text.to_string(),
@@ -1420,6 +1450,7 @@ mod tests {
             .stage_pending_preview(
                 AppConfig::default(),
                 "groq".to_string(),
+                history::HeardFacts::ungated("raw transcript"),
                 "raw transcript".to_string(),
                 NativeTransformResult {
                     text: "Final transcript".to_string(),

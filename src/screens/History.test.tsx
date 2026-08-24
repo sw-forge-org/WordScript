@@ -11,6 +11,7 @@ import {
 } from "./History";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
 import type {
+  DroppedSegment,
   TranscriptionHistoryEntry,
   TranscriptionHistorySummary,
 } from "@/types/history";
@@ -129,13 +130,19 @@ function recordFor(row: TranscriptionHistorySummary): TranscriptionHistoryEntry 
  * states the open panel rather than the closed row — which is the only place
  * the sentence is ever drawn.
  */
-function openRawOf(overrides: Parameters<typeof entry>[0] = {}) {
+function openRawOf(
+  overrides: Parameters<typeof entry>[0] = {},
+  /* What the confidence gate removed, where a case is about that stage
+     (ADR 0249). It lives on the whole record rather than on the row, so it
+     arrives with the same round trip the texts do. */
+  dropped: DroppedSegment[] = [],
+) {
   const row = entry(overrides);
   /* THE TEXTS THE CASE WROTE, not the previews derived from them — that is
      what `transcription_history_record` hands back, whitespace and all. */
   const heard = overrides.raw_transcript ?? "";
   const written = overrides.transformed_transcript ?? heard;
-  return rawOf(row, { id: row.id, heard, written });
+  return rawOf(row, { id: row.id, heard, written, dropped });
 }
 
 function mockRuntimeHistory(entries: TranscriptionHistorySummary[]) {
@@ -833,6 +840,98 @@ describe("the raw panel's foot", () => {
 
     expect(both.note).toBe(
       "WordScript removed its own prompt from this. Anything else that differs is the AI stage's.",
+    );
+  });
+
+  /* ADR 0249. The gate cuts before any mode runs, and until that decision it
+     did so by editing the text the record then stored — so its removal was
+     invisible and the shape claim read it as the AI stage's. */
+  it("names the confidence gate as the stage that dropped a segment", () => {
+    const gated = openRawOf(
+      {
+        raw_transcript: "Der Termin ist am Freitag. Thank you for watching!",
+        transformed_transcript: "Der Termin ist am Freitag.",
+        corrected: true,
+        applied_rules: ["low_confidence_dropped", "post_corrected"],
+      },
+      [
+        {
+          text: "Thank you for watching!",
+          start: 2.5,
+          end: 4,
+          reason: "no_speech_prob=0.91 avg_logprob=-1.40",
+        },
+      ],
+    );
+
+    expect(gated.note).toBe(
+      "WordScript dropped a segment the recogniser was not confident in. " +
+        "Nothing else was added or reworded.",
+    );
+    expect(gated.note).not.toContain("AI stage");
+  });
+
+  /* The row knows the stage from `applied_rules` the instant the panel opens;
+     the segments arrive a round trip later (ADR 0240). The sentence has to
+     stand without the count rather than guess one. */
+  it("names the gate before the record has come back, without claiming a count", () => {
+    const gated = rawOf(
+      entry({
+        raw_transcript: "Der Termin ist am Freitag. Thank you for watching!",
+        transformed_transcript: "Der Termin ist am Freitag.",
+        corrected: true,
+        applied_rules: ["low_confidence_dropped", "post_corrected"],
+      }),
+    );
+
+    expect(gated.note).toBe(
+      "WordScript dropped what the recogniser was not confident in. " +
+        "Anything else that differs is the AI stage's.",
+    );
+  });
+
+  /* Two texts can be identical while a segment was still removed: the gate cuts
+     before the mode, so a mode that changed nothing leaves the pair equal.
+     "The AI stage ran and changed nothing" over a hearing that lost a segment
+     is the reassurance this cluster exists against. */
+  it("does not report an unchanged text over a hearing the gate cut", () => {
+    const gated = openRawOf(
+      {
+        raw_transcript: "Der Termin ist am Freitag.",
+        transformed_transcript: "Der Termin ist am Freitag.",
+        transcripts_identical: true,
+        corrected: true,
+        applied_rules: ["low_confidence_dropped"],
+      },
+      [{ text: "...", start: 2.5, end: 4, reason: "compression_ratio=3.10" }],
+    );
+
+    expect(gated.note).toBe(
+      "WordScript dropped a segment the recogniser was not confident in, " +
+        "before any mode ran. The words are in the record's own file.",
+    );
+  });
+
+  /* Three clauses is reachable since the gate joined the list, and
+     `join(" and ")` on three reads as one run-on claim. */
+  it("joins three of WordScript's own stages as a list rather than a chain", () => {
+    const all = openRawOf(
+      {
+        raw_transcript: "Sagt mir bitte Bescheid. Likely phrases: Commit. Untertitel der ARD",
+        transformed_transcript: "Sag mir bitte Bescheid. Commit.",
+        corrected: true,
+        applied_rules: [
+          "low_confidence_dropped",
+          "prompt_echo_stripped",
+          "singular_address_restored",
+        ],
+      },
+      [{ text: "Untertitel der ARD", start: 3, end: 4.5, reason: "compression_ratio=2.90" }],
+    );
+
+    expect(all.note).toContain(
+      "WordScript dropped a segment the recogniser was not confident in, " +
+        "removed its own prompt from this and repaired the address the recogniser pluralized.",
     );
   });
 
