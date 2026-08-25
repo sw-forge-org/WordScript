@@ -53,6 +53,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — a roadmap candidate for a draft the desk researched
+
+- **The request that falls between two records now has an entry.** *Write a post
+  on this subject, and look the subject up* cannot be served by `draft`, whose
+  output contract forbids adding facts the instruction does not contain
+  (ADR 0026, narrowed by ADR 0245) and whose path is closed to tools on
+  ADR 0029's four reasons; nor by the desk alone, whose targets are repositories
+  and whose runs end as stdout in a thread (ADR 0030). ADR 0044 already routes
+  it — the assistant reads this disk, the desk reaches the network, and a desk
+  action is an assembled brief handed over on a key — and that route had never
+  been walked for a job that is not code. `ROADMAP.md` carries it as a candidate
+  with four gates, none of them closed, and nothing is built.
+- **The blocking gate is that no prompt in this product has a slot for
+  material.** ADR 0023 makes every context source a reading aid — never derive
+  content from it, never supplement the result with it — and ADR 0029 binds
+  every later source to that rule by name. Sourced material exists to be derived
+  from, so either a second block is decided with its own provenance and citation
+  rules, or the candidate cannot produce a grounded text and should be dropped
+  rather than narrowed. ADR 0040 wrote the citation sentence for a bounded local
+  read and is the shape a wider answer would take.
+- **Two accepted records sort a read-only network source differently, and
+  neither had noticed.** ADR 0044 sorts by disk versus network, which puts every
+  network read on the desk. ADR 0046 sorts by *does it write anywhere* into
+  intake, bridge and reach. A search reads over the network and writes nowhere,
+  so it satisfies neither sort. The disagreement stayed invisible because every
+  connector considered so far was either local material (the calendar) or
+  writing (mail, issues). It is the candidate's gate 2 and it is answerable
+  today.
+- **The one-shot rule has its first counter-case.** ADR 0031 refused multi-turn
+  refinement conditionally — not until something validates it — and Phase 9
+  repeats that as out of scope. A post is not a correction: the refinement loop
+  is the work rather than a repair of a nearly-right result. The candidate's
+  gate 4 puts the question rather than answering it, and notes that nothing new
+  has to be invented either way, because the desk already has a thread.
+- **And the entry says which half it is not.** Whether a result reads as written
+  by a person is decided by the communication style — 400 characters of rules,
+  400 of writing sample, with a shipped bug that truncates any rule past 120
+  characters without saying so — which is Phase 7 and buildable today. No amount
+  of sourced material fixes tone.
+- **The candidate count above the phase list was already stale.** The libei
+  entry has carried `superseded` since 2026-08-18 and was still being counted as
+  open. The sentence now names the four open candidates and says why the fifth
+  stays below the phases rather than being deleted.
+
 ### Changed — `Heard` is the recogniser's own output and `Written` is the delivery
 
 - **The word `Heard` named a boundary one stage later than it promised.** The

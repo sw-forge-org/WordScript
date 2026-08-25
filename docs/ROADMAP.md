@@ -40,10 +40,13 @@ spoken, only the prompt argument is dictated, and a visible keyed confirmation
 precedes the start (ADR 0030).
 
 Unscheduled work with an open decision gate is filed below the phases, not
-inside them — currently four items: a second paste mechanism on Wayland,
-meeting capture, live subtitles, and the live-translation window. Two were added
-on 2026-08-05 by relay Leg 4a, which decided the lifecycle of six drawn surfaces
-and found that three of them had no roadmap home at all.
+inside them — currently four: meeting capture, live subtitles, the
+live-translation window, and a researched draft. A fifth entry, a second paste
+mechanism on Wayland, stands there as superseded rather than deleted, because
+that mechanism shipped and it is the RemoteDesktop portal rather than libei. Two
+of the four open ones were added on 2026-08-05 by relay Leg 4a, which decided
+the lifecycle of six drawn surfaces and found that three of them had no roadmap
+home at all.
 
 **A fifth was added on 2026-08-10 and promoted on 2026-08-11.** *Streaming
 recognition and the spoken-output path* was filed as a candidate because the
@@ -1022,6 +1025,143 @@ the candidate and nothing is built for it.
 **Success measure:** two people hold a five-minute conversation in two languages
 with no button pressed per turn, each hearing their own language on their own
 device, and nothing is written to disk unless the session said so.
+
+## Candidate - A researched draft
+
+**Status:** candidate, not scheduled. Added 2026-08-25. Needs the four gates
+below before it becomes scope, and an ADR before any of it is built. **All four
+are open**, and gate 1 blocks the other three — nothing here can be priced
+before it is answered.
+
+**Why it is written down at all.** *Write a post on this subject, and look the
+subject up* falls between two records that both already exist, and neither of
+them can serve it alone. `draft` writes and may not fetch: its output contract
+says *"never add facts the instruction does not contain"*
+([ADR 0026](decisions/0026-the-agent-produces-an-artifact-not-an-answer.md),
+narrowed by [ADR 0245](decisions/0245-a-draft-does-the-work-its-instruction-asks-for-an-echo-is-not-a-result-and-the-pill-calls-the-mode-what-every-other-surface-calls-it.md)),
+and [ADR 0029](decisions/0029-the-agent-mode-carries-out-an-instruction-it-does-not-act.md)
+keeps tools out of the dictation path on four reasons a later record must answer
+one by one. The desk fetches and produces nothing a person will edit:
+[ADR 0030](decisions/0030-one-orchestrator-speaks-for-every-agent.md)'s targets
+are repositories, a run is headless, and its stdout becomes the closing entry in
+a thread. What routes the request is
+[ADR 0044](decisions/0044-the-effect-line-and-the-handoff-across-it.md), which
+already says where the line runs — *"The assistant reads what is on this disk.
+The desk reaches what comes over the network"* — and already names the form: a
+**desk action**, *"an assembled brief handed over, minutes, with effects"*, of
+which *"A desk action begins at the assistant."* That route has never been
+walked for a job that is not code, and walking it is what this entry is about.
+
+**It is an artifact, not an answer, and not a dictation.** A dictation runs for
+seconds and ends at the cursor. This runs for minutes, ends in a text the user
+keeps editing, and its refinement loop is the work rather than a repair.
+ADR 0026 already named the output an artifact; what is new is that the artifact
+outlives the session that produced it.
+
+**Why this is not the assistant the vision refuses.** [VISION.md](VISION.md)
+says *"Not a general AI assistant"*, and this entry has to pass that line rather
+than route around it. WordScript is for heavy writers and a post is writing, so
+producing the text is not the crossing. **Reaching for the material is** — and
+the product already has a name for that crossing, an owner for it and a key in
+front of it: ADR 0044's effect line, the desk, and a confirmation that is
+visible and keyed rather than spoken. The entry stays on the right side of the
+vision precisely by keeping research out of the dictation path — the assistant
+writes, the desk fetches, and a person presses a key between them. If it ever
+becomes one thing that searches and writes with no crossing, it has become the
+assistant the vision refuses, and this paragraph is the record that says so.
+
+**Scope, if it goes ahead:**
+
+- **A material block in the generative prompt**, distinct from the profile
+  context, carrying provenance per item, and a citation contract on the output.
+  [ADR 0040](decisions/0040-the-assistant-is-one-thing-with-three-doors.md)
+  already wrote that sentence for a bounded local read — *"it cites what it
+  used"*, because *"without the citation there is no way to tell a grounded
+  draft from an invented one, and an invented one is worse than a refusal"* —
+  and this is the same sentence over a wider source. Gate 1 is whether the block
+  may exist at all.
+- **A desk target whose job is a written artifact** rather than a repository.
+  Gate 3 is what the current primitive does not carry.
+- **The thread the desk already has**, applied to that target. Nothing is
+  invented here: ADR 0030 says *"A target is a thread"* and calls iterating
+  *"the normal case, not an exception."*
+- **The keyed handoff card of ADR 0044, unchanged.** Enter hands over; Escape,
+  and ten seconds of silence, treat the dictation as the dictation it always
+  was. The safe answer stays the default answer.
+
+**Decision gate — answer before writing code:**
+
+1. **Does a generative prompt get a second kind of block — material, as opposed
+   to a reading aid?** Every context source in this product is a reading aid
+   today.
+   [ADR 0023](decisions/0023-profile-context-is-a-reading-aid-and-a-register-sets-form-not-lexis.md)
+   put the rule in the prompt itself: *"Never derive content from it, never
+   supplement the result with it, never carry any of it into the result. All
+   content comes from the user's instruction alone."* ADR 0029 then bound every
+   later source to it by name — *"a selection, a file, an MCP resource"* — and
+   ADR 0026's output contract adds *"never add facts the instruction does not
+   contain."* Sourced material is the opposite of all three by construction: it
+   exists to be derived from. So either a second block exists with its own rules
+   — what provenance it carries, what may be taken from it, what the output owes
+   it — or this entry cannot produce a grounded text at all and should be
+   dropped rather than narrowed. ADR 0040 answered a narrower version of this
+   for a bounded read of the notes directory and is the shape a wider answer
+   would take. **This gate blocks the other three.**
+2. **Which class does a read-only network source belong to?** Two accepted
+   records sort it differently and neither noticed the other. ADR 0044 sorts by
+   disk versus network, which puts every network read on the desk.
+   [ADR 0046](decisions/0046-intake-bridge-reach.md) sorts by *"Does it write
+   anywhere?"* into **intake** (WordScript, native, read-only — argued as a
+   calendar-only exception), **bridge** (WordScript as a server) and **reach**
+   (the desk, writing). A search reads over the network and writes nowhere, so
+   it satisfies neither sort. The disagreement went unseen because every
+   connector considered so far was either local material or writing. This is an
+   ADR question rather than a product one, and it is answerable today.
+3. **Does ADR 0030's target primitive carry a job that is not a repository?** A
+   target is a label, a directory, a profile, a default model and the roles
+   `inspect` / `work` / `resume`, run headless in that directory, with stdout
+   becoming the closing thread entry. A writing job has no repository, `work`
+   means writing files rather than producing an artifact, and what the user
+   wants back is a text they will edit rather than stdout. Either the primitive
+   generalises — a directory of notes and sources is still a directory — or
+   Phase 8 gains a second target kind, which is a scope change to a phase that
+   has no code in it yet, and therefore cheap to make now and expensive to make
+   later.
+4. **Does the one-shot rule survive its first counter-case?**
+   [ADR 0031](decisions/0031-a-voice-nudge-is-one-shot-on-known-text-and-entered-explicitly.md)
+   refused multi-turn on market evidence, and refused it conditionally:
+   *"Multi-turn refinement is not built until something validates it."* Phase 9
+   repeats that as out of scope. A post is not a correction — the refinement
+   loop is the work, not a repair of a nearly-right result — which makes this
+   the first concrete case the condition was waiting for. Nothing new has to be
+   invented either way: the desk already has a thread. The question is whether
+   it stays desk-only, and the asymmetry the record already carries is the
+   reason it might — a desk thread is a sequence of headless runs with resume,
+   not a chat.
+
+**Out of scope:** side-effecting tools in the dictation path. ADR 0029's four
+reasons stand untouched and this entry replies to none of them; what it uses is
+the crossing ADR 0044 built, where a person presses a key. Also out: Auto
+routing into a handoff — *"Auto may choose how text reads, never whether
+something happens"* (ADR 0044).
+
+**And the half this entry deliberately does not carry.** Whether the result
+reads as written by a person is decided by the communication style, not by the
+material: a register, a length, 400 characters of rules and 400 of writing
+sample
+([ADR 0023](decisions/0023-profile-context-is-a-reading-aid-and-a-register-sets-form-not-lexis.md),
+[ADR 0068](decisions/0068-the-communication-style-is-a-tab-in-the-profile-and-the-legend-states-its-scope.md)),
+with a shipped bug that silently truncates any rule past 120 characters
+([known-issues](known-issues/style-rules-are-truncated-without-saying-so.md)).
+That is profile content, it belongs to Phase 7, and it is the half that is
+buildable and measurable today. **No amount of sourced material fixes tone**, so
+this entry landing first would produce a well-sourced text that still reads
+machine-written.
+
+**Success measure:** a dictated instruction produces a text that names every
+source it used, in a thread where the next spoken instruction refines the same
+artifact instead of starting a new one — and a draft that cites nothing is
+distinguishable from one that does.
 
 ## Dependencies
 
