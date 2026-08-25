@@ -187,7 +187,7 @@ export function AboutScreen({ banner, runtime }: WiredScreenProps) {
           card's full width. */}
       <SectionHeader
         title="This build"
-        description="Still being assembled, so a check is workflow diagnostics."
+        description="There is no installer yet, so a check reports the release pipeline."
       >
         <Card>
           <CardRows>
@@ -204,7 +204,7 @@ export function AboutScreen({ banner, runtime }: WiredScreenProps) {
             />
             <Row
               label="How you run it today"
-              hint="A developer build from source. There is no installer yet."
+              hint="A developer build, from source."
               control={<span className="ws-mono ws-muted">{RUN_COMMAND}</span>}
             />
             <Row
@@ -266,22 +266,21 @@ export function AboutScreen({ banner, runtime }: WiredScreenProps) {
         </Card>
       </SectionHeader>
 
-      <SectionHeader title="Not built" description="Named here so it is not looked for elsewhere.">
+      <SectionHeader title="Not built">
         <Card>
           <CardRows>
             <Row
               label="Translation mode"
-              hint="Not decided. Recorded as a roadmap candidate with an open gate."
               control={<StatusBadge tone="plan">Candidate</StatusBadge>}
             />
             <Row
               label="Meeting capture"
-              hint="Sketched as a preview. Needs system-audio capture and a second window."
+              hint="Waiting on system-audio capture."
               control={<StatusBadge tone="plan">Preview</StatusBadge>}
             />
             <Row
               label="Account, sign-in and sync"
-              hint="Not planned, rather than not started. Everything is on this machine, there is nothing to sign in to, and no server of ours holds anything. The keys you do hold are model vendors' and live in AI Models."
+              hint="Not planned rather than not started — everything is on this machine, and no server of ours holds anything."
               control={<StatusBadge tone="success">Never</StatusBadge>}
             />
           </CardRows>

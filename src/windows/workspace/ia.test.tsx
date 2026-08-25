@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ENTRY_POINT_HOLES, SECTIONS, SECTION_GROUPS, VIEWS } from "./ia";
+import { ENTRY_POINT_HOLES, SECTIONS, SECTION_GROUPS, VIEWS, surfaceBanner } from "./ia";
+import { DeveloperModeProvider } from "@/lib/developerMode";
 import { ALL_SCREENS } from "@/windows/gallery/registry";
 import { createWorkspaceRuntime } from "@/test/factories";
 
@@ -40,7 +41,7 @@ describe("the information architecture", () => {
     for (const entry of [...VIEWS, ...SECTIONS]) {
       const listed = ALL_SCREENS.find((screenEntry) => screenEntry.id === entry.id);
       if (!listed) {
-        expect(entry.banner, `${entry.id} left the gallery without being wired`).toBeUndefined();
+        expect(entry.preview, `${entry.id} left the gallery without being wired`).toBeUndefined();
         continue;
       }
       expect(listed.render, `${entry.id} has no gallery render`).toBeDefined();
@@ -51,13 +52,13 @@ describe("the information architecture", () => {
   // every screen that is still a drawing states on itself that it is drawn
   // rather than wired — and a screen that has stopped saying so has to have
   // stopped being a drawing, which is the assertion above.
-  it("gives every screen that is still a drawing a banner", () => {
+  it("gives every screen that is still a drawing a registry entry", () => {
     const drawn = [...VIEWS, ...SECTIONS].filter((entry) =>
       ALL_SCREENS.some((screenEntry) => screenEntry.id === entry.id),
     );
     expect(drawn.length, "every screen is wired — this test has done its job").toBeGreaterThan(0);
     for (const entry of drawn) {
-      expect(entry.banner, `${entry.id} would imply a runtime state`).toBeTruthy();
+      expect(entry.preview, `${entry.id} would imply a runtime state`).toBeTruthy();
     }
   });
 
@@ -69,9 +70,15 @@ describe("the information architecture", () => {
      Pinning the vocabulary here would make the honest word the failing one. */
   it("renders the banner it carries, on the screen it carries it for", () => {
     for (const entry of [...VIEWS, ...SECTIONS]) {
-      if (!entry.banner) continue;
+      if (!entry.preview) continue;
+      /* IN DEVELOPER MODE, BECAUSE THAT IS THE ONLY STATE THAT HAS A BANNER TO
+         RENDER. Outside it the marker suppresses itself and this case would be
+         asserting that a chip the reader asked not to see is absent, which is
+         the filter's test rather than the banner's. */
       const { container } = render(
-        <>{entry.render({ banner: entry.banner, runtime: createWorkspaceRuntime() })}</>,
+        <DeveloperModeProvider value={true}>
+          {entry.render({ banner: surfaceBanner(entry.preview), runtime: createWorkspaceRuntime() })}
+        </DeveloperModeProvider>,
       );
       const banner = container.querySelector(".ws-banner");
       expect(banner, `${entry.id} does not render the banner it carries`).not.toBeNull();

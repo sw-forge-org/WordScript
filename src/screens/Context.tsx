@@ -482,14 +482,7 @@ function ContextScreenBody({
       <ViewTop
         title="Context"
         lead="Everything you have said, recorded or brought in — and what follows from it."
-        banner={
-          banner ??
-          (intake ? (
-            <PreviewBanner>Planned for V2.</PreviewBanner>
-          ) : (
-            <PreviewBanner>Planned for V2. Nothing on the Summary tab is wired.</PreviewBanner>
-          ))
-        }
+        banner={banner ?? <PreviewBanner id="context" />}
       />
       <Pane
         list={
@@ -911,7 +904,7 @@ function RecordWay() {
         <CardRows>
           <Row
             label="Acme — quarterly review"
-            hint="14:00, in 2 h · 4 attendees · from Google Calendar. Recording it fills in the transcript; the object already exists."
+            hint="14:00, in 2 h · 4 attendees · from Google Calendar. The object exists before it is recorded."
             control={
               <Button variant="ghost" icon={<Icon name="play" />}>
                 Record this

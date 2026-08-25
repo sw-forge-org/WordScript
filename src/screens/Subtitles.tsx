@@ -42,18 +42,14 @@ export function SubtitlesScreen() {
     <>
       <ViewTop
         title="Live subtitles"
-        lead="Two features with one name. One reads the room, the other reads you."
+        lead="Two features with one name: one reads the room, the other reads you."
         banner={
-          <PreviewBanner>
-            Not built. Captions need system-audio capture; the echo needs partial results the
-            pipeline does not emit yet.
-          </PreviewBanner>
+          <PreviewBanner id="subtitles" />
         }
       />
 
       <SectionHeader
         title="They are two things"
-        description="Named together, built apart. The only thing they share is the word."
       >
         <HandoffPair>
           <HandoffSide
@@ -108,27 +104,27 @@ export function SubtitlesScreen() {
           <CardRows>
             <Row
               label="The strip carries its own ground"
-              hint="Not text on the video. A frame can go white mid-sentence and the caption has to survive the cut, so the ground is part of the component and never borrowed from what is behind it."
+              hint="Part of the component, never borrowed from what is behind it. A frame can go white mid-sentence."
               control={<StatusBadge tone="success">Always opaque</StatusBadge>}
             />
             <Row
               label="Never frosted"
-              hint="Frost is for a surface that floats over this application. This one floats over somebody else's video, which is exactly the excluded case — and blurring a moving picture costs a filter pass per frame of theirs."
+              hint="Frost is for a surface over this application. This one floats over somebody else's video."
               control={<StatusBadge tone="plan">By design</StatusBadge>}
             />
             <Row
               label="It is excluded from screen shares"
-              hint="Same rule the meeting window follows. Subtitles you turned on for yourself must not appear in the recording everybody else receives."
+              hint="Same rule the meeting window follows."
               control={<StatusBadge tone="success">Not captured</StatusBadge>}
             />
             <Row
               label="Click-through"
-              hint="It sits over a player whose controls are underneath it. A caption that swallows a click on pause is worse than no caption."
+              hint="The player's controls are underneath it."
               control={<StatusBadge tone="success">Pointer passes</StatusBadge>}
             />
             <Row
               label="Translated is the same strip"
-              hint="When a language pair is set it shows the translation rather than the transcript. Not a second window and not a second feature — the pair comes from the same place the translation window reads it."
+              hint="When a language pair is set it shows the translation rather than the transcript."
               control={
                 <Button variant="ghost" icon={<Icon name="arrow" />}>
                   Open Translation
@@ -141,7 +137,7 @@ export function SubtitlesScreen() {
 
       <SectionHeader
         title="Echo — your own voice, on the overlay"
-        description="A different feature entirely: it exists so a long sentence does not lose its thread halfway through."
+        description="A different feature: a long sentence does not lose its thread halfway through."
       >
         <OverlayStage>
           <EchoWrap>
@@ -165,28 +161,28 @@ export function SubtitlesScreen() {
 
       <SectionHeader
         title="How the echo behaves"
-        description="Four rules, and three of them exist because it is drawn over a desktop nobody controls."
+        description="Four rules, three of them because it is drawn over a desktop nobody controls."
       >
         <Card>
           <CardRows>
             <Row
               label="The text colour follows the contrast"
-              hint="It sits on whatever application you are dictating into — a white document, a dark editor, a photo. The colour is chosen against what is measured behind it, per redraw, and it is the one place in this product where a colour is not a token."
+              hint="Chosen against what is measured behind it, per redraw — the one colour here that is not a token."
               control={<StatusBadge tone="accent">Measured, not themed</StatusBadge>}
             />
             <Row
               label="Settled text and the live tail read differently"
-              hint="What the recogniser has committed is set; the last few words are still moving and are dimmer. Without the split you re-read the whole line every time it changes, which is worse than no echo."
+              hint="Committed text is set; the last few words are still moving and are dimmer."
               control={<StatusBadge tone="success">Two weights</StatusBadge>}
             />
             <Row
               label="It shows the tail, not the transcript"
-              hint="About one line. Growing upward until it covers the window you are dictating into is the failure mode, and a scrollback is the recording's job."
+              hint="About one line. A scrollback is the recording's job."
               control={<StatusBadge tone="plan">~1 line</StatusBadge>}
             />
             <Row
               label="It is off by default"
-              hint="Most dictation is one sentence into a text field, where watching words appear is a distraction from the thing you were actually writing. It earns its place in the long ones."
+              hint="Most dictation is one sentence into a text field. It earns its place in the long ones."
               control={<Toggle checked={echoOn} onCheckedChange={setEchoOn} aria-label="Echo" />}
             />
           </CardRows>
@@ -198,12 +194,12 @@ export function SubtitlesScreen() {
           <CardRows>
             <Row
               label="Captions"
-              hint="System-audio capture — the same dependency meeting capture is waiting on, and the reason both are drawn rather than built."
+              hint="System-audio capture — the same dependency meeting capture is waiting on."
               control={<StatusBadge tone="plan">System audio</StatusBadge>}
             />
             <Row
               label="Echo"
-              hint="Partial results. The pipeline transcribes a finished recording; an echo needs the recogniser to emit as it goes, which is a streaming lane the local and cloud providers expose differently."
+              hint="Partial results. The recogniser must emit as it goes, which is a streaming lane."
               control={<StatusBadge tone="plan">Streaming recognition</StatusBadge>}
             />
           </CardRows>

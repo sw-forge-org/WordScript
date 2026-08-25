@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { PreviewBanner } from "@/components/shell";
 import type { IconName } from "@/components/shell";
+import { previewVisible, findPreview, type PreviewId } from "@/lib/previewSurfaces";
 import type { ScreenSlot } from "@/screens/props";
 import { HomeScreen } from "@/screens/Home";
 import { HistoryScreen } from "@/screens/History";
@@ -72,12 +73,19 @@ export interface SurfaceEntry<Id extends string> {
   icon: IconName;
   /** `pane` gives up the column's measure, padding and block rhythm. */
   layout?: "pane" | "wide";
-  /** The prototype's `tag: "prev"` — the feature itself is not built yet. */
-  preview?: boolean;
-  /** Stated on the surface until Leg 4 wires the section. Its ABSENCE is what
-   *  "wired" means — `registry.test.tsx` reads exactly this to decide which
-   *  gallery entries were allowed to retire (ADR 0057). */
-  banner?: ReactNode;
+  /**
+   * This surface's entry in `previewSurfaces.ts`, when it has one.
+   *
+   * ONE FIELD WHERE THERE WERE TWO. `preview: true` put the chip on the nav row
+   * and `banner` put the sentence on the screen, and nothing made them agree —
+   * a row could carry the chip and no sentence, or a sentence and no chip, and
+   * two of them did. The registry entry carries both and says which kind of
+   * preview it is, so the nav, the banner and the filter read one fact.
+   *
+   * Its ABSENCE is what "wired" means — `registry.test.tsx` reads exactly this
+   * to decide which gallery entries were allowed to retire (ADR 0057).
+   */
+  preview?: PreviewId;
   /** Every row gets the same slot whether it uses it or not, so that fourteen
    *  rows cannot have fourteen shapes. A screen that is still drawn ignores
    *  `runtime`; a wired screen takes it and no longer compiles in the gallery. */
@@ -85,22 +93,57 @@ export interface SurfaceEntry<Id extends string> {
 }
 
 /**
- * Said once, so that fourteen rows cannot disagree about what they are.
+ * The banner a surface carries, drawn from its registry entry.
  *
  * It carries "drawn, not wired" AND "wired in part", because both are the same
  * statement to a reader: something on this surface does not come from the
- * runtime. `registry.test.tsx` reads only whether a row has one — a screen that
- * reads half of what it draws keeps its banner and its gallery entry, and says
- * WHICH half is missing rather than repeating a generic sentence.
+ * runtime. `registry.test.tsx` reads only whether a row has an entry — a screen
+ * that reads half of what it draws keeps its banner and its gallery entry, and
+ * says WHICH half is missing rather than repeating a generic sentence.
  *
- * THE CHIP MAY NAME WHICH OF THE TWO IT IS. `Preview` over a screen that reads
- * most of what it draws is a caveat the reader learns to skip, and Home — where
- * the inbox, the record and now two of the four counters are runtime truth — was
- * the sharpest instance of it. `lead` is the chip's word; the sentence then says
- * what is drawn instead of spending its opening on the grade again.
+ * THE CHIP NAMES WHICH OF THE TWO IT IS, and the registry holds the word.
+ * `Preview` over a screen that reads most of what it draws is a caveat the
+ * reader learns to skip, and Home — where the inbox, the record and two of the
+ * four counters are runtime truth — was the sharpest instance of it.
+ *
+ * IT DRAWS NOTHING OUTSIDE DEVELOPER MODE. `PreviewBanner` suppresses itself on
+ * an id, so this returns a node the workspace can hand to every screen without
+ * asking whether the reader wanted to see it.
  */
-function saysSo(what: string, lead?: string): ReactNode {
-  return <PreviewBanner lead={lead}>{what}</PreviewBanner>;
+export function surfaceBanner(id: PreviewId | undefined): ReactNode {
+  return id ? <PreviewBanner id={id} /> : undefined;
+}
+
+/**
+ * The views this reader gets, in order. Developer Mode off drops the surfaces
+ * that are drawn all the way down — nav row and route together, because a nav
+ * row that opens a sketch is the fake affordance rule 7 forbids.
+ */
+export function visibleViews(developer: boolean): SurfaceEntry<ViewId>[] {
+  return VIEWS.filter((entry) => !entry.preview || previewVisible(entry.preview, developer));
+}
+
+/** The settings sections this reader gets, on the same rule. */
+export function visibleSections(developer: boolean): SurfaceEntry<SectionId>[] {
+  return SECTIONS.filter((entry) => !entry.preview || previewVisible(entry.preview, developer));
+}
+
+/** The section groups, emptied of what the filter removed and dropped if bare. */
+export function visibleSectionGroups(developer: boolean): SectionGroup[] {
+  const shown = new Set(visibleSections(developer).map((entry) => entry.id));
+  return SECTION_GROUPS.map((group) => ({
+    ...group,
+    ids: group.ids.filter((id) => shown.has(id)),
+  })).filter((group) => group.ids.length > 0);
+}
+
+/**
+ * Whether a nav row wears the chip. Only the surfaces that OFF would remove do
+ * — a chip on Home would mark a screen the reader is looking at working.
+ */
+export function navTag(entry: SurfaceEntry<string>, developer: boolean): "preview" | undefined {
+  if (!developer || !entry.preview) return undefined;
+  return findPreview(entry.preview).whenOff === "remove" ? "preview" : undefined;
 }
 
 export const VIEWS: SurfaceEntry<ViewId>[] = [
@@ -108,10 +151,7 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     id: "home",
     label: "Home",
     icon: "home",
-    banner: saysSo(
-      "All four counters report a measurement. The decision inbox receives a fallen-back delivery and nothing else — the desk (Phase 8) and a meeting's open questions (V2) have no receiver, and the calendar counts dictations only for the same reason.",
-      "Wired in part",
-    ),
+    preview: "home",
     render: (props) => <HomeScreen {...props} />,
   },
   {
@@ -132,8 +172,7 @@ export const VIEWS: SurfaceEntry<ViewId>[] = [
     label: "Context",
     icon: "notes",
     layout: "pane",
-    preview: true,
-    banner: saysSo("Planned for V2, and drawn rather than wired. The context object does not exist in the runtime."),
+    preview: "context",
     render: (props) => <ContextScreen {...props} />,
   },
 ];
@@ -167,8 +206,7 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
     id: "notesettings",
     label: "Notes & Meetings",
     icon: "notes",
-    preview: true,
-    banner: saysSo("Planned for V2, and drawn rather than wired."),
+    preview: "notesettings",
     render: (props) => <NoteSettingsScreen {...props} />,
   },
   {
@@ -184,23 +222,21 @@ export const SECTIONS: SurfaceEntry<SectionId>[] = [
        account's vendor, both stored; what is still a drawing is the two withheld
        lanes and the per-job settings that have no config shape yet. A banner is a
        claim about the build, and this one had gone false under its own card. */
-    banner: saysSo("Wired in part — the accounts, what each job runs on and On this machine are real; the two withheld lanes and the job settings beside the model are drawn and inert."),
+    preview: "models",
     render: (props) => <ModelsScreen {...props} />,
   },
   {
     id: "agents",
     label: "Agents",
     icon: "agents",
-    preview: true,
-    banner: saysSo("Planned for Phase 8, and drawn rather than wired."),
+    preview: "agents",
     render: (props) => <AgentsScreen {...props} />,
   },
   {
     id: "integrations",
     label: "Integrations",
     icon: "integrations",
-    preview: true,
-    banner: saysSo("Planned for Phase 8, and drawn rather than wired."),
+    preview: "integrations",
     render: (props) => <IntegrationsScreen {...props} />,
   },
   {

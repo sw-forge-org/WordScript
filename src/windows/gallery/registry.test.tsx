@@ -61,14 +61,16 @@ const PROTOTYPE_SCREENS = [
   "contextactions",
 ] as const;
 
-/** Mounted on a product surface and still saying it is drawn rather than wired. */
+/** Mounted on a product surface and still saying it is drawn rather than wired.
+ *  The registry entry IS that statement now — it carries the banner's sentence,
+ *  the chip's word, and what Developer Mode off does to the surface. */
 function drawnOnAProductSurface(): string[] {
-  return [...VIEWS, ...SECTIONS].filter((entry) => entry.banner).map((entry) => entry.id);
+  return [...VIEWS, ...SECTIONS].filter((entry) => entry.preview).map((entry) => entry.id);
 }
 
-/** Mounted on a product surface with no banner — i.e. wired. */
+/** Mounted on a product surface with no registry entry — i.e. wired. */
 function wired(): string[] {
-  return [...VIEWS, ...SECTIONS].filter((entry) => !entry.banner).map((entry) => entry.id);
+  return [...VIEWS, ...SECTIONS].filter((entry) => !entry.preview).map((entry) => entry.id);
 }
 
 describe("the registry", () => {

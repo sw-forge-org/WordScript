@@ -48,7 +48,7 @@ export function HandoffScreen() {
       <ViewTop
         title="Handoff"
         lead="What happens when a dictation asks for something to be done rather than written."
-        banner={<PreviewBanner>Planned for Phase 8.</PreviewBanner>}
+        banner={<PreviewBanner id="handoff" />}
       />
 
       <SectionHeader
@@ -144,17 +144,17 @@ export function HandoffScreen() {
           <CardRows>
             <Row
               label="Enter"
-              hint="Hands over. The dictation becomes the prompt for a run, the thread opens in the agent window, and nothing is inserted at your cursor."
+              hint="Hands over. The dictation becomes the prompt, the thread opens, and nothing is inserted."
               control={<StatusBadge tone="accent">Starts a run</StatusBadge>}
             />
             <Row
               label="Escape"
-              hint="Treats it as the dictation it always was. The text goes to the cursor in the mode on the pill, and the run never existed."
+              hint="Treats it as the dictation it always was, in the mode on the pill."
               control={<StatusBadge tone="success">Inserts the text</StatusBadge>}
             />
             <Row
               label="Neither, for 10 seconds"
-              hint="Same as Escape. A card that expires into the destructive option would be a trap, and doing nothing must be the safe answer everywhere in this product."
+              hint="Same as Escape. Doing nothing is always the safe answer."
               control={<StatusBadge tone="success">Inserts the text</StatusBadge>}
             />
           </CardRows>
@@ -163,7 +163,7 @@ export function HandoffScreen() {
 
       <SectionHeader
         title="Where the line runs"
-        description="Four properties, and they all fall on the same side of the same cut. That is the argument that the boundary is real and not drawn to sort a list."
+        description="Four properties, all falling on the same side of the same cut."
       >
         <Card
           body={
@@ -190,12 +190,12 @@ export function HandoffScreen() {
           <CardRows>
             <Row
               label="Why they cannot simply be one thing"
-              hint="A session ends in exactly one reducer commit. A process that runs for days has no single end point, and one that has an end point cannot run for days. The rest follows from that."
+              hint="A session ends in exactly one reducer commit. A process that runs for days has no single end point."
               control={<StatusBadge tone="plan">Decided</StatusBadge>}
             />
             <Row
               label="And why the surface can be"
-              hint="The user has one intent — do this with what I have here. Only the execution differs, and the handoff is where the difference becomes visible instead of being demanded up front."
+              hint="One intent — do this with what I have here. Only the execution differs."
               control={<StatusBadge tone="success">One input</StatusBadge>}
             />
           </CardRows>
@@ -215,12 +215,12 @@ export function HandoffScreen() {
             />
             <Row
               label="What Auto may not decide"
-              hint="The language it is in, and whether anything happens at all. Both are unrecoverable the moment they are wrong: text in the wrong language is already in somebody else's document, and a mail that has been sent cannot be recalled."
+              hint="The language it is in, and whether anything happens at all. Both are unrecoverable when wrong."
               control={<StatusBadge tone="plan">Never</StatusBadge>}
             />
             <Row
               label="So the offer is always an offer"
-              hint="Even with the recogniser certain and the sentence unambiguous, the key is pressed by a person. This is the one place in the dictation path where something irreversible starts, and it is the one place two seconds are justified."
+              hint="The key is pressed by a person, however certain the recogniser is."
               control={<HotkeyButton combo="Enter" />}
             />
           </CardRows>
@@ -234,7 +234,7 @@ export function HandoffScreen() {
           nobody can inspect is a boundary nobody can trust. */}
       <SectionHeader
         title="What crosses"
-        description="The assistant assembles the brief before it hands over, because gathering is a read and reads are what the assistant is allowed to do. The desk receives a finished prompt and never searches for anything."
+        description="The assistant assembles the brief before it hands over. The desk receives a finished prompt and never searches."
       >
         <Card
           body={
@@ -275,7 +275,7 @@ export function HandoffScreen() {
           <CardRows>
             <Row
               label="Inspect before handing over"
-              hint="The brief is readable in the card. A handoff you cannot read before pressing the key is the silent auto-handoff this record forbids, arrived at by a different route."
+              hint="The brief is readable in the card before the key is pressed."
               control={
                 <Button variant="ghost" icon={<Icon name="eye" />}>
                   Show the brief
@@ -323,12 +323,12 @@ export function HandoffScreen() {
           <CardRows>
             <Row
               label="It finished"
-              hint="A line in the thread and the cue that means a round trip completed. No card, no interruption — you asked for it, it happened."
+              hint="A line in the thread and the round-trip cue. No card, no interruption."
               control={<StatusBadge tone="success">Thread only</StatusBadge>}
             />
             <Row
               label="It has a question"
-              hint="A row in Home's decision inbox, sorted by what happens if you do nothing. A desk question expires and takes its blocked run with it, which is why that column and not urgency decides the order."
+              hint="A row in Home's decision inbox, sorted by what happens if you do nothing."
               control={
                 <Button variant="ghost" icon={<Icon name="arrow" />}>
                   Open the inbox
@@ -337,12 +337,12 @@ export function HandoffScreen() {
             />
             <Row
               label="It asked out loud"
-              hint="Only when you configured it to. One spoken field, length-limited, and the answer is returned verbatim — the desk may compose the question, never the answer."
+              hint="Only when you configured it to. One spoken field, and the answer is returned verbatim."
               control={<StatusBadge tone="plan">By design</StatusBadge>}
             />
             <Row
               label="The offer was wrong"
-              hint="You pressed Escape and got a dictation. That costs one keystroke and no words, and it is the entire budget the effect-verb recogniser has: if refusals become common the recogniser is wrong, and the fix is fewer offers rather than a faster path through one."
+              hint="You pressed Escape and got a dictation. If refusals become common, the fix is fewer offers."
               control={<StatusBadge tone="success">One keystroke</StatusBadge>}
             />
           </CardRows>

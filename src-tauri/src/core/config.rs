@@ -1575,6 +1575,23 @@ pub struct AppConfig {
     /// is deliberately no settings row (decision 9).
     #[serde(default)]
     pub home_activity_calendar: bool,
+    /// Whether this machine shows the surfaces that are drawn and not built.
+    ///
+    /// Stored for the same reason `workspace_nav_rail` is — machine-wide,
+    /// additive, `#[serde(default)]` — and FALSE IS THE ONLY DEFENSIBLE
+    /// DEFAULT. A build a stranger installs must open on what is real, and
+    /// this product draws a great deal that is not; a preview surface that
+    /// ships visible is the fake-readiness defect, because somebody opens
+    /// Agents, sets something, and nothing happens.
+    ///
+    /// IT IS A PROPERTY OF THE MACHINE, NOT OF THE BUILD. A developer build
+    /// and a released one read the same field, so what is on screen is
+    /// something the reader turned on rather than something the compiler
+    /// decided for them — which is what makes a report about a preview
+    /// surface answerable ("is Developer Mode on?") instead of a guess about
+    /// which artifact they installed.
+    #[serde(default)]
+    pub developer_mode: bool,
     /// The typing speed `Time saved` measures against, in words a minute
     /// (ADR 0178).
     ///
@@ -1695,6 +1712,7 @@ impl Default for AppConfig {
             color_scheme: default_color_scheme(),
             workspace_nav_rail: false,
             home_activity_calendar: false,
+            developer_mode: false,
             typing_baseline_wpm: default_typing_baseline_wpm(),
             translate_same_language: TranslateSameLanguage::default(),
             translate_address_form: TranslateAddressForm::default(),

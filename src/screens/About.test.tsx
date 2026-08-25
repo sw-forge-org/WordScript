@@ -78,7 +78,7 @@ describe("About & Updates", () => {
     /* And the standing half of what the summary used to say is on the section
        header, once, rather than repeated by all five summaries (ADR 0092). */
     expect(
-      screen.getByText("Still being assembled, so a check is workflow diagnostics."),
+      screen.getByText("There is no installer yet, so a check reports the release pipeline."),
     ).toBeInTheDocument();
     /* The drawing's own hint said the same thing as a literal. It is the
        runtime's sentence now, so a published release changes this row without

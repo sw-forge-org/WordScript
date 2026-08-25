@@ -564,6 +564,12 @@ export interface AppConfig {
   /// tiles. Only the block's own toggle writes it; there is no settings row
   /// (decision 9 of the home activity track).
   home_activity_calendar?:  boolean;
+  /// Whether this machine shows the surfaces that are drawn and not built.
+  /// Machine-wide and additive, like `workspace_nav_rail`; false is the
+  /// default because a build a stranger installs must open on what is real.
+  /// `previewSurfaces.ts` is the only reader — no screen asks the config
+  /// directly and no nav row carries an inline condition.
+  developer_mode?:          boolean;
   /// The typing speed `Time saved` measures against, in words a minute
   /// (ADR 0178). It is the one input to that tile that is not a measurement, and
   /// it moves the answer more than everything else combined — four weeks of the

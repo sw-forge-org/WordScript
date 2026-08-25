@@ -44,7 +44,17 @@ import type { ProviderCommandError, ProviderStatus } from "@/types/providers";
 import { SettingsSheet } from "./workspace/SettingsSheet";
 import { HelpMenu } from "./workspace/HelpMenu";
 import { CommandPalette } from "./workspace/palette";
-import { VIEWS, findSection, findView, type SectionId, type ViewId } from "./workspace/ia";
+import {
+  findSection,
+  findView,
+  navTag,
+  surfaceBanner,
+  visibleViews,
+  type SectionId,
+  type ViewId,
+} from "./workspace/ia";
+import { DeveloperModeProvider } from "@/lib/developerMode";
+import { developerMode, previewVisible } from "@/lib/previewSurfaces";
 
 /**
  * THE WORKSPACE — one window, four views, and settings as a sheet over it.
@@ -301,6 +311,27 @@ export default function WorkspaceWindow() {
     setVisitedViews((seen) => (seen.includes(view) ? seen : [...seen, view]));
   }, [view]);
 
+  /* WHAT THIS READER GETS. Developer Mode off drops the surfaces that are drawn
+     all the way down — the nav row and the route together, because a row that
+     opens a sketch is the fake affordance rule 7 forbids. Read once here and
+     provided to the tree, so no screen asks the config and no marker carries an
+     inline condition.
+
+     ABOVE THE `!form` RETURN, because it owns a hook. `developerMode` reads a
+     null config as off, which is also the honest answer while the runtime has
+     not answered yet. */
+  const developer = developerMode(form);
+  const views = visibleViews(developer);
+
+  /* TURNING DEVELOPER MODE OFF WHILE STANDING ON A DRAWN VIEW HAS TO LAND
+     SOMEWHERE. Context is the only view the filter can take, and leaving it
+     selected would show a sidebar with no content beside it. Home is where the
+     workspace opens, so it is where it returns to. */
+  const viewPresent = views.some((entry) => entry.id === view);
+  useEffect(() => {
+    if (!viewPresent) setView("home");
+  }, [viewPresent]);
+
   /* ONE PREDICATE, THREE SURFACES (ADR 0197). Profiles refuses the same switch
      for the same reason now, so "recording or processing" is derived in
      `lib/textProfiles` rather than spelled here and again there. */
@@ -328,6 +359,11 @@ export default function WorkspaceWindow() {
   }
 
   const activeProfile = resolveActiveTextProfile(form);
+  /* WHAT THIS READER GETS. Developer Mode off drops the surfaces that are drawn
+     all the way down — the nav row and the route together, because a row that
+     opens a sketch is the fake affordance rule 7 forbids. It is read once here
+     and provided to the tree, so no screen asks the config and no marker
+     carries an inline condition. */
   /* One writer for the scheme, and it does both halves: the window switches
      immediately and the config keeps the choice. Doing only the first is what
      the palette did for a leg — three rows that changed this window and lost
@@ -362,6 +398,16 @@ export default function WorkspaceWindow() {
         setSection(null);
         setView(target.view as ViewId);
       });
+    },
+    /* AND WHETHER THAT DOOR ARRIVES. `open` refuses an id neither list knows;
+       this refuses one this reader does not have, which since Developer Mode is
+       a different question with the same consequence — a link that lands on
+       General rather than on Agents looks like it worked. Screens that draw a
+       door onto a preview surface ask this first. */
+    canOpen: (target) => {
+      const surface = "section" in target ? findSection(target.section) : findView(target.view);
+      if (!surface) return false;
+      return !surface.preview || previewVisible(surface.preview, developer);
     },
   };
   /* ADR 0067. `local` is a real runtime provider and the product does not
@@ -412,6 +458,7 @@ export default function WorkspaceWindow() {
   const mode = work?.processing_mode ?? "auto";
 
   return (
+    <DeveloperModeProvider value={developer}>
     <WindowShell
       data-frost-shell={section ? "" : undefined}
       data-frost-stack={palette ? "" : undefined}
@@ -447,12 +494,12 @@ export default function WorkspaceWindow() {
               <NavSearch shortcut={SEARCH_SHORTCUT} onOpen={() => setPalette(true)} />
 
               <NavGroup title="Workspace">
-                {VIEWS.map((entry) => (
+                {views.map((entry) => (
                   <NavRow
                     key={entry.id}
                     icon={<Icon name={entry.icon} />}
                     label={entry.label}
-                    tag={entry.preview ? "preview" : undefined}
+                    tag={navTag(entry, developer)}
                     current={entry.id === view}
                     onClick={() => startTransition(() => setView(entry.id))}
                   />
@@ -484,7 +531,7 @@ export default function WorkspaceWindow() {
             </Nav>
 
             {/* P2. One scroll box per visited view, only one of them shown. */}
-            {VIEWS.filter((entry) => visitedViews.includes(entry.id)).map((entry) => (
+            {views.filter((entry) => visitedViews.includes(entry.id)).map((entry) => (
               <main
                 key={entry.id}
                 className="ws-content"
@@ -493,7 +540,7 @@ export default function WorkspaceWindow() {
               >
                 <div className="ws-content-inner" data-layout={entry.layout}>
                   {entry.render({
-                    banner: entry.banner,
+                    banner: surfaceBanner(entry.preview),
                     runtime: { ...runtime, active: entry.id === view && section === null },
                   })}
                 </div>
@@ -534,6 +581,7 @@ export default function WorkspaceWindow() {
         />
       )}
     </WindowShell>
+    </DeveloperModeProvider>
   );
 }
 

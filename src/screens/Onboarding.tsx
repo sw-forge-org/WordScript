@@ -76,9 +76,7 @@ export function OnboardingScreen() {
         title="Onboarding"
         lead="Seven steps, walkable. Nothing is claimed until it is proved."
         banner={
-          <PreviewBanner>
-            Planned for Phase 6. The flow's shape and order, not a working setup.
-          </PreviewBanner>
+          <PreviewBanner id="onboarding" />
         }
       />
 
@@ -215,7 +213,7 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
                the tag says which**, rather than borrowing one sentence for
                both: `AI Models` splits exactly this way (ADR 0163), because a
                withheld row is only ever as true as the reason it names. */
-            tag={LANE_NOT_OFFERED[lane] && <PreviewTag title={LANE_NOT_OFFERED[lane]} />}
+            tag={LANE_NOT_OFFERED[lane] && <PreviewTag id="onboarding-withheld-lane" title={LANE_NOT_OFFERED[lane]} />}
             hint="Cloud sends audio and text to a provider you hold a key for. Local keeps everything on this machine and needs a download."
             control={
               <InertSegment
@@ -297,7 +295,7 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
               />
               <Row
                 label="Speech"
-                hint="Only Azure OpenAI transcribes among the three. On the other two, recognition needs the Cloud or Local lane and the writing jobs use your account."
+                hint="Only Azure OpenAI transcribes among the three. The other two need the Cloud or Local lane."
                 control={<StatusBadge tone="warning">Azure only</StatusBadge>}
               />
             </>
@@ -344,7 +342,7 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
                   this exact shape (`connectionCapabilitySentence`). */}
               <Row
                 label="Speech"
-                hint="Your server does the listening — WordScript posts the audio to its transcription endpoint. Speech only: the writing jobs stay on whichever connection can write."
+                hint="Your server does the listening. The writing jobs stay on whichever connection can write."
                 control={<StatusBadge tone="success">This lane</StatusBadge>}
               />
             </>
@@ -403,7 +401,7 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
                 <Row
                   label="Server"
                   tag={
-                    <PreviewTag title="Not built. WordScript ships no Ollama today — tauri.conf.json bundles no binary — so a server you already run is the only real answer." />
+                    <PreviewTag id="onboarding-bundled-runner" />
                   }
                   hint="WordScript ships one and starts it when a job needs it. If you already run Ollama or LM Studio, point it there instead in Settings."
                   control={
@@ -418,7 +416,7 @@ function Models({ lane, onLane }: { lane: LaneName; onLane: (lane: LaneName) => 
                 <Row
                   label="This machine"
                   tag={
-                    <PreviewTag title="Not built. Nothing in the runtime detects CUDA, ROCm or Metal, or reads how much memory this machine has — the badge and the number are a drawing, not a reading of your hardware." />
+                    <PreviewTag id="onboarding-acceleration" />
                   }
                   hint="CPU-only runs the small models and struggles above 7B."
                   control={
@@ -475,7 +473,7 @@ function Hotkey({ value, onValue }: { value: string; onValue: (next: string) => 
         <Row
           label="Registration"
           tag={
-            <PreviewTag title="Not built. The flow registers nothing with the OS, so this badge is a drawing of the answer rather than the answer — the shortcut above is your choice, and whether the desktop accepts it is not known here." />
+            <PreviewTag id="onboarding-shortcut-registered" />
           }
           hint="The OS accepted it. A combination another application already holds is reported here, not swallowed."
           control={<StatusBadge tone="success">Accepted</StatusBadge>}
@@ -619,7 +617,7 @@ function Done({
 
       <Card
         title="One thing is still open"
-        description="Names and terms it cannot know yet. It learns them from your corrections — adding a few now just helps the first day."
+        description="Names and terms it cannot know yet. It learns them from your corrections."
       >
         <CardRows>
           <Row
@@ -656,7 +654,7 @@ function Done({
           <Row
             label="Typing baseline"
             layout="stack"
-            hint="Nothing in WordScript has ever watched you type, and nothing will. Pick the description that fits, or enter the figure if you know it."
+            hint="Nothing has ever watched you type. Pick the description that fits, or enter the figure."
           >
             <TypingBaseline value={baseline} onChange={onBaseline} />
           </Row>
@@ -674,7 +672,7 @@ function Done({
         <CardRows>
           <Row
             label="Processing modes"
-            hint="Auto picks per dictation. Cleanup, Rewrite, Translate, Prompt Enhance and the assistant all have models already, from the connection you set."
+            hint="Auto picks per dictation. Every mode already has a model from the connection you set."
             control={<StatusBadge tone="plan">Auto</StatusBadge>}
           />
           <Row

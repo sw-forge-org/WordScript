@@ -1453,7 +1453,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                       />
                       <Row
                         label="Pin this language"
-                        hint="Only affects whole passages in another script. Mixed sentences stay untouched, and this never discards text on its own — it lowers the corroboration the drift check needs from two signals to one."
+                        hint="Only whole passages in another script. Mixed sentences stay untouched."
                         control={
                           <Toggle
                             checked={speech?.language_locked ?? false}
@@ -1487,7 +1487,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                         <>
                           <Row
                             label="Into"
-                            hint="One target, fixed. Reading it from the focused window is a guess, and a guess that silently changes the language you are writing in is worse than a wrong keystroke."
+                            hint="One target, fixed — never guessed from the focused window."
                             control={
                               <Select
                                 value={targetLanguage}
@@ -1506,7 +1506,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                           />
                           <Row
                             label="Keep this profile's words"
-                            hint="The names, products and terms on Words &amp; names stay in their own spelling. They are what a translator must leave alone and a model will localize."
+                            hint="The terms on Words &amp; names keep their own spelling."
                             control={
                               <Toggle
                                 checked={keepProfileWords}
@@ -1521,8 +1521,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                       )}
                       <Row
                         label="Delivery"
-                        hint="Where a finished transcript goes."
-                        control={
+                                  control={
                           <SegmentControl
                             aria-label="Delivery"
                             value={
@@ -1555,7 +1554,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                       {work?.insert_behavior === "clipboard_only" ? (
                         <Row
                           label="Copy immediately"
-                          hint="Puts the transcript on the clipboard as soon as it exists, instead of waiting for the preview to close. The preview still offers the edit, and confirming writes the edited text over it."
+                          hint="On the clipboard at once, rather than when the preview closes."
                           control={
                             <Toggle
                               aria-label="Copy immediately"
@@ -1575,7 +1574,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                       ) : (
                         <Row
                           label="Keep it on the clipboard"
-                          hint="Leaves the transcript on the clipboard after pasting, instead of putting your previous clipboard back."
+                          hint="Does not put your previous clipboard back after pasting."
                           control={
                             <Toggle
                               aria-label="Keep it on the clipboard"
@@ -1778,7 +1777,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                 <>
                   <Card
                     title="Communication style"
-                    description="How this profile writes. Rewrite and the assistant only — Cleanup, Verbatim and Prompt Enhance are untouched."
+                    description="Rewrite and the assistant only. Cleanup and Verbatim are untouched."
                   >
                     <CardRows>
                       {/* The hint IS the register's definition and it changes
@@ -1807,7 +1806,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                       />
                       <Row
                         label="Length"
-                        hint="Independent of the register above: formal and terse is as valid as formal and expansive."
+                        hint="Independent of the register above."
                         control={
                           <Select
                             value={length}
@@ -1830,7 +1829,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                       <Row
                         layout="stack"
                         label="Your rules"
-                        hint="One rule per line. They outrank the register where the two touch, and they describe how to write, never what to write. The meter counts what the prompt gets: repeated lines and anything past 120 characters in one line are dropped before it is counted."
+                        hint="One rule per line, describing how to write and never what. They outrank the register."
                       >
                         <FieldWrap>
                           <TextArea
@@ -1862,7 +1861,7 @@ export function ProfilesScreen({ banner, runtime }: WiredScreenProps) {
                       <Row
                         layout="stack"
                         label="Writing sample"
-                        hint="A few lines you actually wrote. Tone, sentence shape and your expressions come from it — never its content."
+                        hint="A few lines you actually wrote. Tone and shape only, never content."
                       >
                         <FieldWrap>
                           <TextArea

@@ -6,6 +6,7 @@ import {
   CheckList,
   Disclosure,
   Icon,
+  PreviewTag,
   Row,
   ScopeTag,
   SectionHeader,
@@ -23,6 +24,7 @@ import type {
   PortalGrantStatus,
 } from "@/types/nativeInsertion";
 import type { WiredScreenProps } from "./props";
+import { usePreviewVisible } from "@/lib/developerMode";
 
 /**
  * DELIVERY & INSERT — `SCREENS.delivery`, wired.
@@ -199,6 +201,10 @@ export function DeliveryScreen({ banner, runtime }: WiredScreenProps) {
   const caveats = platform?.caveats ?? [];
   const scratchpadCount = status?.scratchpad_entries.length ?? 0;
 
+  /* The bridge is a Phase 8 route with no caller, so outside Developer Mode it
+     is not a third delivery mode beside the two that run — it is absent. */
+  const showsAgentBridge = usePreviewVisible("delivery-agent-bridge");
+
   return (
     <>
       <ViewTop
@@ -224,11 +230,14 @@ export function DeliveryScreen({ banner, runtime }: WiredScreenProps) {
                 </span>
               }
             />
-            <Row
-              label="Agent bridge"
-              hint="Returns the transcript to the waiting agent and inserts nothing. The caller decides this, not a profile."
-              control={<StatusBadge tone="plan">Phase 8</StatusBadge>}
-            />
+            {showsAgentBridge && (
+              <Row
+                label="Agent bridge"
+                tag={<PreviewTag id="delivery-agent-bridge" />}
+                hint="Returns the transcript to the caller and inserts nothing."
+                control={<StatusBadge tone="plan">Phase 8</StatusBadge>}
+              />
+            )}
           </CardRows>
         </Card>
       </SectionHeader>
@@ -282,7 +291,7 @@ export function DeliveryScreen({ banner, runtime }: WiredScreenProps) {
 
       {grant && (
         <SectionHeader title="Insert on Wayland">
-          <Card description="Native Wayland windows only accept typed input from an app the desktop has given permission to. It is asked for once, here.">
+          <Card description="Wayland only lets an authorised app type into another app's window.">
             <CardRows>
               <Row
                 label="Input permission"
@@ -305,7 +314,6 @@ export function DeliveryScreen({ banner, runtime }: WiredScreenProps) {
               />
               <Row
                 label="Desktop"
-                hint="The compositor that owns the permission and the windows it applies to."
                 control={<span className="ws-mono ws-muted">{grant.compositor}</span>}
               />
             </CardRows>
@@ -387,7 +395,7 @@ export function DeliveryScreen({ banner, runtime }: WiredScreenProps) {
             {open && (
               <Row
                 label="Something waiting right now"
-                hint="A failed insert is reported once, on Home, where the action that clears it lives. It is a record in History afterwards either way."
+                hint="A failed insert is reported once, and is a record in History either way."
                 control={
                   <Button variant="ghost" icon={<Icon name="arrow" />} onClick={() => open({ view: "home" })}>
                     Open Home

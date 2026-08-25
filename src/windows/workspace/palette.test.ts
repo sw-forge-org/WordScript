@@ -61,9 +61,24 @@ describe("the palette's ranking", () => {
     expect(labels).toEqual(["AI Models", "Speech model", "Cleanup model"]);
   });
 
-  it("shows everything for an empty query, in the prototype's order", () => {
-    expect(paletteMatches("").map((entry) => entry.label)).toEqual(
+  it("shows everything reachable for an empty query, in the prototype's order", () => {
+    /* IN DEVELOPER MODE, WHICH IS THE STATE THE WHOLE INDEX IS REACHABLE IN.
+       `Context` and `Agents` are places this build does not mount by default,
+       and a palette row is a door: it may not open what the sidebar would not.
+       The case below holds the default. */
+    expect(paletteMatches("", true).map((entry) => entry.label)).toEqual(
       PALETTE_INDEX.slice(0, 31).map((entry) => entry.label),
     );
+  });
+
+  it("indexes no place this build does not mount", () => {
+    const labels = paletteMatches("").map((entry) => entry.label);
+    expect(labels).not.toContain("Context");
+    expect(labels).not.toContain("Agents");
+    /* And every other row survives, which is what says the filter is a filter
+       and not a truncation. */
+    expect(labels).toContain("Home");
+    expect(labels).toContain("AI Models");
+    expect(labels).toContain("Copy last transcript");
   });
 });

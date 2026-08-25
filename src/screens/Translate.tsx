@@ -96,17 +96,15 @@ export function TranslateScreen() {
     <>
       <ViewTop
         title="Translation"
-        lead="Two people, two languages, one machine in the middle — and the part a phone cannot do."
+        lead="Two people, two languages, one machine in the middle."
         banner={
-          <PreviewBanner>
-            Not built. Shape and rules only; needs a speech model per direction and text-to-speech.
-          </PreviewBanner>
+          <PreviewBanner id="translate" />
         }
       />
 
       <SectionHeader
         title="It is not the Translate mode, and it is not a second one"
-        description="The Translate mode serves one person writing. This serves two people talking, and the dictation contract breaks in three places the moment there are two."
+        description="The Translate mode serves one person writing. This serves two people talking."
       >
         <HandoffPair>
           <HandoffSide
@@ -297,13 +295,13 @@ export function TranslateScreen() {
         >
           <CardRows>
             <Row
-              label="Silent is a real setting and not a broken one"
-              hint="Reading is faster than listening and quieter than both. Somebody translating a menu at the next table wants no sound at all, and that is the same window."
+              label="Silent is a real setting"
+              hint="Reading is faster than listening and quieter than both."
               control={<StatusBadge tone="plan">Per language</StatusBadge>}
             />
             <Row
               label="The voice is text-to-speech and it is named"
-              hint="The same connection every other job runs on, chosen on AI Models like the rest. A spoken translation is a model output; a surface that does not say which model spoke is hiding the one thing that decides how it sounds."
+              hint="The same connection every other job runs on, chosen on AI Models."
               control={
                 <Button variant="ghost" icon={<Icon name="arrow" />}>
                   Open AI Models
@@ -312,7 +310,7 @@ export function TranslateScreen() {
             />
             <Row
               label="It never speaks over the microphone it is recording"
-              hint="Out loud plus an open microphone is the machine transcribing itself. The recogniser is muted for the length of the utterance being spoken, which is why the two devices matter rather than being a convenience."
+              hint="The recogniser is muted for the length of the utterance being spoken."
               control={<StatusBadge tone="plan">Runtime rule</StatusBadge>}
             />
           </CardRows>
@@ -321,18 +319,18 @@ export function TranslateScreen() {
 
       <SectionHeader
         title="It already knows your words"
-        description="The two features a translator charges for are decisions this product made for other reasons, years-deep in the profile."
+        description="The two features a translator charges for are already in the profile."
       >
         <Card>
           <CardRows>
             <Row
               label="Terminology"
-              hint="Your profile's Words & names. Names, products and technical terms a translator must leave alone — learned from what you actually dictate rather than typed into a glossary form nobody maintains."
+              hint="Your profile's Words & names. Learned from what you dictate, not typed into a glossary."
               control={<StatusBadge tone="success">Words &amp; names</StatusBadge>}
             />
             <Row
               label="Address form"
-              hint="German, French and Spanish force a choice English does not carry. As dictated keeps a formal sentence formal; the other two decide for you."
+              hint="German, French and Spanish force a choice English does not."
               control={
                 <SegmentControl
                   aria-label="Address form"
@@ -348,7 +346,7 @@ export function TranslateScreen() {
             />
             <Row
               label="Alternatives on the word"
-              hint="Marked in the sentence where the choice was, not listed as three whole alternative sentences you have to re-read to find the one word you were unsure about."
+              hint="Marked in the sentence where the choice was, not listed as whole alternatives."
               control={<StatusBadge tone="plan">On the output</StatusBadge>}
             />
           </CardRows>
@@ -360,28 +358,28 @@ export function TranslateScreen() {
           fourth tab. */}
       <SectionHeader
         title="Practice mode, evaluated and not built"
-        description="Google added language practice beside Live Translate in 2025. This is why WordScript should not copy it, and the one form that would not be a copy."
+        description="Evaluated against Google's 2025 Live Translate practice mode, and not built."
       >
         <Card>
           <CardRows>
             <Row
               label="Against: it is a different product"
-              hint="VISION names what WordScript is not — a feature collection. A practice surface has its own progress model, its own scheduling and its own content, and none of it shares a line with trigger, capture, transform or insert."
+              hint="A practice surface has its own progress model, scheduling and content. None of it shares a line with dictation."
               control={<StatusBadge tone="plan">Out of scope</StatusBadge>}
             />
             <Row
               label="Against: the competition is free and enormous"
-              hint="A drill built beside a dictation tool is compared to products with a decade of pedagogy in them, and loses on the axis that is not ours."
+              hint="It would be compared to products with a decade of pedagogy in them."
               control={<StatusBadge tone="plan">Not our axis</StatusBadge>}
             />
             <Row
               label="For, and it is the only one"
-              hint="Every generic app drills a generic word list. This one holds the sentences you actually said, in your own vocabulary, that a translator had to repair. That corpus exists here and nowhere else, and it is the difference between a practice feature and a practice product."
+              hint="This one holds the sentences you actually said that a translator had to repair. That corpus exists nowhere else."
               control={<StatusBadge tone="warning">If ever</StatusBadge>}
             />
             <Row
               label="So the recorded shape is small"
-              hint="Not a tab and not a mode: the words your own translations kept getting wrong, offered where the vocabulary already lives. Nothing is built for it now."
+              hint="The words your own translations kept getting wrong, offered where the vocabulary already lives."
               control={<StatusBadge tone="plan">Candidate</StatusBadge>}
             />
           </CardRows>
@@ -396,7 +394,7 @@ export function TranslateScreen() {
           from the voice below, which is a role no adapter serves yet. */}
       <SectionHeader
         title="Where the translation runs"
-        description="A translation is a model output. The window that produces it names the model, rather than sending you to a settings screen to find out what it just used."
+        description="A translation is a model output, so the window that produces it names the model."
       >
         <JobProviderPicker jobKey="translate" cap="llm" summary="Translation model" />
       </SectionHeader>

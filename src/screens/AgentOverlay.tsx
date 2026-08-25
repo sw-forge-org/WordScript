@@ -79,7 +79,7 @@ export function AgentOverlayScreen() {
         title="Agent overlay"
         lead="What is on screen while coding agents are working and one of them needs you."
         banner={
-          <PreviewBanner>Planned for Phase 8. This surface exists in no build.</PreviewBanner>
+          <PreviewBanner id="agent-overlay" />
         }
       />
 
@@ -199,7 +199,7 @@ export function AgentOverlayScreen() {
           cannot be missed. */}
       <SectionHeader
         title="And if the window is closed, this arrives"
-        description="A small always-on-top window over every other surface, with a cue on the audio stream every other WordScript sound uses."
+        description="A small always-on-top window, with a cue on the usual audio stream."
       >
         <AgentPopupStage>
           <AgentPopup
@@ -234,17 +234,17 @@ export function AgentOverlayScreen() {
           <CardRows>
             <Row
               label="The bars on the pill"
-              hint="Your microphone, drawn as it ships. Eleven bars in a 30 px band, and this page does not touch overlay-pill.css."
+              hint="Your microphone, drawn as it ships. Eleven bars in a 30 px band."
               control={<StatusBadge tone="success">Unchanged</StatusBadge>}
             />
             <Row
               label="The orb"
-              hint={`The machine speaking to you. It exists only where ${DESK} has a voice — the agent window and the notification — and never on the dictation overlay.`}
+              hint={`The machine speaking to you. Only in the agent window and the notification, never on the pill.`}
               control={<StatusBadge tone="plan">Agents only</StatusBadge>}
             />
             <Row
               label="A dictation while an agent waits"
-              hint="Records, transcribes and inserts exactly as always. The cue queues until the session ends, because a sound during a capture is picked up by the microphone."
+              hint="Records, transcribes and inserts exactly as always. The cue queues until the session ends."
               control={<StatusBadge tone="success">Normal</StatusBadge>}
             />
           </CardRows>
@@ -280,7 +280,7 @@ export function AgentOverlayScreen() {
             />
             <Row
               label="Why it is in the cycle at all"
-              hint="Cycling the mode is the control you already have on the overlay, and this is what you want when you reach for it. Being reachable there is not a claim about which axis it is on — the rule says which."
+              hint="Cycling the mode is the control you already have on the overlay."
               control={<HotkeyButton combo="Ctrl+Super+M" />}
             />
           </CardRows>

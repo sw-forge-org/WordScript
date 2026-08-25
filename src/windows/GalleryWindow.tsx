@@ -7,6 +7,7 @@ import {
   WavesIcon,
 } from "lucide-react";
 import { useColorScheme, type ColorScheme } from "@/hooks/useColorScheme";
+import { DeveloperModeProvider } from "@/lib/developerMode";
 import {
   BrandMark,
   Nav,
@@ -107,13 +108,18 @@ export default function GalleryWindow() {
   const section = SECTIONS.find((entry) => entry.id === active) ?? SECTIONS[0];
 
   return (
-    /* THE GALLERY IS A WINDOW TOO, and `.ws-win` is what says so. `demo.css`'s
+    /* TRUE, ALWAYS, AND NOT FROM THE CONFIG. This is the acceptance surface for
+       drawn screens (ADR 0055) and must keep seeing every marker whatever the
+       machine's Developer Mode says — otherwise the one surface that exists to
+       judge the drawings would be the surface that hides them. */
+    <DeveloperModeProvider value={true}>
+    {/* THE GALLERY IS A WINDOW TOO, and `.ws-win` is what says so. `demo.css`'s
        two unscoped base rules — `svg { flex: none }` and the 16 px default icon
        size — sat on `.ws-content` / `.ws-nav` while the pre-port areas still
        rendered lucide icons under their own assumptions. Leg 3 deleted those
        areas and moved both onto the window root, where the prototype has them;
        this is how the gallery keeps them, and it is why `npm run port:diff`
-       still measures what it measured before. */
+       still measures what it measured before. */}
     <WindowShell>
       {/* The provider marks are a sprite and the sprite is a per-window
           resource: every `<use href="#pm-…">` below resolves against this one
@@ -180,5 +186,6 @@ export default function GalleryWindow() {
         </main>
       </WindowBody>
     </WindowShell>
+    </DeveloperModeProvider>
   );
 }

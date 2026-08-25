@@ -315,7 +315,7 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
 
   return (
     <>
-      <ViewTop title="Hotkeys" lead="Every key WordScript listens for, in one place." banner={banner} />
+      <ViewTop title="Hotkeys" banner={banner} />
 
       <SectionHeader title="Capture">
         <Card>
@@ -370,7 +370,7 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
         </Card>
       </SectionHeader>
 
-      <SectionHeader title="Modes" description="One key per mode, plus a key that opens the picker.">
+      <SectionHeader title="Modes">
         <Card>
           <CardRows>
             <Row
@@ -398,7 +398,6 @@ export function HotkeysScreen({ banner, runtime }: WiredScreenProps) {
           <CardRows>
             <Row
               label="Picker stays for"
-              hint="Press the key again to cycle while it is open."
               control={
                 <Stepper
                   value={config.mode_select_timeout_s}

@@ -271,7 +271,7 @@ export function MeetingScreen() {
       <ViewTop
         title="Meeting capture"
         lead="A recording that lasts an hour, inserts nothing, and ends as a note."
-        banner={<PreviewBanner>Planned for V2. No system audio is captured today.</PreviewBanner>}
+        banner={<PreviewBanner id="meeting" />}
       />
 
       {/* The window IS the note. The first sketch made it a strip of transcript
@@ -321,33 +321,33 @@ export function MeetingScreen() {
           its possibilities. */}
       <SectionHeader
         title="The copilot"
-        description="One line above the bar. It notices things and it is wrong sometimes, which is why every rule below exists."
+        description="One line above the bar."
       >
         <Card>
           <CardRows>
             <Row
               label="It never speaks"
-              hint="There is one spoken path in this product and it is the desk's, guarded and rate-limited. A second voice over a live call would also be talking into a microphone that is recording."
+              hint="A second voice would be talking into the microphone that is recording."
               control={<StatusBadge tone="success">Writes only</StatusBadge>}
             />
             <Row
               label="It never hints without a source"
-              hint="The citation is part of the hint and clicking it opens the line it came from. It is a contract for the assistant everywhere, and a hint arriving mid-meeting is the highest-cost place in the product to be confidently wrong."
+              hint="Clicking the citation opens the line it came from."
               control={<StatusBadge tone="success">Always cited</StatusBadge>}
             />
             <Row
               label="One at a time"
-              hint="It replaces rather than stacks. A list of hints is something to read, and reading it is time not spent in the conversation."
+              hint="It replaces rather than stacks."
               control={<StatusBadge tone="plan">Replaces</StatusBadge>}
             />
             <Row
               label="What it is allowed to notice"
-              hint="Contradictions against earlier objects, questions raised and not answered, and a topic on the invite's agenda that has not come up. Not sentiment, not coaching, not how the meeting is going."
+              hint="Contradictions, unanswered questions, an agenda item that has not come up. Not sentiment or coaching."
               control={<StatusBadge tone="plan">3 kinds</StatusBadge>}
             />
             <Row
               label="What it costs"
-              hint="One index lookup per finished turn — not a continuous comparison — and a model only when something clears the bar. It stays off by default because it is sometimes wrong mid-call, which is the expensive place to be wrong, not because of what it costs."
+              hint="One index lookup per finished turn, and a model only when something clears the bar."
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="plan">Per turn</StatusBadge>
@@ -388,17 +388,17 @@ export function MeetingScreen() {
           <CardRows>
             <Row
               label="A name you set is never overwritten"
-              hint="Clustering runs again when the call ends, over the whole recording instead of the live window, and it renumbers freely. A name you confirmed is locked against that pass — otherwise every name typed during a call changes after it, which is worse than offering no names."
+              hint="Re-clustering when the call ends renumbers freely. A name you confirmed is locked against that pass."
               control={<StatusBadge tone="accent">locked survives</StatusBadge>}
             />
             <Row
-              label="The echo problem is real and is upstream of all three"
-              hint="The microphone hears the speakers, so a remote voice arrives on both streams and stage 1 attributes part of it to you. Cancellation runs before any of this; what leaks through is caught by comparing the two streams for overlapping text."
+              label="Echo"
+              hint="Handled before stage 1, so it never reaches clustering."
               control={<StatusBadge tone="plan">Before stage 1</StatusBadge>}
             />
             <Row
               label="Expected speakers"
-              hint="From the invite when there is one, and settable when there is not. Clustering with a known count is a materially easier problem than clustering without one."
+              hint="From the invite when there is one. A known count clusters better than an unknown one."
               control={
                 <span className="ws-rowflex">
                   <Stepper value={4} aria-label="Expected speakers" />
@@ -415,7 +415,7 @@ export function MeetingScreen() {
           <CardRows>
             <Row
               label="Talk to it"
-              hint="The same hotkey as dictation. It writes into the note instead of into another app — nothing is inserted anywhere while a meeting runs."
+              hint="The same hotkey as dictation. It writes into the note, not into another app."
               control={
                 <span className="ws-rowflex">
                   <HotkeyButton combo="Ctrl+Super" />
@@ -425,12 +425,12 @@ export function MeetingScreen() {
             />
             <Row
               label="Make something of it"
-              hint="One default action, the rest behind the chevron. A select would make you choose before you can act."
+              hint="One default action, the rest behind the chevron."
               control={<StatusBadge tone="plan">3 actions</StatusBadge>}
             />
             <Row
               label="Stop"
-              hint="Ends the capture and keeps the note. It is the default action while recording, and becomes Sync template once the call is over."
+              hint="Ends the capture and keeps the note. Becomes Sync template once the call is over."
               control={<StatusBadge tone="accent">primary while live</StatusBadge>}
             />
           </CardRows>
@@ -446,7 +446,7 @@ export function MeetingScreen() {
           <CardRows>
             <Row
               label="Focus"
-              hint="The pill must never take focus — that would move the insert target away from the app being dictated into. A meeting inserts nothing, so there is no target to protect."
+              hint="A meeting inserts nothing, so there is no insert target to protect."
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="plan">pill: never</StatusBadge>
@@ -456,7 +456,7 @@ export function MeetingScreen() {
             />
             <Row
               label="Size"
-              hint="440 × 60 is a pill above the work. A transcript read for an hour is not a pill."
+              hint="440 × 60 is a pill above the work. An hour of transcript is not."
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="plan">pill: fixed</StatusBadge>
@@ -476,7 +476,7 @@ export function MeetingScreen() {
             />
             <Row
               label="Audio"
-              hint="The pill records you. A meeting records you and the room, which means the microphone hears the speakers and the echo has to come back out."
+              hint="The pill records you. A meeting records you and the room."
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="plan">pill: mic</StatusBadge>
@@ -496,7 +496,7 @@ export function MeetingScreen() {
             />
             <Row
               label="Screen share"
-              hint="A window that floats over a call being shared must not appear in the share or in the recording. The pill never had this problem."
+              hint="Must not appear in the share or in the recording."
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="plan">pill: visible</StatusBadge>
@@ -523,12 +523,12 @@ export function MeetingScreen() {
             />
             <Row
               label="Echo cancellation"
-              hint="The microphone hears the speakers, so every remote voice arrives twice. It is removed from the system stream before transcription."
+              hint="Every remote voice arrives twice. It is removed from the system stream before transcription."
               control={<StatusBadge tone="plan">Required</StatusBadge>}
             />
             <Row
               label="Speakers"
-              hint="Separated as it runs and re-clustered when it ends. The count comes from the invite when there is one."
+              hint="Separated as it runs, re-clustered when it ends."
               control={<Stepper value={4} aria-label="Speakers" />}
             />
           </CardRows>
@@ -540,7 +540,7 @@ export function MeetingScreen() {
           <CardRows>
             <Row
               label="It already existed"
-              hint="A meeting on a connected calendar is a context object before anyone presses anything — with its name, its time, its attendees and the questions the last one in the series left open. Recording fills in the transcript; it does not create the object."
+              hint="A meeting on a connected calendar is already a context object. Recording fills in its transcript."
               control={
                 <Button variant="ghost" icon={<Icon name="arrow" />}>
                   Open Context
@@ -549,12 +549,12 @@ export function MeetingScreen() {
             />
             <Row
               label="Meeting hotkey"
-              hint="Its own key. Dictation and meeting capture must never be the same press — one inserts and one does not."
+              hint="Its own key — one press inserts, the other does not."
               control={<HotkeyButton combo="" />}
             />
             <Row
               label="When a call is detected"
-              hint="Offer to record, in a window rather than an OS notification, so it is visible in Focus mode and absent from a share. With a calendar connected, the offer can name the meeting instead of asking what this is."
+              hint="Offer to record, in a window rather than an OS notification."
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="warning">Open decision</StatusBadge>
@@ -568,7 +568,7 @@ export function MeetingScreen() {
             />
             <Row
               label="It becomes readable"
-              hint="The same object, no longer live. Nothing is migrated and nothing is created — the window simply stops being the way you look at it."
+              hint="The same object, no longer live. Nothing is migrated and nothing is created."
               control={
                 <Button variant="ghost" icon={<Icon name="arrow" />}>
                   Open Context
@@ -577,7 +577,7 @@ export function MeetingScreen() {
             />
             <Row
               label="The audio afterwards"
-              hint="It goes when nothing needs it any more: the meeting ended, a transcript exists, and neither the notes pass nor the speaker pass is still reading it. A meeting that failed keeps its recording either way."
+              hint="It goes when nothing needs it: the meeting ended, a transcript exists, no pass still reads it."
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="plan">Until nothing needs it</StatusBadge>

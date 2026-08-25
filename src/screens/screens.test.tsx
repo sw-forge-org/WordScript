@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { renderInDeveloperMode } from "@/test/developerMode";
 import { afterEach, describe, expect, it } from "vitest";
 import { HomeScreen } from "./Home";
 import { HistoryScreen } from "./History";
@@ -80,7 +81,7 @@ describe("Home", () => {
 
 describe("Live preview & commit — the withdrawn screen", () => {
   it("carries the withdrawn banner, not the preview one", () => {
-    const { container } = render(<CommitScreen />);
+    const { container } = renderInDeveloperMode(<CommitScreen />);
     const banner = container.querySelector(".ws-banner")!;
     expect(banner.getAttribute("data-tone")).toBe("withdrawn");
     expect(screen.getByText("Withdrawn")).toBeInTheDocument();
@@ -150,9 +151,10 @@ describe("Integrations", () => {
 
   it("offers no way to add a connector the desk owns", () => {
     render(<IntegrationsScreen />);
-    /* A connector configured in two places is a connector that disagrees with
-       itself. */
-    expect(screen.getByText(/No way to add one here/)).toBeInTheDocument();
+    /* A connector configured in two places disagrees with itself. Asserted on
+       the row's LABEL rather than its hint: the label is the claim, and the
+       hint under it is copy that gets shortened. */
+    expect(screen.getByText("No second door")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Agents" })).toBeInTheDocument();
   });
 });
@@ -372,7 +374,7 @@ describe("Onboarding", () => {
    * true as the reason it gives.
    */
   it("marks a lane it cannot offer, and only for the reason that lane has", () => {
-    const { container } = render(<OnboardingScreen />);
+    const { container } = renderInDeveloperMode(<OnboardingScreen />);
     for (let i = 0; i < 2; i++) fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     const laneRow = () => screen.getByText("Lane").closest(".ws-row") as HTMLElement;
 
@@ -402,7 +404,7 @@ describe("Onboarding", () => {
    * a hardware reading nothing in `src-tauri/` performs.
    */
   it("declares the local rows that state facts about the reader's machine", () => {
-    render(<OnboardingScreen />);
+    renderInDeveloperMode(<OnboardingScreen />);
     for (let i = 0; i < 2; i++) fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     fireEvent.click(screen.getByRole("button", { name: "Local" }));
 

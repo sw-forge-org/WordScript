@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { invoke } from "@tauri-apps/api/core";
 import { PrivacyScreen } from "./Privacy";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
+import { renderInDeveloperMode } from "@/test/developerMode";
 
 /* The two file dialogs the export and the import open. Answering with a fixed
    path is what lets the test assert the command's argument rather than the
@@ -489,7 +490,9 @@ describe("Privacy & Data, wired", () => {
      is pressed here rather than counted there. */
   it("opens the three surfaces its rows name", async () => {
     const open = vi.fn();
-    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true, open })} />);
+    /* Two of the three doors stand in the context-object card, which is drawn
+       and not built — so this is a case about Developer Mode's surface. */
+    renderInDeveloperMode(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true, open })} />);
 
     await userEvent.click(screen.getByRole("button", { name: "Open Context" }));
     expect(open).toHaveBeenCalledWith({ view: "context" });
@@ -510,7 +513,7 @@ describe("Privacy & Data, wired", () => {
  */
 describe("Privacy & Data · which collection, and who reads it", () => {
   it("names the collection each retention rule governs, on the card that holds it", () => {
-    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     /* The age rule sits under `Dictation history`; the parked recording and the
        context objects are cards of their own, which is the whole of what four
@@ -569,7 +572,7 @@ describe("Privacy & Data · which collection, and who reads it", () => {
   /* The context collection has no store in the runtime, so both rows state a
      decided rule rather than an observed one — and say which (rule 7). */
   it("marks the context rules as decided rather than observed", () => {
-    render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const context = inCard("Context objects");
     expect(context.getByText("Until you delete them")).toBeInTheDocument();
@@ -581,8 +584,26 @@ describe("Privacy & Data · which collection, and who reads it", () => {
     expect(screen.queryByText("Own budget")).toBeNull();
   });
 
-  it("bounds the copilot's reach and marks the rule as unbuilt", () => {
+  /**
+   * WHAT A READER WHO DID NOT ASK FOR THE DRAWINGS GETS, and it is the reason
+   * the switch exists rather than a chip filter. A retention rule for a store
+   * nothing writes is a promise about nothing, and the reader has no way to
+   * tell it apart from the four rules above it that are real.
+   */
+  it("states no rule for a collection this build cannot hold", () => {
     render(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
+
+    expect(screen.queryByText("Context objects")).toBeNull();
+    expect(screen.queryByLabelText("Meeting audio")).toBeNull();
+    expect(screen.queryByText("The copilot's index")).toBeNull();
+    expect(screen.queryByText("Preview")).toBeNull();
+
+    /* The rules that ARE real are untouched, which is the other half of it. */
+    expect(inCard("Dictation history").getByLabelText("Kept for")).toBeInTheDocument();
+  });
+
+  it("bounds the copilot's reach and marks the rule as unbuilt", () => {
+    renderInDeveloperMode(<PrivacyScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const row = inRow("The copilot's index");
     expect(row.getByText("Context objects only")).toBeInTheDocument();

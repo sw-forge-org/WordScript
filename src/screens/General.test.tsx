@@ -155,9 +155,13 @@ describe("General", () => {
       "DP-1 (2560×1440) — primary",
       "HDMI-A-1 (1920×1080)",
     ]);
-    expect(
-      screen.getByText("Kept on DP-1 (2560×1440) — primary at bottom center until you drag it somewhere else."),
-    ).toBeInTheDocument();
+    /* THE ROW NO LONGER PRINTS THE TWO SELECTS BESIDE IT (ADR 0104). The
+       display name is what the Display control shows and the anchor is what
+       this row's own control shows, so the sentence spent its whole text column
+       reading back the two values the reader had just set. What neither control
+       can say is what ENDS the anchor, and that is what is left. */
+    expect(screen.getByText("Dragging the overlay gives up the anchor.")).toBeInTheDocument();
+    expect(screen.queryByText(/Kept on DP-1/)).toBeNull();
 
     await userEvent.selectOptions(screen.getByLabelText("Anchor"), "top_right");
     expect(patch).toHaveBeenCalledWith({ overlay_anchor: "top_right" });

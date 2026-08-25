@@ -219,7 +219,6 @@ export function DiagnosticsScreen({ banner, runtime }: WiredScreenProps) {
     <>
       <ViewTop
         title="Diagnostics"
-        lead="What the runtime is doing, in its own vocabulary."
         banner={banner}
         tabs={
           <SubTabs
@@ -235,7 +234,7 @@ export function DiagnosticsScreen({ banner, runtime }: WiredScreenProps) {
         <>
           <Card
             title="Runtime snapshot"
-            description="From the native runtime. Unsaved edits here do not change it."
+            description="Unsaved edits here do not change it."
           >
             <CardRows>
               <Row
@@ -406,7 +405,7 @@ export function DiagnosticsScreen({ banner, runtime }: WiredScreenProps) {
           </Card>
 
           {(error ?? status?.last_error) && (
-            <Card title="Last error" description="What the diagnostic lane reported.">
+            <Card title="Last error">
               <CardRows>
                 <Row layout="stack">
                   <span className="ws-mono">{error ?? status?.last_error}</span>
@@ -460,7 +459,7 @@ export function DiagnosticsScreen({ banner, runtime }: WiredScreenProps) {
             </CardRows>
           </Card>
 
-          <Card title="Decoded transform rules" description="Rules from recent entries, translated.">
+          <Card title="Decoded transform rules" description="From the last few dictations.">
             <CheckList items={ruleChecks} />
           </Card>
         </>

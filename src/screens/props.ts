@@ -71,6 +71,23 @@ export interface WorkspaceRuntime {
    * nothing rather than guessing when it does not recognise one.
    */
   open?: (target: { view: string } | { section: string }) => void;
+  /**
+   * Whether `open` would actually arrive at that target.
+   *
+   * A DOOR HAS TWO WAYS OF BEING FAKE, and `open` only ever answered the first.
+   * Its absence means *this window has nowhere to navigate to* — the Diagnostics
+   * pop-out. This answers the second: the window navigates, but that particular
+   * surface is not mounted for this reader, because Developer Mode is off and
+   * the surface is drawn all the way down. A `Open Agents` link that lands on
+   * General is the fake affordance rule 7 forbids just as much as one that lands
+   * nowhere, and it is worse, because it looks like it worked.
+   *
+   * Optional on the same terms as `open`: a caller with neither draws no door.
+   * A screen that has `open` but not this may assume every target it names is
+   * real — which is true of Home, History, Profiles and the seven built
+   * sections, and those are most of the doors in the product.
+   */
+  canOpen?: (target: { view: string } | { section: string }) => boolean;
 }
 
 export interface WiredScreenProps extends ScreenProps {

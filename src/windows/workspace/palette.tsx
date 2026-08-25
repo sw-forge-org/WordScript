@@ -14,6 +14,8 @@ import type { ColorScheme } from "@/hooks/useColorScheme";
 import type { NativeInsertionStatus } from "@/types/nativeInsertion";
 import type { WorkspaceRuntime } from "@/screens/props";
 import { findSection, findView } from "./ia";
+import { useDeveloperMode } from "@/lib/developerMode";
+import { previewVisible } from "@/lib/previewSurfaces";
 
 /**
  * WHAT THE PALETTE INDEXES, AND WHAT EACH ROW DOES — the workspace's half of
@@ -115,11 +117,28 @@ export function scorePaletteLabel(label: string, query: string): number {
   return -1;
 }
 
+/**
+ * THE PALETTE IS A DOOR LIKE ANY OTHER, AND IT MAY NOT OPEN WHAT THE NAV WOULD
+ * NOT.
+ *
+ * `Context` and `Agents` are indexed as places, and with Developer Mode off
+ * those places are not mounted — the row would either open nothing or reinstate
+ * exactly the surface the switch removed, which is worse than the nav row it
+ * was meant to replace. So the index is filtered by the same predicate the
+ * sidebar uses, on the way in.
+ */
+function reachable(entry: PaletteEntry, developer: boolean): boolean {
+  if (entry.action.kind !== "go") return true;
+  const target = entry.action.target;
+  const surface = "view" in target ? findView(target.view) : findSection(target.section);
+  return !surface?.preview || previewVisible(surface.preview, developer);
+}
+
 /** Ties break on the index's own order, which is why the array above is the
  *  prototype's order rather than sorted by anything. */
-export function paletteMatches(query: string): PaletteEntry[] {
+export function paletteMatches(query: string, developer = false): PaletteEntry[] {
   const needle = query.trim().toLowerCase();
-  return PALETTE_INDEX.map((entry, index) => ({
+  return PALETTE_INDEX.filter((entry) => reachable(entry, developer)).map((entry, index) => ({
     entry,
     score: needle ? scorePaletteLabel(entry.label, needle) : 0,
     index,
@@ -183,9 +202,12 @@ export function CommandPalette({
     [lastTranscript],
   );
 
+  /* The same predicate the sidebar spends, so the palette can never be the way
+     back into a surface Developer Mode removed. */
+  const developer = useDeveloperMode();
   const rows = useMemo(() => {
-    return paletteMatches(query).map((entry) => ({ entry, reason: blocked(entry.action) }));
-  }, [query, blocked]);
+    return paletteMatches(query, developer).map((entry) => ({ entry, reason: blocked(entry.action) }));
+  }, [query, blocked, developer]);
 
   /* Arrow keys land only where Return has something to run. A selection resting
      on an inert row makes Return do nothing at all, which is a worse answer

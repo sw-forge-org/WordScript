@@ -79,17 +79,15 @@ export function ConversationScreen() {
     <>
       <ViewTop
         title="Client conversations"
-        lead="A conversation recorded in the room, filed under the person it was with, ending in the document their process expects."
+        lead="A conversation recorded in the room, filed under the person it was with."
         banner={
-          <PreviewBanner>
-            Not built. Uses the meeting window; needs speaker separation on one microphone.
-          </PreviewBanner>
+          <PreviewBanner id="conversation" />
         }
       />
 
       <SectionHeader
         title="It is the meeting window"
-        description="The question was whether to build a second one. The answer is no, and the reasoning is below."
+        description="The question was whether to build a second one. The answer is no."
       >
         <Card
           body={
@@ -164,12 +162,12 @@ export function ConversationScreen() {
           <CardRows>
             <Row
               label="A client is a context object"
-              hint="The same type the calendar, an upload and a link already produce. It carries the terms and names the transcript needs, which is why the fourth conversation transcribes better than the first."
+              hint="The same type the calendar, an upload and a link already produce."
               control={<StatusBadge tone="success">Existing type</StatusBadge>}
             />
             <Row
               label="It is not a CRM and does not grow into one"
-              hint="A name, the conversations, and what was agreed. Pipelines, deals and reminders belong to the tool that already owns them, and the desk reaches that tool through its own connectors."
+              hint="A name, the conversations, and what was agreed. Nothing else."
               control={<StatusBadge tone="plan">Stays small</StatusBadge>}
             />
           </CardRows>
@@ -178,13 +176,13 @@ export function ConversationScreen() {
 
       <SectionHeader
         title="Consent is the one new rule"
-        description="Recording a colleague in a standup and recording a client are not the same act. The product does not decide which applies to you — it makes the answer visible and recorded."
+        description="Recording a colleague and recording a client are not the same act."
       >
         <Card>
           <CardRows>
             <Row
               label="It is asked before the first one, per client"
-              hint="Not per recording. Asking again at the start of every conversation trains the answer to become a reflex, which is the opposite of consent."
+              hint="Not per recording. Asking every time trains the answer into a reflex."
               control={
                 <SegmentControl
                   aria-label="Consent"
@@ -200,17 +198,17 @@ export function ConversationScreen() {
             />
             <Row
               label="Refused does not mean no notes"
-              hint="The window still runs with the microphone off: you type, the copilot stays quiet, and the record says it was written rather than heard. A feature that punishes the honest answer will not get honest answers."
+              hint="The window still runs with the microphone off: you type, and the record says it was written."
               control={<StatusBadge tone="success">Notes only</StatusBadge>}
             />
             <Row
               label="The recording says which it was"
-              hint="On the object, not in a log — whether it was recorded, written, and under which answer. This is the field somebody reads two years later when it matters."
+              hint="On the object, not in a log — recorded or written, and under which answer."
               control={<StatusBadge tone="success">On the object</StatusBadge>}
             />
             <Row
               label="WordScript does not give legal advice"
-              hint="Rules differ by country, by profession and by who else is in the room. The product states what it did; it never tells you that what you did was allowed."
+              hint="The product states what it did. It never tells you that it was allowed."
               control={<StatusBadge tone="plan">States, never rules</StatusBadge>}
             />
           </CardRows>
@@ -219,7 +217,7 @@ export function ConversationScreen() {
 
       <SectionHeader
         title="It ends in a document with a fixed shape"
-        description="A meeting ends in a summary somebody reads once. This ends in a record whose sections are decided by a process outside this product."
+        description="Its sections are decided by a process outside this product."
       >
         <Card
           body={
@@ -261,7 +259,7 @@ export function ConversationScreen() {
           <CardRows>
             <Row
               label="The template belongs to the profile"
-              hint="A care report, a legal file note and a site visit report are three different documents, and the person recording knows which one they owe. The product ships none of them and holds the one you write."
+              hint="The product ships none and holds the one you write."
               control={
                 <Button variant="ghost" icon={<Icon name="arrow" />}>
                   Open Profiles
@@ -270,12 +268,12 @@ export function ConversationScreen() {
             />
             <Row
               label="An empty field says empty"
-              hint="If nobody named an owner, the field says nobody named an owner. A template that fills its gaps from a model produces a document that reads complete and is not, which is the one failure this must never have."
+              hint="If nobody named an owner, the field says nobody named an owner. Gaps are never filled from a model."
               control={<StatusBadge tone="success">Never invents</StatusBadge>}
             />
             <Row
               label="Every line can be traced back"
-              hint="A sentence in the record points at the moment in the transcript it came from. The copilot's rule — never a hint without a citation — is the same rule, applied to a document instead of to a line."
+              hint="A sentence in the record points at the moment in the transcript it came from."
               control={<StatusBadge tone="plan">By design</StatusBadge>}
             />
           </CardRows>

@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { ModelsScreen } from "./Models";
 import { LANE_LABEL } from "./data";
 import { createAppConfig, createWorkspaceRuntime } from "@/test/factories";
+import { renderInDeveloperMode } from "@/test/developerMode";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn().mockResolvedValue(() => undefined) }));
@@ -232,7 +233,7 @@ describe("AI Models, wired", () => {
    * the two are withheld for different reasons (B12).
    */
   it("names each lane that cannot hold an account, with its own reason", async () => {
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     /* ADR 0067. `local` IS a runtime provider, and the owner's answer was that
        being real is not the same as being finished — so it is named here beside
@@ -1568,7 +1569,7 @@ describe("AI Models, choosing the connection", () => {
       screen.getAllByText(/no speech recognition adapter for OpenAI yet/i),
     ).toHaveLength(1);
     expect(
-      screen.getByText(/A plan bounds an upload, so it is a speech question/i),
+      screen.getByText(/A plan bounds an upload, and this connection does not transcribe/i),
     ).toBeInTheDocument();
   });
 
@@ -2555,7 +2556,7 @@ describe("On this machine, and what a server is", () => {
    */
   it("marks every drawn row on the runner card and none of the read ones", async () => {
     withSetup();
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
     await openMachineTab();
     await screen.findByText("/usr/bin/whisper-cli");
 
@@ -2589,7 +2590,7 @@ describe("On this machine, and what a server is", () => {
      of both cases did exactly that. The gallery render is where all four lanes
      are reachable, which makes it the surface these two belong on. */
   it("claims nothing about the reader's GPU anywhere on the screen", async () => {
-    render(<ModelsScreen />);
+    renderInDeveloperMode(<ModelsScreen />);
 
     const gpuClaim = /no CUDA, ROCm or Metal device/;
 
@@ -2650,7 +2651,7 @@ describe("On this machine, and what a server is", () => {
        reach. **The door outlived the lane row it was on** — since ADR 0223 the
        Local lane has no card at all and `LockedLanes` carries the button, which
        is the one place left that names what is on this disk. */
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
     await userEvent.click(await screen.findByRole("button", { name: "Manage" }));
 
     expect(screen.getByText("Runners on this machine")).toBeInTheDocument();
@@ -2679,7 +2680,7 @@ describe("On this machine, and what a server is", () => {
    *  is named now, and ADR 0067's rule — mark what is offered and unbuilt — is
    *  carried by the row that does the naming. */
   it("badges each withheld lane where it is named, which ADR 0067 asked for", async () => {
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const local = (await screen.findByText(/Phase 5/)).closest(".ws-row") as HTMLElement;
     expect(within(local).getByText("Preview")).toBeInTheDocument();
@@ -2783,11 +2784,11 @@ describe("A lane that is locked says why", () => {
      B12 put `Your server` and `Enterprise` on one row because one sentence was
      true of both; the self-hosted adapter lands here, so the two lanes stop
      being withheld for the same reason and stop sharing a row. */
-  const NO_ADAPTER_ROW = /no adapter yet, so there is nothing behind it/;
+  const NO_ADAPTER_ROW = /No adapter yet, so nothing behind it can run a job/;
 
   it("says a ready machine is withheld by the product and not by the disk", async () => {
     withSetup(READY);
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const row = await rowSaying(WITHHELD);
     /* All three questions, in one row: why it cannot be chosen, what this
@@ -2816,7 +2817,7 @@ describe("A lane that is locked says why", () => {
       issue_code: "missing_model",
       guidance: "Point WORDSCRIPT_LOCAL_MODEL_DIR at a directory containing ggml-base.bin.",
     });
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const row = await rowSaying(WITHHELD);
     expect(within(row).getByText("2 of 3 ready")).toBeInTheDocument();
@@ -2835,7 +2836,7 @@ describe("A lane that is locked says why", () => {
        row is the one that would otherwise tell somebody to install what they
        have. */
     withSetup(null);
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const row = await rowSaying(WITHHELD);
     expect(within(row).getByText("Not read")).toBeInTheDocument();
@@ -2845,7 +2846,7 @@ describe("A lane that is locked says why", () => {
 
   it("separates the lane that is withheld from the one that was never built", async () => {
     withSetup(READY);
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const drawn = await rowSaying(NO_ADAPTER_ROW);
     expect(within(drawn).getByText("No adapter")).toBeInTheDocument();
@@ -2872,7 +2873,7 @@ describe("A lane that is locked says why", () => {
    */
   it("has no row for the lane whose reason for being withheld is gone", async () => {
     withSetup(READY);
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     await rowSaying(WITHHELD);
     expect(screen.queryByText(/store nowhere/)).toBeNull();
@@ -2889,7 +2890,7 @@ describe("A lane that is locked says why", () => {
 
   it("opens the tab that holds the detail its sentence summarises", async () => {
     withSetup(READY);
-    render(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
+    renderInDeveloperMode(<ModelsScreen runtime={createWorkspaceRuntime({ active: true })} />);
 
     const row = await rowSaying(WITHHELD);
     await userEvent.click(within(row).getByRole("button", { name: "Manage" }));

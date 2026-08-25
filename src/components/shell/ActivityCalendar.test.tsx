@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderInDeveloperMode } from "@/test/developerMode";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   ActivityCalendar,
@@ -59,6 +60,11 @@ function buckets(...days: ActivityDay[]): Map<string, ActivityDay> {
 
 function draw(props: Partial<Parameters<typeof ActivityCalendar>[0]> = {}) {
   return render(<ActivityCalendar buckets={new Map()} now={NOW} {...props} />);
+}
+
+/** The same calendar, for a reader who asked to see what is drawn and not built. */
+function drawInDeveloperMode(props: Partial<Parameters<typeof ActivityCalendar>[0]> = {}) {
+  return renderInDeveloperMode(<ActivityCalendar buckets={new Map()} now={NOW} {...props} />);
 }
 
 describe("the calendar's box", () => {
@@ -406,13 +412,26 @@ describe("the day tooltip", () => {
   it("holds the meeting and upload lines with no reading at all", () => {
     /* Origins that do not exist yet. A `0 meetings` would be the invented
        figure ADR 0161 exists to forbid, so the line carries a Preview tag and
-       no figure. */
-    const { container } = draw({ buckets: buckets(day(NOW)) });
+       no figure — for the reader who asked to see it. Outside Developer Mode
+       the line is absent, which the case below holds. */
+    const { container } = drawInDeveloperMode({ buckets: buckets(day(NOW)) });
     fireEvent.mouseEnter(container.querySelector(`[data-date="${dayKey(NOW)}"]`)!);
 
     const tip = screen.getByRole("tooltip");
     expect(tip).toHaveTextContent("Meetings and uploads");
     expect(tip.querySelector(".ws-ptag")).not.toBeNull();
+  });
+
+  it("spends no line on the origins that do not exist, by default", () => {
+    /* The reader who did not ask for the drawings gets a tooltip about the day
+       they hovered. An origin the runtime cannot produce is not a reading they
+       can act on, and it was the last line of every day's panel. */
+    const { container } = draw({ buckets: buckets(day(NOW)) });
+    fireEvent.mouseEnter(container.querySelector(`[data-date="${dayKey(NOW)}"]`)!);
+
+    const tip = screen.getByRole("tooltip");
+    expect(tip).not.toHaveTextContent("Meetings and uploads");
+    expect(tip.querySelector(".ws-ptag")).toBeNull();
   });
 
   it("says how many of a day's records carried a clock when some did not", () => {

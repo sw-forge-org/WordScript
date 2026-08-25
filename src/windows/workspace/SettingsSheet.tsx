@@ -13,7 +13,15 @@ import {
   SheetNav,
 } from "@/components/shell";
 import type { WorkspaceRuntime } from "@/screens/props";
-import { SECTIONS, SECTION_GROUPS, findSection, type SectionId } from "./ia";
+import { useDeveloperMode } from "@/lib/developerMode";
+import {
+  findSection,
+  navTag,
+  surfaceBanner,
+  visibleSectionGroups,
+  visibleSections,
+  type SectionId,
+} from "./ia";
 
 /**
  * SETTINGS, AS A SHEET OVER THE WORKSPACE — §11.22.
@@ -64,8 +72,25 @@ export function SettingsSheet({
     setVisited((seen) => (seen.includes(section) ? seen : [...seen, section]));
   }, [section]);
 
+  /* The sections this reader gets. Developer Mode off drops the four that are
+     drawn all the way down, so the sheet is seven rows in three groups rather
+     than ten — and a group that loses every member loses its heading too. */
+  const developer = useDeveloperMode();
+  const groups = visibleSectionGroups(developer);
+  const shown = visibleSections(developer);
+
+  /* TURNING DEVELOPER MODE OFF WHILE STANDING ON A DRAWN SECTION HAS TO LAND
+     SOMEWHERE. The row is gone from the nav and the content is gone with it,
+     which without this leaves an empty sheet and no way to tell it from a
+     broken one. General is the fallback because it is the section the sheet
+     opens on. */
+  const present = shown.some((entry) => entry.id === section);
+  useEffect(() => {
+    if (!present) onSection("general");
+  }, [present, onSection]);
+
   /* Derived, so the foot cannot disagree with the sections above it. */
-  const writes = SECTIONS.some((entry) => !entry.banner);
+  const writes = shown.some((entry) => !entry.preview);
 
   return (
     <Sheet onClose={onClose} closeOnEscape={closeOnEscape} label="WordScript Settings">
@@ -100,7 +125,7 @@ export function SettingsSheet({
               is most likely to be looking for a control by name. No brand mark
               above it here — the window behind it already states the brand. */}
           <NavSearch shortcut={searchShortcut} onOpen={onSearch} />
-          {SECTION_GROUPS.map((group) => (
+          {groups.map((group) => (
             <NavGroup key={group.name} title={group.name}>
               {group.ids.map((id) => {
                 const entry = findSection(id);
@@ -110,7 +135,7 @@ export function SettingsSheet({
                     key={id}
                     icon={<Icon name={entry.icon} />}
                     label={entry.label}
-                    tag={entry.preview ? "preview" : undefined}
+                    tag={navTag(entry, developer)}
                     current={id === section}
                     onClick={() => onSection(id)}
                   />
@@ -120,10 +145,10 @@ export function SettingsSheet({
           ))}
         </SheetNav>
 
-        {SECTIONS.filter((entry) => visited.includes(entry.id)).map((entry) => (
+        {shown.filter((entry) => visited.includes(entry.id)).map((entry) => (
           <SheetContent key={entry.id} layout={entry.layout} hidden={entry.id !== section}>
             {entry.render({
-              banner: entry.banner,
+              banner: surfaceBanner(entry.preview),
               runtime: { ...runtime, active: entry.id === section },
             })}
           </SheetContent>

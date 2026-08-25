@@ -143,6 +143,8 @@ import {
   Wired,
 } from "@/components/jobProvider";
 import type { PartlyWiredScreenProps, WorkspaceRuntime } from "./props";
+import { useDeveloperMode } from "@/lib/developerMode";
+import { previewVisible } from "@/lib/previewSurfaces";
 
 /**
  * AI MODELS — `SCREENS.models`, and `SCREENS.stt` / `SCREENS.llm` are the same
@@ -533,7 +535,7 @@ function DrawnSelfHostedRows() {
     <>
       <Row
         label="URL"
-        hint="An OpenAI-compatible server you operate, on another machine. Not the Local lane, which runs here."
+        hint="An OpenAI-compatible server you operate, on another machine."
         control={<DrawnField defaultValue="http://10.0.0.2:8080/v1" w="230px" aria-label="URL" />}
       />
       <Row
@@ -559,7 +561,7 @@ function DrawnSelfHostedRows() {
       />
       <Row
         label="Model ids are typed"
-        hint="A server behind a URL does not have to publish a model list, so each job carries the id you give it rather than picking from one."
+        hint="A server behind a URL need not publish a model list, so each job carries the id you type."
         control={<StatusBadge tone="plan">Per job</StatusBadge>}
       />
     </>
@@ -1278,7 +1280,7 @@ function ServerUrlRow({
             type here is used instead of it.
           </>
         ) : (
-          "An OpenAI-compatible server you operate, on another machine. Not the Local lane, which runs here."
+          "An OpenAI-compatible server you operate, on another machine."
         ))
       }
       control={
@@ -1919,7 +1921,7 @@ function AccountPlanRow({
     return (
       <Row
         label="Account plan"
-        hint="A plan bounds an upload, so it is a speech question. This connection does not transcribe — the reason is on the connection above."
+        hint="A plan bounds an upload, and this connection does not transcribe."
         control={<StatusBadge tone="warning">No speech</StatusBadge>}
       />
     );
@@ -1929,7 +1931,7 @@ function AccountPlanRow({
     return (
       <Row
         label="Account plan"
-        hint="This lane is not bound by request size, so there is no plan to be on. What one recording may cost is the ceiling below."
+        hint="Not bound by request size, so there is no plan to be on."
         control={<StatusBadge>No plans</StatusBadge>}
       />
     );
@@ -2179,7 +2181,7 @@ function TranslateJobSettings() {
     <>
       <Row
         label="Into"
-        hint="One target, fixed. Reading it from the focused window is a guess, and a guess that silently changes the language you are writing in is worse than a wrong keystroke."
+        hint="One target, fixed — never guessed from the focused window."
         control={
           <span className="ws-rowflex">
             <ScopeTag onOpen={openProfiles} />
@@ -2200,7 +2202,7 @@ function TranslateJobSettings() {
       />
       <Row
         label="When you already dictated in that language"
-        hint="Nothing to translate. Say which happens rather than letting the model decide per dictation."
+        hint="Nothing to translate, so say which happens."
         control={
           <InertSegment
             options={["Pass through", "Run Cleanup"]}
@@ -2223,7 +2225,7 @@ function TranslateJobSettings() {
       />
       <Row
         label="Address form"
-        hint="German, French and Spanish force a choice English does not carry. As dictated keeps a formal sentence formal."
+        hint="German, French and Spanish force a choice English does not."
         control={
           <InertSegment
             options={["As dictated", "Formal", "Informal"]}
@@ -2240,7 +2242,7 @@ function TranslateJobSettings() {
       />
       <Row
         label="Keep the profile's words"
-        hint="Names, products and technical terms are what a translator must leave alone and a model will localize."
+        hint="Names, products and technical terms a model would otherwise localize."
         control={
           <span className="ws-rowflex">
             <Toggle
@@ -2412,7 +2414,7 @@ function LanguageRows({ onOpen }: { onOpen?: () => void }) {
       />
       <Row
         label="Pin this language"
-        hint="Only affects whole passages in another script. Mixed sentences stay untouched, and it never discards text on its own — it lowers the corroboration the drift check needs from two signals to one."
+        hint="Only whole passages in another script. Mixed sentences stay untouched."
         control={
           <span className="ws-rowflex">
             <ScopeTag profile={profile.label} onOpen={onOpen} />
@@ -2567,13 +2569,20 @@ function LockedLanes({
   onManage?: () => void;
 }) {
   const standing = localStanding(setup, asked);
+  /* A WITHHELD LANE IS NOT A LANE THE READER HAS. Outside Developer Mode these
+     two rows are absent rather than marked: a row that names a lane, reports a
+     status for it and cannot be chosen is an offer the product does not
+     honour, and marking it does not make it choosable. */
+  const developer = useDeveloperMode();
+  const showsLocal = previewVisible("models-local-lane", developer);
+  const showsEnterprise = previewVisible("models-your-server-lane", developer);
+  if (!showsLocal && !showsEnterprise) return null;
   return (
     <>
+      {showsLocal && (
       <Row
         label="Local"
-        tag={
-          <PreviewTag title="Built and withheld, not drawn. The runtime carries this lane and On this machine installs for it; what is withheld is OFFERING it, until ROADMAP Phase 5 has finished it — the acceleration probe, whether Ollama ships with WordScript, and streaming." />
-        }
+        tag={<PreviewTag id="models-local-lane" />}
         hint={`${LOCAL_WITHHELD} ${standing.sentence}`}
         control={
           <span className="ws-rowflex">
@@ -2588,6 +2597,7 @@ function LockedLanes({
           </span>
         }
       />
+      )}
       {/* AND `Your server` IS NOT HERE ANY MORE (D1b, ADR 0165).
           **It had a row for one evening and the row named its own expiry.**
           D1a said *adapter built, nowhere to type the endpoint*; this step is
@@ -2602,12 +2612,14 @@ function LockedLanes({
           (ROADMAP Phase 5), `Enterprise` has no adapter at all. Folding them
           would be B12's one-sentence-two-subjects mistake, which went half
           false overnight the first time. */}
-      <Row
-        label={LANE_LABEL.Enterprise}
-        tag={<PreviewTag title="Drawn, not built. The rows show the shape this lane will have; nothing behind it runs a job yet." />}
-        hint="This lane has no adapter yet, so there is nothing behind it to run a job. Its rows show what it will ask for once there is."
-        control={<StatusBadge tone="plan">No adapter</StatusBadge>}
-      />
+      {showsEnterprise && (
+        <Row
+          label={LANE_LABEL.Enterprise}
+          tag={<PreviewTag id="models-your-server-lane" />}
+          hint="No adapter yet, so nothing behind it can run a job."
+          control={<StatusBadge tone="plan">No adapter</StatusBadge>}
+        />
+      )}
     </>
   );
 }
@@ -2736,6 +2748,7 @@ function ModelsTab({
      the gallery there is no runtime and therefore nowhere to go, so both are
      drawn only when a workspace handed one over. */
   const open = runtime?.open;
+  const canOpen = runtime?.canOpen;
   /* CALLED ONCE, HERE, AND IT WAS CALLED THREE TIMES INSIDE THE JSX BELOW. Three
      `useOpenProfiles()` in the returned tree is legal only for as long as none of
      them ever sits behind a condition — the rows they are on are already
@@ -3012,19 +3025,33 @@ function ModelsTab({
                   name="The assistant"
                   what="Draft in a dictation, the Ask window, and the actions on a note and in the meeting HUD. One model for all four."
                   hint="Overridden: it writes from scratch and reads your material, and nothing is waiting on it."
+                  /* THE NOTE GOES WITH THE SURFACE IT DISTINGUISHES ITSELF
+                     FROM. It exists to stop a reader confusing this assistant
+                     with the coding agents — and where Agents is not mounted
+                     there is nothing to confuse it with, so the paragraph is a
+                     distinction drawn against something the reader has never
+                     seen. `canOpen` is what answers that, not `open`.
+
+                     ITS ABSENCE MEANS THE GALLERY, AND THE GALLERY KEEPS THE
+                     DRAWING. No runtime hands one over there, and `port:diff`
+                     measures this screen against the prototype — so a missing
+                     `canOpen` reads as "assume the target is real", which is
+                     what `props.ts` says it means. */
                   extra={
-                    <Note
-                      icon="agents"
-                      tail={
-                        open && (
-                          <DocLink onClick={() => open({ section: "agents" })}>Open Agents</DocLink>
-                        )
-                      }
-                    >
-                      Not the coding agents. Those are started by {DESK}, they write code, and they
-                      speak to you through the agent overlay — a different thing that only shares a
-                      word.
-                    </Note>
+                    (canOpen ? canOpen({ section: "agents" }) : true) ? (
+                      <Note
+                        icon="agents"
+                        tail={
+                          open && (
+                            <DocLink onClick={() => open({ section: "agents" })}>Open Agents</DocLink>
+                          )
+                        }
+                      >
+                        Not the coding agents. Those are started by {DESK}, they write code, and they
+                        speak to you through the agent overlay — a different thing that only shares a
+                        word.
+                      </Note>
+                    ) : undefined
                   }
                 >
                   <AgentNameRow />
@@ -3271,33 +3298,43 @@ function MachinePrivacyNote() {
    is for. **The long sentence moves into the tag's tooltip**: what a row will
    do once it is built is worth one hover and is not worth a permanent line. */
 function RunnerCard({ children }: { children: ReactNode }) {
+  /* Three of this card's rows draw a control nothing reads. Outside Developer
+     Mode the card is the two runners it can actually report on. */
+  const developer = useDeveloperMode();
+  const showsBundled = previewVisible("models-bundled-runner", developer);
+  const showsWarm = previewVisible("models-hold-model-loaded", developer);
+  const showsAcceleration = previewVisible("models-acceleration", developer);
   return (
     <SectionHeader title="Runners on this machine" description="The two programs that run models here.">
       <Card>
         <CardRows>
           {children}
-          <Row
-            label="Who runs Ollama"
-            tag={
-              <PreviewTag title="Not built. WordScript ships no Ollama today — tauri.conf.json bundles no binary — so only Yours is real." />
-            }
-            hint="Ship one with WordScript, or use the Ollama you already run."
-            control={
-              <InertSegment options={["Bundled", "Yours"]} active="Bundled" label="Who runs Ollama" />
-            }
-          />
-          <Row
-            label="Keep it warm"
-            tag={<PreviewTag title="Not built. Nothing reads this toggle and no model is held loaded between dictations." />}
-            hint="Trades memory for a faster first dictation after idle."
-            control={<InertToggle label="Keep it warm" />}
-          />
-          <Row
-            label="Acceleration"
-            tag={<PreviewTag title="Not built. Nothing in the runtime detects CUDA, ROCm or Metal yet, so this badge is a drawing and not a reading of your hardware." />}
-            hint="A CPU-only machine struggles above 7B."
-            control={<StatusBadge tone="plan">CPU only</StatusBadge>}
-          />
+          {showsBundled && (
+            <Row
+              label="Who runs Ollama"
+              tag={<PreviewTag id="models-bundled-runner" />}
+              hint="Ship one with WordScript, or use the Ollama you already run."
+              control={
+                <InertSegment options={["Bundled", "Yours"]} active="Bundled" label="Who runs Ollama" />
+              }
+            />
+          )}
+          {showsWarm && (
+            <Row
+              label="Keep it warm"
+              tag={<PreviewTag id="models-hold-model-loaded" />}
+              hint="Trades memory for a faster first dictation after idle."
+              control={<InertToggle label="Keep it warm" />}
+            />
+          )}
+          {showsAcceleration && (
+            <Row
+              label="Acceleration"
+              tag={<PreviewTag id="models-acceleration" />}
+              hint="A CPU-only machine struggles above 7B."
+              control={<StatusBadge tone="plan">CPU only</StatusBadge>}
+            />
+          )}
         </CardRows>
       </Card>
     </SectionHeader>

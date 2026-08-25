@@ -207,21 +207,12 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
   const usesPreset = placement === "preset";
   const monitorValue = config.overlay_monitor || "primary";
   const anchorValue: OverlayAnchor = config.overlay_anchor ?? "bottom_center";
-  const selectedMonitor =
-    monitors.find((monitor) => monitor.id === monitorValue) ??
-    monitors.find((monitor) => monitor.is_primary) ??
-    null;
-  /* THE SAME DEFECT AS `Input device`, one card down and invisible in manual
-     placement — which is the state this machine is in, so no screenshot of it
-     was ever going to show the row at all. `label` is what the Display Select
-     above holds, `<name> (Primary)`, and putting it in the Anchor hint made the
-     row repeat the control that sets its own width. The drawing names the
-     monitor "DP-1" where its Select holds "DP-1 (2560×1440) — primary": the
-     short form is the one that belongs in a sentence. */
-  const monitorName = selectedMonitor?.label.replace(/\s*\(Primary\)$/, "") ?? null;
-  const anchorLabel =
-    OVERLAY_ANCHORS.find((anchor) => anchor.value === anchorValue)?.label.toLowerCase() ??
-    "the chosen anchor";
+  /* THE SHORT FORMS THE ANCHOR HINT USED TO PRINT ARE GONE WITH IT. The
+     sentence read back the Display Select's monitor and its own Select's
+     anchor, which is ADR 0104's defect twice over: both strings are what set
+     those controls' widths, so the row spent its text column on two values the
+     reader had just chosen. The row states what neither control can — that a
+     drag ends the anchor — and needs no derived label to do it. */
 
   const playCue = (cue: string) => {
     void invoke("preview_sound_cue", {
@@ -233,7 +224,7 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
 
   return (
     <>
-      <ViewTop title="General" lead="Microphone, sound and where the overlay appears." banner={banner} />
+      <ViewTop title="General" banner={banner} />
 
       <SectionHeader title="Microphone">
         <Card description="A change applies to the next capture, not the one running.">
@@ -293,7 +284,7 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
             <Row
               layout="stack"
               label="Input level"
-              hint="The level itself is set in your system sound settings — it is shared with every app using this microphone. A capture that never crosses the mark is discarded as empty."
+              hint="Set the level in your system sound settings. A capture that never crosses the mark is discarded as empty."
             >
               <Waveform
                 ariaLabel="Live input, last few seconds"
@@ -327,7 +318,7 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
       </SectionHeader>
 
       <SectionHeader title="Sound">
-        <Card description="Cues report what the runtime is doing, not what it is about to do.">
+        <Card>
           <CardRows>
             <Row
               label="Play sound cues"
@@ -369,7 +360,7 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
             />
             <Row
               label="Play the signature at launch"
-              hint="The full G-major theme, once when WordScript starts. The cues are fragments of it."
+              hint="The full theme. The cues are fragments of it."
               control={
                 <Toggle
                   checked={config.play_startup_sound}
@@ -381,7 +372,7 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
             <Row
               layout="stack"
               label="Hear them"
-              hint="Played by the runtime, so this is what you will hear. Works with cues off."
+              hint="Works with cues off."
             >
               <div className="ws-rowflex">
                 {SOUND_CUES.map((cue) => (
@@ -401,7 +392,7 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
       </SectionHeader>
 
       <SectionHeader title="Overlay">
-        <Card description="Reopen where you dragged it, or pin it to a display anchor.">
+        <Card>
           <CardRows>
             <Row
               label="Placement"
@@ -450,9 +441,7 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
             {usesPreset && (
               <Row
                 label="Anchor"
-                hint={`Kept on ${
-                  monitorName ?? "the selected display"
-                } at ${anchorLabel} until you drag it somewhere else.`}
+                hint="Dragging the overlay gives up the anchor."
                 control={
                   <Select
                     value={anchorValue}
@@ -479,6 +468,34 @@ export function GeneralScreen({ banner, runtime }: WiredScreenProps) {
                   min={1}
                   max={60}
                   aria-label="Result overlay stays for"
+                />
+              }
+            />
+          </CardRows>
+        </Card>
+      </SectionHeader>
+
+      {/* WHY IT IS HERE AND NOT IN DIAGNOSTICS. Diagnostics reports what the
+          runtime is doing; this changes what the window draws, which makes it a
+          preference about this machine — and General is where the preferences
+          about this machine are. It is one row and it is last, because it is
+          the row almost nobody wants.
+
+          THE SENTENCE IS THE ROW'S BECAUSE THE ROW CANNOT BE GUESSED FROM ITS
+          LABEL. Every other hint on this screen qualifies a control the reader
+          already understands; this one names a consequence — surfaces appear —
+          that the words "Developer Mode" do not carry on their own. */}
+      <SectionHeader title="Developer">
+        <Card>
+          <CardRows>
+            <Row
+              label="Show unbuilt surfaces"
+              hint="Adds the screens that are drawn and not yet wired, and marks the drawn rows on the screens that are."
+              control={
+                <Toggle
+                  checked={config.developer_mode === true}
+                  onCheckedChange={(next) => patch({ developer_mode: next })}
+                  aria-label="Show unbuilt surfaces"
                 />
               }
             />

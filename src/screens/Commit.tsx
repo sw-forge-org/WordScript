@@ -43,11 +43,7 @@ export function CommitScreen() {
           <h1>Live preview &amp; commit</h1>
           <p>Withdrawn. Kept as the illustration for the plan&apos;s open Phase 3 problem.</p>
         </header>
-        <PreviewBanner tone="withdrawn" lead="Withdrawn">
-          Not a target shape — do not build Phase 3 from this screen. Two reasons, both in
-          docs/archive/plans/settings-rework.md section 11.15: Diagnostics already does this, better; and the
-          decision cannot live in a settings-shaped view.
-        </PreviewBanner>
+        <PreviewBanner id="commit" tone="withdrawn" />
       </div>
 
       {/* Three reasons, as rows. They used to be a check list, which is the
@@ -57,15 +53,15 @@ export function CommitScreen() {
         <CardRows>
           <Row
             label="Diagnostics already carries it"
-            hint="RebuildLabTab's Diagnostics preview panel runs raw text through the real runtime and names roughly 25 applied rules. This screen showed four of them."
+            hint="Diagnostics runs raw text through the real runtime and names roughly 25 applied rules. This screen showed four."
           />
           <Row
             label="The decision happens in another app"
-            hint="You are dictating into an editor, a chat, a form. A window of this product is not where you are looking, so it cannot be where you decide."
+            hint="You are dictating into an editor, a chat, a form — not looking at a window of this product."
           />
           <Row
             label="One idea survives"
-            hint="Raw and transformed belong side by side, not stacked. That moved to Diagnostics as a layout line — with no commit action attached."
+            hint="Raw and transformed belong side by side. That moved to Diagnostics, with no commit action attached."
             control={<StatusBadge tone="success">Kept</StatusBadge>}
           />
         </CardRows>
@@ -73,7 +69,7 @@ export function CommitScreen() {
 
       <Card
         title="The window it would have to live in"
-        description="From src-tauri/tauri.conf.json. focus:false is not a detail to relax — taking focus moves the insert target away from the app that was dictated into."
+        description="From src-tauri/tauri.conf.json. Taking focus would move the insert target away from the app being dictated into."
       >
         <CardRows>
           <Row label="Size" control={<span className="ws-mono ws-muted">440 × 60</span>} />

@@ -59,7 +59,7 @@ export function AgentsScreen({ banner }: ScreenProps = {}) {
       <ViewTop
         title="Agents"
         lead="Coding agents that ask you out loud, and the one process that speaks for them."
-        banner={banner ?? <PreviewBanner>Planned for Phase 8.</PreviewBanner>}
+        banner={banner ?? <PreviewBanner id="agents" />}
         tabs={
           <SubTabs
             items={[
@@ -90,7 +90,7 @@ function Desk() {
         <CardRows>
           <Row
             label="Harness"
-            hint="Which agent CLI runs as the desk. Presets carry the command, the roles and the environment each one needs."
+            hint="Which agent CLI runs as the desk. Presets carry its command, roles and environment."
             control={
               <Select defaultValue="Claude Code" aria-label="Harness">
                 <option>Claude Code</option>
@@ -148,12 +148,12 @@ function Desk() {
           />
           <Row
             label="Changing it"
-            hint="Edit it where it lives, then restart the desk. A running process does not re-read its configuration, and pretending otherwise would be the worst kind of fake readiness."
+            hint="Edit it where it lives, then restart the desk. A running process does not re-read its configuration."
             control={<StatusBadge tone="warning">Needs a restart</StatusBadge>}
           />
           <Row
             label="Every other model in the product"
-            hint="Dictation, meetings, cleanup, translate, the assistant and the voice are all on one surface, and this row is the documented exception to that."
+            hint="Lives on AI Models. This row is the documented exception."
             control={
               <Button variant="ghost" icon={<Icon name="arrow" />}>
                 Open AI Models
@@ -180,7 +180,7 @@ function Desk() {
           </Row>
           <Row
             label="Open a terminal here"
-            hint="A new interactive session in this folder — for editing configuration, adding MCP servers, or running the harness by hand. It is not the running desk: that one is headless and has no terminal to show."
+            hint="A new session in this folder, for configuration and MCP servers. Not the running desk, which is headless."
             control={
               <Button variant="ghost" icon={<Icon name="terminal" />}>
                 Open terminal
@@ -210,7 +210,7 @@ function Desk() {
           />
           <Row
             label="Restart it"
-            hint="Picks up everything changed in here. It also costs the context it has built: a desk that has been running for days filters well because it knows the recent decisions, and a fresh one does not."
+            hint="Picks up everything changed in here, and costs the context the running desk has built."
             control={
               <span className="ws-rowflex">
                 <StatusBadge tone="warning">Loses its context</StatusBadge>
@@ -230,12 +230,12 @@ function Desk() {
         <CardRows>
           <Row
             label="Who runs these"
-            hint="The desk's own process, under its own permissions, from its own configuration file. WordScript never calls them and cannot see what they returned."
+            hint="The desk's own process, under its own permissions. WordScript never calls them."
             control={<StatusBadge tone="plan">Not WordScript</StatusBadge>}
           />
           <Row
             label="Adding one"
-            hint="Open the terminal above and configure it the way that harness documents. A second editor here would be a connector surface to maintain, and maintaining connectors is what using a real agent CLI avoids."
+            hint="Open the terminal above and configure it the way that harness documents."
             control={
               <Button variant="ghost" icon={<Icon name="terminal" />}>
                 Open terminal
@@ -244,7 +244,7 @@ function Desk() {
           />
           <Row
             label="What WordScript reads by itself"
-            hint="Calendars, and nothing else. That one is an intake — it makes a meeting have a name and attendees before it starts — and it never writes."
+            hint="Calendars, and nothing else. It is an intake, and it never writes."
             control={
               <Button variant="ghost" icon={<Icon name="arrow" />}>
                 Open Integrations
@@ -295,7 +295,7 @@ function Desk() {
         <CardRows>
           <Row
             label="This is not the Draft mode"
-            hint="Draft turns one dictation into a first version of a text, in seconds, at your cursor. Nothing here writes into your editor."
+            hint="Draft turns a dictation into text at your cursor. Nothing here writes into your editor."
             control={
               <Button variant="ghost" icon={<Icon name="arrow" />}>
                 Open the assistant
@@ -304,7 +304,7 @@ function Desk() {
           />
           <Row
             label="Agent is a delivery target"
-            hint="A bridge session returns the transcript to the caller and inserts nothing, so it sits on the delivery axis, not the mode axis."
+            hint="A bridge session returns the transcript and inserts nothing — the delivery axis, not the mode axis."
             control={
               <Button variant="ghost" icon={<Icon name="arrow" />}>
                 Open Delivery
@@ -313,7 +313,7 @@ function Desk() {
           />
           <Row
             label="A dictation can arrive here"
-            hint="When what you said asks for something to be done rather than written, the assistant offers to hand it over. It never hands it over by itself."
+            hint="When what you said asks for something to be done, the assistant offers to hand it over. Never by itself."
             control={
               <Button variant="ghost" icon={<Icon name="handoff" />}>
                 Open Handoff
@@ -331,7 +331,7 @@ function Targets() {
     <>
       <Card
         title="Targets"
-        description="A target is a repository, a role and a thread. Configuration hangs on the target, never on what you said."
+        description="A repository, a role and a thread. Configuration hangs on the target."
         footer={<Button icon={<Icon name="plus" />}>New target</Button>}
       >
         <ListRows>
@@ -432,7 +432,7 @@ function Voice() {
         <CardRows>
           <Row
             label="Motion"
-            hint="Reduced motion holds every state still and keeps all four distinguishable, because material and glow carry the state and only movement is dropped."
+            hint="Reduced motion holds every state still and keeps all four distinguishable."
             control={
               <InertSegment
                 options={["Follow the system", "Always still"]}
@@ -487,7 +487,7 @@ function Voice() {
           />
           <Row
             label="Where"
-            hint="Remembered per monitor. It never covers the dictation overlay — it offsets above it while one is on screen."
+            hint="Remembered per monitor. It offsets above the dictation overlay rather than covering it."
             control={
               <Select defaultValue="Top right" aria-label="Where">
                 <option>Top right</option>
@@ -524,7 +524,7 @@ function Voice() {
           />
           <Row
             label="Dismisses when"
-            hint="Answered, or the answer budget expired. It never times out on its own — an unanswered question is still blocking somebody."
+            hint="Answered, or the answer budget expired. It never times out on its own."
             control={<StatusBadge tone="plan">Answered or expired</StatusBadge>}
           />
         </CardRows>

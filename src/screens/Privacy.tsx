@@ -28,6 +28,8 @@ import type {
 } from "@/types/history";
 import type { TextRulesAnalysis, TextRulesDocument } from "@/types/textRules";
 import type { WiredScreenProps } from "./props";
+import { useDeveloperMode } from "@/lib/developerMode";
+import { previewVisible } from "@/lib/previewSurfaces";
 
 /**
  * PRIVACY & DATA — `SCREENS.privacy`.
@@ -297,6 +299,15 @@ function labelFromFile(path: string) {
 }
 
 export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
+  /* THREE ROWS ON THIS SCREEN STATE A RULE FOR A COLLECTION THAT DOES NOT
+     EXIST. Outside Developer Mode they are not marked, they are absent: a
+     retention rule for a store nothing writes is a promise about nothing, and
+     the reader has no way to tell it from the four rules above it that are
+     real. Read once here, so no row asks the config. */
+  const developer = useDeveloperMode();
+  const showsContextObjects = previewVisible("privacy-context-objects", developer);
+  const showsCopilot = previewVisible("privacy-copilot", developer);
+
   const [clearing, setClearing] = useState(false);
   const [cleared, setCleared] = useState(false);
   /* One line per row rather than a shared notice: three destructive doors sit
@@ -617,7 +628,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
 
       <SectionHeader
         title="How long things are kept"
-        description="Four collections, each under its own rule, and only the first one is yours to set."
+        description="Each collection under its own rule, and only the first is yours to set."
       >
         <Card
           title="Dictation history"
@@ -698,7 +709,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
             and different cards. */}
         <Card
           title="Transcript files"
-          description="A Markdown file per dictation, in a folder you own. Written for you to keep, not for the app to read back."
+          description="A Markdown file per dictation, in a folder you own."
         >
           <CardRows>
             <Row
@@ -713,7 +724,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                  honest answer to *when do these go* was *never*. They now have
                  a backstop of their own, on the same two numbers as the index
                  and out of the same budget as nothing else. */
-              hint={`Nothing prunes them by age. Deleting a record in History still takes its file, and past ${formatStoredSize(archive?.ceiling_bytes ?? 10_000_000_000)} the oldest go — a backstop, not a rule you will meet.`}
+              hint={`Nothing prunes them by age. Deleting a record in History takes its file, and past ${formatStoredSize(archive?.ceiling_bytes ?? 10_000_000_000)} the oldest go.`}
               control={<StatusBadge tone="plan">Until you delete them</StatusBadge>}
             />
             {/* THE READING IS NOT OPTIONAL HERE, unlike on the card below where
@@ -833,6 +844,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
           </CardRows>
         </Card>
 
+        {showsContextObjects && (
         <Card
           title="Context objects"
           description="Meetings, uploads, links, notes and kept conversations."
@@ -851,9 +863,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                 where a difference belongs. */}
             <Row
               label="Kept for"
-              tag={
-                <PreviewTag title="The rule is decided; the collection is the context-object track's own stage and is not built. Nothing on this machine holds a context object yet." />
-              }
+              tag={<PreviewTag id="privacy-context-objects" />}
               hint="Nothing prunes them on a schedule, and nothing will without asking."
               control={
                 <span className="ws-rowflex">
@@ -870,9 +880,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
             />
             <Row
               label="Meeting audio"
-              tag={
-                <PreviewTag title="Drawn on Notes & Meetings and not wired. The default stated here is that screen's own." />
-              }
+              tag={<PreviewTag id="privacy-note-retention" />}
               /* "OWN BUDGET" NAMED NOTHING. A reader of a retention section
                  wants the rule, and the rule is drawn one door away as `Keep
                  the audio` — so this row states its default instead of pointing
@@ -899,6 +907,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
             />
           </CardRows>
         </Card>
+        )}
       </SectionHeader>
 
       {/* WHAT IS KEPT AND WHAT MAY READ IT ARE TWO QUESTIONS, and this screen
@@ -910,18 +919,18 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
           dictation history is not in it. */}
       <SectionHeader
         title="What may read what is kept"
-        description="Nothing on a schedule, and the copilot's reach is bounded."
+        description="Nothing reads it on a schedule, and keeping more shows a model no more."
       >
         <Card>
           <CardRows>
-            <Row
-              label="The copilot's index"
-              tag={
-                <PreviewTag title="Decided and not built. The copilot itself is behind roadmap gate 3; this row states the rule it will be bound by when it arrives." />
-              }
-              hint="Its hints come from meetings, uploads and notes, never from dictations."
-              control={<StatusBadge tone="success">Context objects only</StatusBadge>}
-            />
+            {showsCopilot && (
+              <Row
+                label="The copilot's index"
+                tag={<PreviewTag id="privacy-copilot" />}
+                hint="Its hints come from meetings, uploads and notes, never from dictations."
+                control={<StatusBadge tone="success">Context objects only</StatusBadge>}
+              />
+            )}
             <Row
               label="The rules above"
               hint="They govern disk, not reach. Keeping more shows a model nothing more."
@@ -936,7 +945,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
           <CardRows>
             <Row
               label="API keys"
-              hint="In the OS secret store. Never written to the JSON config and never returned to this window."
+              hint="In the OS secret store, never in the JSON config."
               control={<StatusBadge tone="success">OS secret store</StatusBadge>}
             />
             <Row
@@ -957,12 +966,12 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
             />
             <Row
               label="Whether any of it leaves"
-              hint="No. There is no WordScript account, no cloud of ours and no sync — nothing to sign up for and no server of ours holding anything."
+              hint="No. There is no WordScript account and no server of ours to hold anything."
               control={<StatusBadge tone="success">Never</StatusBadge>}
             />
             <Row
               label="The accounts you do have"
-              hint="Groq, Anthropic, an enterprise tenant. Those belong to model vendors, they are the only thing audio is ever sent to, and they are set where the model is chosen."
+              hint="Model vendors, set where the model is chosen. The only place audio is sent."
               control={
                 <Button
                   variant="ghost"
@@ -1094,7 +1103,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
 
       <SectionHeader
         title="Activity figures"
-        description="What Home's counters are measured against. The figures themselves live in their own file and outlast the history above."
+        description="What Home's counters are measured against, kept apart from the history above."
       >
         <Card
           title="Time saved"
@@ -1112,7 +1121,7 @@ export function PrivacyScreen({ banner, runtime }: WiredScreenProps) {
                  not know that this number IS the figure will leave it at 40 and
                  take the result for a measurement — which is exactly the reading
                  the ≈ on the tile exists to prevent. */
-              hint="Time saved is your dictated words at this typing speed, less the time you spent dictating them. Nothing here has ever watched you type — pick the description that fits, or enter your own figure."
+              hint="Your dictated words at this speed, less the time you spent dictating them."
               control={
                 <TypingBaseline
                   value={runtime.config.typing_baseline_wpm ?? 40}

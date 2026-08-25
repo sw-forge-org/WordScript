@@ -155,17 +155,42 @@ afterEach(() => {
  * hold about that is the shape and the seams — the pixels are `port:diff`'s.
  */
 describe("WorkspaceWindow", () => {
-  it("is a workspace with four views, and settings is not one of them", () => {
+  /**
+   * THREE VIEWS BY DEFAULT AND FOUR IN DEVELOPER MODE, and the missing one is
+   * the point rather than a regression. Context is drawn all the way down — the
+   * context object does not exist in the runtime — so a nav row for it is a
+   * door onto a sketch, which is the fake affordance rule 7 forbids. The
+   * architecture is still §4.2's four; what a reader gets is what this build
+   * can stand behind.
+   */
+  it("is a workspace of the views this build can stand behind", () => {
     render(<WorkspaceWindow />);
     const nav = screen.getByRole("navigation", { name: "Workspace" });
 
-    for (const label of ["Home", "History", "Profiles", "Context"]) {
+    for (const label of ["Home", "History", "Profiles"]) {
       expect(within(nav).getByRole("button", { name: new RegExp(label) })).toBeInTheDocument();
     }
+    expect(within(nav).queryByRole("button", { name: /Context/ })).not.toBeInTheDocument();
     // The fourteen flat areas are gone, not aliased (ADR 0054).
     for (const gone of ["Speech & AI", "Modes", "Capture", "Overlay", "Chat", "Upload", "Account"]) {
       expect(within(nav).queryByRole("button", { name: gone })).not.toBeInTheDocument();
     }
+  });
+
+  it("adds the drawn view, and its chip, in Developer Mode", async () => {
+    runtimeConfig = createAppConfig({ developer_mode: true });
+    render(<WorkspaceWindow />);
+    const nav = screen.getByRole("navigation", { name: "Workspace" });
+
+    const context = await within(nav).findByRole("button", { name: /Context/ });
+    expect(context).toBeInTheDocument();
+    /* The chip rides with the row. Home is drawn in part and never wears one:
+       marking a screen the reader is looking at working is the caveat they
+       learn to skip. */
+    expect(within(context).getByText("preview")).toBeInTheDocument();
+    expect(
+      within(within(nav).getByRole("button", { name: /Home/ })).queryByText("preview"),
+    ).toBeNull();
   });
 
   // FOR THREE LEGS THIS ASSERTED THE OPPOSITE, and that was right at the time:
@@ -205,7 +230,7 @@ describe("WorkspaceWindow", () => {
     expect(screen.getByRole("heading", { level: 1, name: "Hotkeys" })).toBeInTheDocument();
   });
 
-  it("carries the sheet's ten sections in three groups", async () => {
+  it("carries the sheet's seven built sections in three groups", async () => {
     const user = userEvent.setup();
     render(<WorkspaceWindow />);
     await user.click(screen.getByRole("button", { name: /Settings/ }));
@@ -213,10 +238,28 @@ describe("WorkspaceWindow", () => {
     const nav = screen.getByRole("navigation", { name: "Settings sections" });
     /* The rows, not every button in the nav: the sheet's sidebar carries the
        search field too, which the prototype draws in all three of its
-       sidebars. */
-    expect(nav.querySelectorAll(".ws-nav-row")).toHaveLength(10);
+       sidebars.
+
+       SEVEN OF THE TEN. Notes & Meetings, Agents and Integrations are drawn all
+       the way down, so by default they are not rows — a reader who opens Agents
+       and sets something would have set nothing. The three groups survive the
+       cut, which is the other half: AI keeps AI Models. */
+    expect(nav.querySelectorAll(".ws-nav-row")).toHaveLength(7);
     for (const group of ["App", "AI", "System"]) {
       expect(within(nav).getByText(group)).toBeInTheDocument();
+    }
+  });
+
+  it("carries all ten in Developer Mode", async () => {
+    runtimeConfig = createAppConfig({ developer_mode: true });
+    const user = userEvent.setup();
+    render(<WorkspaceWindow />);
+    await user.click(await screen.findByRole("button", { name: /Settings/ }));
+
+    const nav = screen.getByRole("navigation", { name: "Settings sections" });
+    await waitFor(() => expect(nav.querySelectorAll(".ws-nav-row")).toHaveLength(10));
+    for (const label of ["Notes & Meetings", "Agents", "Integrations"]) {
+      expect(within(nav).getByRole("button", { name: new RegExp(label) })).toBeInTheDocument();
     }
   });
 
@@ -551,7 +594,11 @@ describe("WorkspaceWindow · the sidebar's two widths", () => {
      its accessible name from its own content — a rail whose rows are unnamed
      to a screen reader is a rail nobody can use. */
   it("keeps every row named in the rail, and adds the tooltip a label would be", async () => {
-    runtimeConfig = createAppConfig({ workspace_nav_rail: true });
+    /* Developer Mode on, so the rail is measured across all four rows rather
+       than across the three this build offers — the rule under test is that a
+       railed row keeps its name in a tooltip, and it should be checked on as
+       many rows as exist. */
+    runtimeConfig = createAppConfig({ workspace_nav_rail: true, developer_mode: true });
     render(<WorkspaceWindow />);
     const nav = screen.getByRole("navigation", { name: "Workspace" });
 

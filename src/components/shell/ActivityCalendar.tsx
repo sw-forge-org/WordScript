@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Icon } from "./Icon";
 import { PreviewTag } from "./PreviewTag";
+import { usePreviewVisible } from "@/lib/developerMode";
 import { Select } from "./Select";
 
 /**
@@ -835,6 +836,7 @@ function ActivityTooltip({
      misplaced. */
   const HALF = 150;
   const x = Math.min(Math.max(left, HALF + 8), window.innerWidth - HALF - 8);
+  const showsOtherOrigins = usePreviewVisible("activity-other-origins");
 
   return createPortal(
     <div
@@ -865,10 +867,16 @@ function ActivityTooltip({
       ) : (
         <span>Nothing on this day.</span>
       )}
-      <span className="ws-cal-tip-owed">
-        Meetings and uploads
-        <PreviewTag title="Neither origin exists yet. A meeting and an upload are recorded objects the context-objects track owns; until one can produce a day, this line states that rather than counting nought of them." />
-      </span>
+      {/* THE LINE GOES WITH THE CHIP. It names two origins the runtime cannot
+          produce, so outside Developer Mode a tooltip that ends on them is
+          reporting an absence the reader has no way to act on — and it is the
+          last line of a tooltip about a day that DID have dictations in it. */}
+      {showsOtherOrigins && (
+        <span className="ws-cal-tip-owed">
+          Meetings and uploads
+          <PreviewTag id="activity-other-origins" />
+        </span>
+      )}
     </div>,
     document.body,
   );

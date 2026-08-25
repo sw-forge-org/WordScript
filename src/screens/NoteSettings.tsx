@@ -50,7 +50,7 @@ export function NoteSettingsScreen({ banner, runtime }: PartlyWiredScreenProps =
       <ViewTop
         title="Notes & Meetings"
         lead="Where notes are written, what can be made from them, and what a meeting records."
-        banner={banner ?? <PreviewBanner>Planned for V2. Nothing is written to disk yet.</PreviewBanner>}
+        banner={banner ?? <PreviewBanner id="notesettings" />}
       />
 
       <SectionHeader
@@ -149,12 +149,12 @@ export function NoteSettingsScreen({ banner, runtime }: PartlyWiredScreenProps =
           <CardRows>
             <Row
               label="Meeting hotkey"
-              hint="Its own key. Dictation and meeting capture must never be the same press — one inserts and one does not."
+              hint="Its own key — one press inserts, the other does not."
               control={<HotkeyButton combo={null} />}
             />
             <Row
               label="When a call is detected"
-              hint="Offered in a window rather than an OS notification, so it is visible in Focus mode and absent from a screen share."
+              hint="Offered in a window rather than an OS notification."
               control={
                 <Select defaultValue="Ask" aria-label="When a call is detected">
                   <option>Ask</option>
@@ -185,7 +185,7 @@ export function NoteSettingsScreen({ banner, runtime }: PartlyWiredScreenProps =
             />
             <Row
               label="Keep the audio"
-              hint="The default goes when nothing needs the recording any more — the session ended, a transcript exists, and no pass still holds it. Never means never written, which needs a connection that transcribes while you talk."
+              hint="Goes when nothing needs it any more. Never means never written."
               control={
                 <Select defaultValue="Until the note is saved" aria-label="Keep the audio">
                   <option>Until the note is saved</option>
@@ -206,7 +206,6 @@ export function NoteSettingsScreen({ banner, runtime }: PartlyWiredScreenProps =
           <CardRows>
             <Row
               label="Engine"
-              hint="Its own row, beside the dictation engine. One list, not two places."
               control={
                 <span className="ws-rowflex">
                   <StatusBadge tone="plan">{modelId("groq-speech-large-v3")}</StatusBadge>

@@ -36,7 +36,7 @@ export function IntegrationsScreen({ banner }: ScreenProps = {}) {
       <ViewTop
         title="Integrations"
         lead="What reaches WordScript, and what reaches out for you."
-        banner={banner ?? <PreviewBanner>Planned for Phase 8. No port is open.</PreviewBanner>}
+        banner={banner ?? <PreviewBanner id="integrations" />}
       />
 
       <SectionHeader
@@ -99,7 +99,7 @@ export function IntegrationsScreen({ banner }: ScreenProps = {}) {
             />
             <Row
               label="No calendar view"
-              hint="A scheduled meeting is a row in Context. A month grid here would hold nothing that row does not."
+              hint="A scheduled meeting is a row in Context."
               control={<StatusBadge tone="plan">By design</StatusBadge>}
             />
           </CardRows>
@@ -181,7 +181,7 @@ export function IntegrationsScreen({ banner }: ScreenProps = {}) {
             />
             <Row
               label="Not for agents"
-              hint="Their sandboxes block loopback, so a CLI call fails as an unexplained command error. Agents use MCP, which sits outside it."
+              hint="Their sandboxes block loopback. Agents use MCP, which sits outside it."
               control={<StatusBadge tone="plan">People only</StatusBadge>}
             />
             <Row
@@ -221,7 +221,7 @@ export function IntegrationsScreen({ banner }: ScreenProps = {}) {
             />
             <Row
               label="No second door"
-              hint="No way to add one here. A connector configured in two places is a connector that disagrees with itself."
+              hint="A connector configured in two places disagrees with itself."
               control={<StatusBadge tone="plan">By design</StatusBadge>}
             />
           </CardRows>

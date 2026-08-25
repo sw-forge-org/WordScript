@@ -1,10 +1,17 @@
 import * as React from "react";
 import { Icon } from "./Icon";
 import { cn } from "@/lib/utils";
+import { useDeveloperMode } from "@/lib/developerMode";
+import { findPreview, type PreviewId } from "@/lib/previewSurfaces";
 
 interface PreviewBannerProps {
+  /** The surface's entry in `previewSurfaces.ts`, which carries the line and
+   *  the chip's word. A banner with an id draws nothing outside Developer
+   *  Mode; a banner without one is a literal and `previewSurfaces.test.ts`
+   *  refuses it outside the gallery. */
+  id?: PreviewId;
   /** What it will be. One line: "Planned: Phase 8." */
-  children: React.ReactNode;
+  children?: React.ReactNode;
   /** The chip's word. `preview` is the default and is almost always right. */
   lead?: React.ReactNode;
   tone?: "preview" | "withdrawn";
@@ -30,12 +37,19 @@ interface PreviewBannerProps {
  * on itself, or the next reader builds from it (§11.15).
  */
 export function PreviewBanner({
+  id,
   children,
   lead,
   tone = "preview",
   icon,
   className,
 }: PreviewBannerProps) {
+  const developer = useDeveloperMode();
+  /* Off, a registered banner is not "hidden" — the surface it caveats is either
+     gone with it (`remove`) or was always real (`unmark`). Either way there is
+     nothing left for a chip to qualify. */
+  if (id && !developer) return null;
+  const entry = id ? findPreview(id) : null;
   const withdrawn = tone === "withdrawn";
   const glyph =
     icon ?? <Icon name={withdrawn ? "about" : "eye"} />;
@@ -47,9 +61,9 @@ export function PreviewBanner({
     >
       <span className="ws-banner-tag">
         {glyph}
-        {lead ?? (withdrawn ? "Withdrawn" : "Preview")}
+        {lead ?? entry?.lead ?? (withdrawn ? "Withdrawn" : "Preview")}
       </span>
-      <span className="ws-banner-text">{children}</span>
+      <span className="ws-banner-text">{children ?? entry?.says}</span>
     </div>
   );
 }
