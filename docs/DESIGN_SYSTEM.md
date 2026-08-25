@@ -369,6 +369,28 @@ Three more of the same kind:
 Not a preference. Facts that do not fit move to `docs/` and are linked from the
 control that needs them.
 
+**A LENGTH IS THE SECOND QUESTION. THE FIRST IS WHETHER THE LINE SHOULD EXIST**
+(ADR 0250). A `description`, `hint` or `lead` is kept only when it carries a
+fact its heading does not. Four tests, in order — the first that matches
+deletes the line:
+
+1. **The heading already says it.** A section headed *Microphone, sound and
+   where the overlay appears*, standing directly above three headings reading
+   Microphone, Sound and Overlay, is the heading read twice.
+2. **It is the derivation rather than the rule.** A row labeled *A name you set
+   is never overwritten* needs no paragraph arguing why overwriting would be
+   worse. The record that carries a derivation is the ADR.
+3. **It prints what the control beside it displays.** That is ADR 0092's named
+   defect, and the section below prices it.
+4. **What is left is the operative detail.** Keep it, in one sentence, inside
+   the budget below.
+
+A wizard is the exception: Onboarding explains as its purpose, and its lines
+are content rather than subtitles. The 2026-08-25 sweep took the product from
+43,997 characters of such text across 460 sites to 33,980 — and the two
+longest survivors, at 173 and 158 characters, both state something no heading
+on their screen says.
+
 **A BUDGET IS QUOTED WITH THE THING BESIDE IT.** `.ws-row-ctl` is `flex: none`,
 so every pixel a control takes comes off the text column, and `.ws-sel` is
 `width: auto`, so a Select is as wide as the longest option the runtime put in

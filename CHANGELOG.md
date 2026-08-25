@@ -53,6 +53,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Developer Mode, and the drawings it is for
+
+- **The surfaces that are drawings are gone unless you ask for them.**
+  Settings → General → Developer carries one switch, `developer_mode`, off by
+  default and machine-wide. With it off the workspace mounts **3 of 4 views**
+  (Context is absent) and **7 of 10 settings sections** (Notes & Meetings,
+  Agents and Integrations are absent), and the command palette indexes only
+  what it can reach. With it on, everything returns and every drawn row wears
+  its chip again. Home and AI Models are the exception: they are wired in part,
+  so off removes their chip and never their screen (ADR 0250).
+- **One registry decides all of it.** `src/lib/previewSurfaces.ts` holds every
+  drawn surface, the sentence its marker says, and whether *off* removes it or
+  merely unmarks it. `PreviewTag` and `PreviewBanner` take an id from that list
+  instead of free text, and a walker test fails the build on a marker written
+  without one.
+- **A door and the room behind it are now one decision.** `canOpen` on
+  `WorkspaceRuntime` answers whether a target exists, and the links that cross
+  screens — the palette, AI Models' link to Agents, Privacy's two doors — ask
+  it before drawing themselves. The gallery is exempt and always shows every
+  marker, since it is the acceptance surface for drawn screens (ADR 0055).
+
+### Changed — the line under the heading
+
+- **Roughly a quarter of the product's secondary text is gone**, from 43,997
+  characters across 460 sites to 33,980, with the longest single line down
+  from 268 characters to 173. Nothing was shortened for its own sake: a
+  `description`, `hint` or `lead` was kept only where it carries a fact its
+  heading does not. What went was the heading restated, the derivation of a
+  rule the label already states, and — twice on General alone — a hint printing
+  the value of the select beside it. The rule is now written down in
+  `docs/DESIGN_SYSTEM.md` beside the measured length budget (ADR 0250).
+- **The screens that changed most were the ones that argued.** Meeting
+  (4,469 → 2,138 characters), Handoff (3,292 → 1,828), Translate
+  (2,653 → 1,310), Conversation (2,600 → 1,117) and Subtitles (2,368 → 1,183)
+  each carried paragraphs re-arguing the claim their own row label made.
+  Onboarding is the documented exception and kept 37 of its 42 lines: a wizard
+  explains as its purpose.
+- **Two sentences that had become false were rewritten rather than shortened.**
+  Privacy counted *four collections* on a screen where one card is now
+  conditional, and promised a bounded copilot reach on a row that off hides.
+
 ### Added — a roadmap candidate for a draft the desk researched
 
 - **The request that falls between two records now has an entry.** *Write a post

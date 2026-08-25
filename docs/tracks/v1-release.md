@@ -210,10 +210,16 @@ that is preview all the way down.** Four surfaces are drawn and not wired —
 Context, Notes & Meetings, Agents, Integrations. Hiding their banner while
 leaving the drawing in the nav is the **fake-readiness defect `CLAUDE.md`
 forbids in as many words**: a stranger opens Agents, sets something, and nothing
-happens. The recommendation is that **off removes the surface** — nav entry and
+happens. **Decided 2026-08-25: off removes the surface** — nav entry and
 route together — while a surface that is wired *in part* keeps its screen and
-loses only its marker. That splits the registry into two kinds of entry, and the
-split is the substance of the ADR.
+loses only its marker. That splits the registry into two kinds of entry
+(`remove` and `unmark`), and the split is the substance of
+[ADR 0250](../decisions/0250-a-drawn-surface-is-absent-until-a-developer-switch-asks-for-it-and-a-subtitle-earns-its-line-by-carrying-a-fact-its-heading-does-not.md).
+
+A door is part of the surface it opens. Hiding a screen without hiding the
+palette entry, the nav row and every cross-screen link that reaches it leaves
+signposts to nowhere, which reads worse than the drawing did. `canOpen` on
+`WorkspaceRuntime` is the one answer every such link asks.
 
 **Watch:** the gallery (`src/windows/gallery/`) is the acceptance surface for
 drawn screens
@@ -232,17 +238,17 @@ the workspace's, never the gallery's.
 | G5 · Linux packaging | open | 2026-08-17, from the runbook |
 | G6 · release-note and promotion process | open | 2026-08-17 |
 | G7 · promote beyond draft handoffs | **owner** | — |
-| G8 · the surface claims only what it can do | open — Stage A below | 2026-08-17, 33 marker literals in 18 files |
+| G8 · the surface claims only what it can do | **closed** — Stage A shipped | 2026-08-25, 3 of 4 views and 7 of 10 sections default-visible |
 | G9 · compatibility shapes out before the first release | open | 2026-08-17, version `0.2.2-alpha`, nothing published |
 | G10 · identifier change in the release notes | open | 2026-08-17 |
 | G11 · `main` continuously validated | open | 2026-08-17, `ci.yml` triggers |
 | G12 · licence obligations in the artifact | **not started** | 2026-08-17, AGPL-3.0 + two vendored trees |
 | G13 · one lane wide | open | 2026-08-17, from [`../PROVIDERS.md`](../PROVIDERS.md) |
-| **A1** | The preview flag registry | open |
-| **A2** | `developer_mode` in config and in `General` | open |
-| **A3** | The walker test | open |
-| **A4** | The two named badges route through the filter | open |
-| **A5** | What *off* means for a fully-preview surface | **decision owed** |
+| **A1** | The preview flag registry | **done** — `src/lib/previewSurfaces.ts`, 28 entries |
+| **A2** | `developer_mode` in config and in `General` | **done** — `#[serde(default)]`, off |
+| **A3** | The walker test | **done** — `previewSurfaces.test.ts`, fails on an id-less marker |
+| **A4** | The two named badges route through the filter | **done** — both take a `PreviewId` |
+| **A5** | What *off* means for a fully-preview surface | **decided** — off removes it; ADR 0250 |
 
 ## Validation
 
@@ -253,3 +259,7 @@ alone.
 
 **Taking a reading is not a change and must move nothing.** A session that
 re-measures the board proves the suite did not move rather than that it passes.
+
+Measured 2026-08-25 on the Stage A slice: `npm test` 984 passing over 59 files,
+`npx tsc --noEmit` clean, `npm run build` clean, `cd src-tauri && cargo test`
+1055 passing.

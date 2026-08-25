@@ -1,6 +1,6 @@
 # WordScript -- Status
 
-Status: 2026-08-23
+Status: 2026-08-25
 
 > Meta structure: bug documentation lives in `docs/known-issues/`,
 > architecture decisions in `docs/decisions/` (ADRs), the contribution
@@ -44,6 +44,15 @@ Status: 2026-08-23
   measurement since 2026-08-16**). **Not wireable at all**, and carrying a banner for that reason
   rather than for a missing commit: Context (V2), Notes & Meetings (V2), Agents
   (Phase 8, ADR 0030), Integrations (Phase 8).
+- **Those four are absent by default as of 2026-08-25** (ADR 0250). A drawn
+  surface no longer ships visible with a banner over it: `developer_mode` in
+  `AppConfig` is off by default, and with it off the workspace mounts **3 views
+  and 7 of the 10 sections** — Context, Notes & Meetings, Agents and
+  Integrations do not exist, in the nav, in the router or in the command
+  palette. AI Models and Home are wired in part, so off takes their chip and
+  leaves their screen. The switch is in General → Developer; the gallery is
+  exempt and always renders every marker (ADR 0055). The three group headings
+  are unaffected, so the sheet has the same shape either way.
 - **The profile health flag acts, and Profiles lost its banner with it**
   (ADR 0085, 2026-08-11). The click had no destination because the four flag
   kinds point at three tabs, so it opens the flags themselves: one row per flag
