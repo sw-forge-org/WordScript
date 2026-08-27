@@ -53,6 +53,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - wordscript.dev, the reach measurement and the notice that describes it
+
+- **`/privacy` described a processing operation that was not happening, and now
+  cannot.** The Reach measurement section rendered unconditionally: what
+  Cloudflare Web Analytics processes, that IP address and user agent are hashed
+  immediately, that the data is available to us for six months. None of it was
+  running. `BEACON_TOKEN` in `src/lib/analytics.ts` is now the single value
+  behind the beacon in `Base.astro`, the Reach measurement section in
+  `privacy.astro` **and** the clause in the summary paragraph that promises that
+  section. `null` is a supported state: nothing measured, nothing claimed
+  (ADR 0261).
+- **The measurement is installed as a snippet rather than by edge injection.**
+  The entry below recorded the beacon as not arriving with the dashboard as the
+  last unread variable. The owner confirms the site is added and enabled, which
+  settles it: `/cdn-cgi/rum` returns 404 on this host while `/cdn-cgi/trace`
+  returns 200 with genuine Cloudflare output, so Cloudflare's own path is live
+  and RUM is not on it. The reading is that a Workers static-assets response
+  does not receive the injection -- a measurement plus a reading, since
+  Cloudflare's documentation addresses neither way. The snippet is the better
+  installation regardless: edge injection leaves no trace in the repository, so
+  a legal page would depend on a toggle nobody reading the code can see.
+- **The site token is committed, deliberately.** It identifies a site to the
+  beacon endpoint and authorises nothing. Putting it in an environment variable
+  or the OS secret store would tell the next reader it is a secret, and they
+  would then handle a public string as one.
+- **The launch gate reads `dist/` and fails in both directions.** A Reach
+  measurement section with no beacon served, and a beacon served with no
+  section -- the second being the harmful direction, processing the notice does
+  not describe. Both were provoked by hand-corrupting the built output rather
+  than assumed to work.
+
 ### Fixed - wordscript.dev, the first measurement against a live site
 
 - **The analytics beacon is not arriving, and `/privacy` says it is.** The

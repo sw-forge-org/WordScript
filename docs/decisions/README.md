@@ -1612,6 +1612,9 @@ that is what a record is for (ADR 0123: one list per fact).
 - [0260](0260-the-site-is-published-with-one-legal-item-open-and-the-check-that-guarded-it-reports-instead-of-blocking.md):
   The site is published with one legal item open, and the check that guarded it reports instead of blocking.
 
+- [0261](0261-the-reach-measurement-is-a-snippet-in-the-page-and-the-notice-that-describes-it-reads-the-same-value.md):
+  The reach measurement is a snippet in the page, and the notice that describes it reads the same value.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

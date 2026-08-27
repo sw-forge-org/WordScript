@@ -49,8 +49,8 @@
   // alone. `PHONE` in `src/lib/legal.ts` is still `null`. The owner decided to
   // publish and supply the number afterwards; `scripts/launch-check.mjs` prints
   // it on every run instead of blocking. Three further gates have no artefact
-  // in this repository and are unchanged: the Cloudflare Web Analytics switch
-  // the privacy notice already names, a legal review of the three pages, and
+  // in this repository: whether the reach measurement actually reports once
+  // its token is set (ADR 0261), a legal review of the three pages, and
   // the manual accessibility pass. `PRODUCT.md` under Open facts is the list.
   "routes": [{ "pattern": "wordscript.dev", "custom_domain": true }],
 

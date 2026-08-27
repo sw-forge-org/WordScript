@@ -34,6 +34,7 @@ import Legal from '../layouts/Legal.astro';
 import { AUTHORITY, ENTITY, HOST } from '../lib/legal';
 import { LINKS } from '../lib/linkMarks';
 import { LICENCE_URL, SITE } from '../lib/site';
+import { BEACON } from '../lib/analytics';
 
 /* The outbound set, named from the module the footer draws it from, so a link
    added to the row cannot go unnamed here. */
@@ -61,13 +62,17 @@ const OUTBOUND = LINKS.map((l) => l.label).join(', ');
     runs on your own machine and which we never see.
   </p>
 
+  {/* THE SUMMARY MOVES WITH THE MEASUREMENT. Both halves of this paragraph
+      read the same boolean the beacon does, because a summary that promises a
+      section which is not there is the same defect as the section itself. */}
   <h2>This website in one paragraph</h2>
   <p>
     It sets no cookies, stores nothing on your device, has no accounts, no
     forms and no embedded third-party content. Nothing on it profiles you and
     nothing follows you to another site. What remains is the connection data
-    that reaching any web server produces, plus a reach measurement that does
-    not touch your device. Both are described below.
+    that reaching any web server produces{BEACON
+      ? ', plus a reach measurement that does not touch your device. Both are described below.'
+      : ', and it is described below.'}
   </p>
 
   <h2>Hosting, content delivery and DNS</h2>
@@ -95,6 +100,14 @@ const OUTBOUND = LINKS.map((l) => l.label).join(', ');
     have no access to it in a form that identifies you.
   </p>
 
+  {/* THIS SECTION IS CONDITIONAL, AND THE REASON IS A DEFECT THAT WAS LIVE.
+      It stood here in full -- what is processed, how it is hashed, six months
+      of availability -- while nothing was being measured, because the edge
+      injection it was written for does not reach a Workers static-assets
+      response. It now renders off the same value that renders the beacon, so
+      the two cannot drift apart again. src/lib/analytics.ts, ADR 0261. */}
+  {BEACON && (
+  <Fragment>
   <h2>Reach measurement</h2>
   <p>
     We use Cloudflare Web Analytics to see how this site is used and how
@@ -115,6 +128,14 @@ const OUTBOUND = LINKS.map((l) => l.label).join(', ');
     or read from your device, no consent under section 25 TDDDG is required and
     this site therefore has no cookie banner.
   </p>
+  <p>
+    The script that performs it is served by Cloudflare from
+    <code>static.cloudflareinsights.com</code>, which is the same provider that
+    already delivers this site and is named as such above. No further party is
+    involved.
+  </p>
+  </Fragment>
+  )}
 
   <h2>Typefaces</h2>
   <p>

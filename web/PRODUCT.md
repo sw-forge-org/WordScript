@@ -266,32 +266,41 @@ none of them copied into `web/`:
 
 **Analytics: Cloudflare Web Analytics, cookieless, no consent banner required
 for it.** No Google Analytics, no tag manager. This is the standing SW labs
-decision, not a per-project choice. The owner reported the dashboard switch set
-on 2026-08-27. It is **still not measuring anything**, wiring it is **not a code
-change**, and it **cannot take effect before the site is deployed**:
-automatic injection happens at the edge for a hostname proxied through
-Cloudflare, and `wordscript.dev` had no A or AAAA record while that was
-written. The custom-domain route is open now (ADR 0260), so there is a hostname
-to add a site for and the beacon can be checked for the first time. It is still
-not scriptable from here: wrangler has no Web Analytics
-command, and the RUM API refuses the OAuth token wrangler holds (HTTP 403,
-authentication error) because that token carries no analytics scope.
+decision, not a per-project choice.
 
-When the moment comes, Manage site offers four settings and the choice is
-**Enable**, the automatic default. Not *Enable, excluding visitor data in the
+**It is installed as a snippet in the page, not by edge injection** (ADR 0261).
+The site is added under Web Analytics and enabled, every documented
+precondition for automatic injection holds, and the injection still does not
+arrive -- `/cdn-cgi/rum` answers 404 on this host while `/cdn-cgi/trace` answers
+200 with genuine Cloudflare output, so the path is live and RUM is not on it.
+The reading is that a response served by a Workers static-assets binding does
+not receive the injection. Cloudflare's documentation says nothing either way,
+so that is a measurement plus a reading rather than a documented fact.
+
+The snippet is the better installation independently of that. Edge injection
+leaves no trace in this repository, which means `/privacy` would describe a
+measurement whose existence depends on a dashboard toggle nobody reading the
+code can see. **One value drives both surfaces**: `BEACON_TOKEN` in
+`src/lib/analytics.ts` renders the snippet in `Base.astro` and the Reach
+measurement section in `privacy.astro`, and `null` is a supported state in
+which nothing is measured and nothing is claimed. `scripts/launch-check.mjs`
+reads `dist/` and fails in both directions -- a section without a beacon, and a
+beacon without a section.
+
+The site token is public. It identifies a site to the beacon endpoint,
+authorises nothing, and is committed rather than put in an environment variable
+or a secret store, because putting it there would tell the next reader it is a
+secret.
+
+The dashboard setting is **Enable**, not *Enable, excluding visitor data in the
 EU*: that option drops the beacon for EU visitors, which for a German-run
 project is most of the audience, and the exclusion buys nothing that is
 required -- Web Analytics sets no cookie and reads nothing off the device, so
 TDDDG section 25 does not apply and the processing runs on legitimate interest.
-Not *Enable with JS Snippet installation* either: automatic injection keeps the
-beacon out of the repository, keeps the site token out of the HTML, and sends
-to the same origin, so a later CSP needs `connect-src 'self'` rather than a
-second host. What the repository owes it is one thing, and `public/_headers`
-already pays it: no `Cache-Control` carrying `no-transform` on the HTML, which
-is the header that blocks the injection with no error anywhere to find it by.
-If data still does not arrive after that, the second suspect is the injection
-not applying to a static-assets Worker response, and the fallback is the JS
-snippet.
+`public/_headers` still omits `no-transform` on the HTML; that was what kept the
+edge path open, and it costs nothing to leave open now that the snippet carries
+the measurement. The snippet loads from `static.cloudflareinsights.com`, so a
+later CSP needs that host in `script-src` beside `'self'`.
 
 **The crawl surface is generated, and it reads the same facts the page does**
 (ADR 0257). `src/lib/site.ts` and `src/lib/faq.ts` are the two modules; the
@@ -371,32 +380,19 @@ Marked open rather than guessed.
   question does not arise for any of them. The tooling gap that blocked it is
   unchanged: reading a woff2's name and glyph tables needs a Brotli decoder
   that is not installed here and that `pip` refuses to add under PEP 668.
-- **The analytics beacon is NOT arriving, measured 2026-08-27 on the live
-  site.** This entry used to say the switch was set and the check was merely
-  unperformable until the domain resolved. The domain resolves now and the
-  check was performed: `curl https://wordscript.dev` returns five `<script>`
-  tags, all of them Astro's, and zero occurrences of `cloudflareinsights`,
-  `beacon.min.js` or `cf-beacon`. **Cloudflare Web Analytics is not running on
-  this site.**
+- **The beacon is installed and has never been seen to report.** The defect
+  behind this entry is fixed: it used to say the beacon was not arriving and
+  that `/privacy` therefore described a measurement that was not happening.
+  Both surfaces now hang off `BEACON_TOKEN` (ADR 0261), so the notice cannot
+  over-declare again.
 
-  Every precondition on this side is met and was checked rather than assumed.
-  Automatic injection requires the hostname to be proxied, valid HTML, and no
-  `no-transform` in the HTML's `Cache-Control`. The zone answers on Cloudflare
-  addresses (`172.67.205.17`, `104.21.37.68`), the served HTML parses, and the
-  header reads `public, max-age=0, must-revalidate` -- `public/_headers` omits
-  `no-transform` deliberately and its comment says why. So the remaining
-  variable is the dashboard: either `wordscript.dev` was never added under Web
-  Analytics, or it was added with manual setup rather than automatic. It cannot
-  be resolved from here -- wrangler ships no Web Analytics command and the RUM
-  API refuses its OAuth token for want of an analytics scope (HTTP 403).
-
-  **This makes `/privacy` inaccurate on a live site**, which is the part that
-  matters. Its Reach measurement section describes what is processed and says
-  the data is available to us for six months. Nothing is processed. The
-  direction of the error is the harmless one -- the notice declares more than
-  happens, not less -- but it is still a legal page that does not describe the
-  site. Two ways out: switch it on in the dashboard, or strike the section
-  until it is on.
+  What is open is one step further on. With the token set, the snippet is in
+  the served HTML -- that is checkable from here and the gate checks it. Whether
+  the beacon then successfully reports is not: the checks are `/cdn-cgi/rum`
+  answering rather than 404, and a figure appearing in the dashboard. Neither
+  is scriptable from this repository -- wrangler ships no Web Analytics command
+  and the RUM API refuses its OAuth token for want of an analytics scope
+  (HTTP 403). It needs one look at the dashboard after the first real traffic.
 - **A legal review of the three pages.** They are drafts from the
   `web-launch-gate` templates until they have had one. Two questions are worth
   putting to it by name: the English-only decision (ADR 0258), and whether the

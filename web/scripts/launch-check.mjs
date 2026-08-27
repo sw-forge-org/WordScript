@@ -238,6 +238,42 @@ if (declared.length && gitTracks(`public/fonts/${declared[0]}`) === null) {
   console.log('  note: git did not answer, the committed-font check did not run.');
 }
 
+/* ---- 6. the reach measurement and the page that describes it -----------
+   THE DEFECT THIS EXISTS FOR SHIPPED. `/privacy` carried a full
+   reach-measurement section -- what is processed, how it is hashed, six months
+   of availability -- while no beacon was being served at all, because the site
+   was written for Cloudflare's edge injection and that does not reach a
+   Workers static-assets response. A legal page described a processing
+   operation that was not happening.
+
+   `src/lib/analytics.ts` now derives both surfaces from one token, so they
+   cannot disagree by construction. This check is for the other way in: someone
+   editing the built page, or editing one of the two `.astro` files by hand
+   without the other. It reads `dist/`, because a claim assembled at build time
+   is only visible in the output. */
+const indexHtml = readFileSync(join(DIST, 'index.html'), 'utf8');
+const privacyHtml = readFileSync(join(DIST, 'privacy', 'index.html'), 'utf8');
+const beaconServed = /static\.cloudflareinsights\.com|data-cf-beacon/.test(indexHtml);
+const measurementClaimed = /Reach measurement/.test(privacyHtml);
+
+if (measurementClaimed && !beaconServed) {
+  fail(
+    'privacy: a reach measurement is described and none is running',
+    '/privacy carries its Reach measurement section and the index serves no '
+    + 'beacon. That is the exact defect this check was written for: a legal '
+    + 'page describing processing that does not happen. Set BEACON_TOKEN in '
+    + 'src/lib/analytics.ts, or let the section render itself away.',
+  );
+}
+if (beaconServed && !measurementClaimed) {
+  fail(
+    'privacy: a beacon is served and the notice does not mention it',
+    'The index loads the Web Analytics beacon and /privacy has no Reach '
+    + 'measurement section. Processing that the notice does not describe is '
+    + 'the harmful direction of this error, not the harmless one.',
+  );
+}
+
 /* ---- the report -------------------------------------------------------- */
 if (failures.length) {
   console.error(`\nlaunch-check: ${failures.length} blocker(s)\n`);
@@ -267,9 +303,10 @@ if (phoneOpen) {
 console.log(`
   Three gates have no artefact here and are not covered by the above:
 
-  1. Cloudflare Web Analytics is switched on for this zone. The privacy notice
-     names it, and public/_headers is written so the edge can inject it. The
-     switch itself lives in the dashboard.
+  1. The reach measurement actually reports. Whether the beacon is SERVED is
+     checked above, in both directions. Whether it then reaches Cloudflare is
+     not checkable from here: the signs are /cdn-cgi/rum answering rather than
+     404, and a figure in the dashboard after real traffic (ADR 0261).
   2. The legal texts have been through a legal review. They are drafts from a
      template until they have.
   3. The manual accessibility pass has been walked. A green axe run covers

@@ -6,6 +6,7 @@ import Foot from '../components/Foot.astro';
 import { MARK_SPRITE } from '../lib/marks';
 import { graphJson } from '../lib/schema';
 import { SITE } from '../lib/site';
+import { BEACON, BEACON_TOKEN } from '../lib/analytics';
 
 interface Props {
   title?: string;
@@ -108,6 +109,23 @@ const og = new URL(SITE.og.path, origin);
 <link rel="preload" href="/fonts/archivo-latin-variable.woff2" as="font" type="font/woff2" crossorigin />
 {canonical.pathname === '/' && (
   <link rel="preload" href="/fonts/fraunces-400-italic.woff2" as="font" type="font/woff2" crossorigin />
+)}
+{/* THE REACH MEASUREMENT, AND IT IS THE LAST THING IN THE HEAD ON PURPOSE.
+    `defer` already keeps it off the parse path; putting it after the preloads
+    keeps it off the *discovery* path too, so the browser has both faces in
+    flight before it ever looks at this line.
+
+    IT RENDERS ONLY WHEN A TOKEN IS SET, and `privacy.astro` renders its
+    reach-measurement section off the same boolean. One value, two surfaces,
+    so the legal page cannot describe a measurement that is not running.
+    src/lib/analytics.ts carries why this is a snippet rather than the edge
+    injection it was designed for. ADR 0261. */}
+{BEACON && (
+  <script
+    defer
+    src="https://static.cloudflareinsights.com/beacon.min.js"
+    data-cf-beacon={JSON.stringify({ token: BEACON_TOKEN })}
+  />
 )}
 </head>
 <body>
