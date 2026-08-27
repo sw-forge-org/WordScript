@@ -53,6 +53,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - wordscript.dev is live
+
+- **The custom-domain route is open.** `wrangler.jsonc` carries
+  `"routes": [{ "pattern": "wordscript.dev", "custom_domain": true }]`, which
+  every earlier record called the launch gate. `custom_domain: true` makes
+  wrangler create the DNS record, so the first deploy carrying that line puts
+  the site online. The comment above it changed job: it used to say why the line
+  was absent and now says what the line does, including the part that is easy to
+  get wrong later -- commenting it out again does not take the site down,
+  because the record stays in the zone (ADR 0260).
+
+### Changed - wordscript.dev, one legal item is open on a live site and says so
+
+- **The missing second contact channel no longer blocks the deploy.** Section 5
+  DDG asks for a means of contact permitting rapid and direct communication
+  beside the email address, and the Court of Justice read the same wording in
+  C-298/07 of 16 October 2008 as not satisfied by the address alone. `PHONE` in
+  `src/lib/legal.ts` is still `null`. The owner decided to publish and supply
+  the number afterwards, with the exposure named. `scripts/launch-check.mjs`
+  prints a headed notice on every successful run instead of failing, carrying
+  the statute, the judgment and the fact that it was a decision rather than an
+  oversight (ADR 0260).
+- **The notice is conditional on the value and removes itself.** The day `PHONE`
+  stops being `null` the check has nothing to say, so there is no second cleanup
+  to remember. Deleting the check outright was rejected: an open legal item that
+  stops being printed is one nobody remembers, and it is the only one of the
+  four open gates this repository can answer for itself.
+
+
 ### Changed - wordscript.dev, the deploy moved and took the typeface with it
 
 - **The site deploys from the repository on every push.** Cloudflare Workers

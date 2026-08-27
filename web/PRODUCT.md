@@ -270,9 +270,10 @@ decision, not a per-project choice. The owner reported the dashboard switch set
 on 2026-08-27. It is **still not measuring anything**, wiring it is **not a code
 change**, and it **cannot take effect before the site is deployed**:
 automatic injection happens at the edge for a hostname proxied through
-Cloudflare, and `wordscript.dev` has no A or AAAA record. There is nothing to
-add a site for until the custom-domain route in `wrangler.jsonc` is
-uncommented. Nor is it scriptable from here: wrangler has no Web Analytics
+Cloudflare, and `wordscript.dev` had no A or AAAA record while that was
+written. The custom-domain route is open now (ADR 0260), so there is a hostname
+to add a site for and the beacon can be checked for the first time. It is still
+not scriptable from here: wrangler has no Web Analytics
 command, and the RUM API refuses the OAuth token wrangler holds (HTTP 403,
 authentication error) because that token carries no analytics scope.
 
@@ -350,16 +351,18 @@ one piece of work, not two.
 
 Marked open rather than guessed.
 
-- **A second contact channel for the imprint.** Section 5 DDG asks for a way to
-  reach the provider that is as fast as email and is not email. The Court of
-  Justice settled the point on the same wording in C-298/07 of 16 October 2008:
-  the address alone does not satisfy it, and the second channel need not be a
-  telephone number. The owner decided for one anyway, because the alternative a
-  static site could offer is a form with a response time attached to it. The
-  number has not been supplied. `PHONE` in
-  `src/lib/legal.ts` is `null`, the imprint renders without the row, and
-  `npm run deploy` refuses while it stays null. **This is now the blocker on
-  publishing**, in place of the pages themselves. ADR 0258.
+- **A second contact channel for the imprint. Open on a live site.** Section 5
+  DDG asks for a way to reach the provider that is as fast as email and is not
+  email. The Court of Justice settled the point on the same wording in C-298/07
+  of 16 October 2008: the address alone does not satisfy it, and the second
+  channel need not be a telephone number. The owner decided for one anyway,
+  because the alternative a static site could offer is a form with a response
+  time attached to it. The number has not been supplied, so `PHONE` in
+  `src/lib/legal.ts` is `null` and the imprint renders without the row.
+  **It stopped being a deploy blocker on 2026-08-27 and the site was published
+  with it open** -- the owner's decision, taken with the exposure named
+  (ADR 0260). `scripts/launch-check.mjs` prints it on every run instead, and
+  the notice removes itself the moment the value is set. ADR 0258, ADR 0260.
 - ~~**Whether the Zodiak file is the untouched Fontshare webfont.**~~ Closed
   by removal on 2026-08-27, not by an answer. The question only mattered
   because the ITF Free Font License forbids subsetting and format conversion,
@@ -476,8 +479,12 @@ Marked open rather than guessed.
   **Not verified here:** nothing has been rendered by a browser other than this
   one, so the fallback stack behind Fraunces is untested.
 - `wordscript.dev` is registered and on Cloudflare nameservers
-  (`ariella.ns.cloudflare.com`, `leland.ns.cloudflare.com`) with **no A or AAAA
-  record**. The zone is empty and the hostname does not resolve.
+  (`ariella.ns.cloudflare.com`, `leland.ns.cloudflare.com`). The zone was empty
+  and the hostname did not resolve until 2026-08-27, when the custom-domain
+  route in `wrangler.jsonc` was uncommented (ADR 0260). `custom_domain: true`
+  makes wrangler create the record, so the first deploy carrying that line is
+  what puts the site online -- and commenting the line out again does not undo
+  it, because the record stays in the zone.
 - `package.json` and `src-tauri/tauri.conf.json` both read `0.2.2-alpha`;
   nothing is published.
 - The four canonical addresses are in `src/lib/appMeta.ts`, one of them `null`.

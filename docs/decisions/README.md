@@ -1609,6 +1609,9 @@ that is what a record is for (ADR 0123: one list per fact).
 - [0259](0259-the-deploy-runs-from-the-repository-so-the-accent-face-is-one-the-repository-may-carry.md):
   The deploy runs from the repository, so the accent face is one the repository may carry.
 
+- [0260](0260-the-site-is-published-with-one-legal-item-open-and-the-check-that-guarded-it-reports-instead-of-blocking.md):
+  The site is published with one legal item open, and the check that guarded it reports instead of blocking.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

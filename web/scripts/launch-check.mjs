@@ -64,18 +64,21 @@ if (html.length === 0) fail('no build', 'dist/ holds no HTML. Run the build firs
 
 /* ---- 1. the second contact channel -------------------------------------
    Section 5 DDG wants a way to reach the provider that is as fast as email and
-   is not email. src/lib/legal.ts holds it as `null` until there is one, and
-   that null is the thing this check exists for: the imprint renders without a
-   telephone row and looks complete. */
+   is not email, and `src/lib/legal.ts` holds it as `null`. The imprint renders
+   without a telephone row and looks complete, which is the thing that has to be
+   said out loud somewhere.
+
+   IT IS REPORTED AND NO LONGER BLOCKS, ON THE OWNER'S DECISION OF 2026-08-27
+   (ADR 0260). The site was ready in every other respect and the number is
+   coming; holding the launch on it was the owner's call to make and he made it.
+   What the check must not do is go quiet -- an open legal item that stops being
+   printed is an open legal item nobody remembers. So it moves down to the
+   report at the end, beside the three gates that have no artefact here, and it
+   is the only one of the four this repository can actually answer for itself.
+   The `fail()` returns the day PHONE stops being null: this check then has
+   nothing to say and the notice deletes itself. */
 const legalSource = readFileSync(join(SRC, 'lib/legal.ts'), 'utf8');
-if (/export const PHONE = null as/.test(legalSource)) {
-  fail(
-    'imprint: no second contact channel',
-    'PHONE in src/lib/legal.ts is null. Section 5 DDG asks for a fast channel '
-    + 'beside the email address. Set the number, or take the documented '
-    + 'decision to ship without one and change this check with it.',
-  );
-}
+const phoneOpen = /export const PHONE = null as/.test(legalSource);
 
 /* ---- 2. the legal routes exist ----------------------------------------- */
 for (const route of legalSource.matchAll(/href: '\/([a-z-]+)\/'/g)) {
@@ -244,6 +247,23 @@ if (failures.length) {
 }
 
 console.log('launch-check: no blockers in dist/.');
+
+if (phoneOpen) {
+  console.log(`
+  ACCEPTED AND OPEN: the imprint has no second contact channel.
+
+  PHONE in src/lib/legal.ts is null, so the imprint gives an email address and
+  nothing else. Section 5 DDG asks for a further means of contact permitting
+  rapid and direct communication. The Court of Justice read the same wording in
+  C-298/07 of 16 October 2008: the address alone does not satisfy it, and the
+  second channel need not be a telephone number.
+
+  Shipping without one is the owner's decision of 2026-08-27, taken knowingly
+  and meant to be short-lived (ADR 0260). Set PHONE and this notice goes away
+  on its own.
+`);
+}
+
 console.log(`
   Three gates have no artefact here and are not covered by the above:
 

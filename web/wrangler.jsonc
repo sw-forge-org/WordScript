@@ -30,26 +30,29 @@
   "workers_dev": false,
   "preview_urls": false,
 
-  // THE CUSTOM DOMAIN IS COMMENTED, AND THAT IS THE LAUNCH GATE, NOT A TODO.
+  // THE CUSTOM DOMAIN IS LIVE. This line was commented out for the whole build
+  // of this site and its comment called itself the launch gate. The owner
+  // opened it on 2026-08-27 (ADR 0260).
   //
-  // Uncommenting this and deploying does not configure a route: it creates the
-  // DNS record for `wordscript.dev` and the site is live from that second. So
-  // the route stays off and `wrangler deploy` produces a Worker that is
-  // reachable nowhere, which makes an accidental launch impossible rather than
-  // merely unlikely.
+  // WHAT THIS LINE DOES, so nobody has to rediscover it: deploying with it
+  // present does not merely configure a route. `custom_domain: true` makes
+  // wrangler create the DNS record for `wordscript.dev`, and the site is public
+  // from that second. Commenting it out again does NOT take the site down --
+  // the record it created stays in the zone. Going back means deleting the
+  // custom domain in the dashboard, or the record.
   //
-  // WHAT IS LEFT BEFORE IT MAY BE UNCOMMENTED changed on 2026-08-27. It used to
-  // be the legal pages themselves; they are written and gate 4 of
-  // `web-launch-gate` has run (ADR 0258). Two of the remaining items are
-  // enforced by `npm run deploy`, which runs `scripts/launch-check.mjs` between
-  // the build and this command: the imprint has no second contact channel yet,
-  // and one typeface licence is still missing from `public/fonts/`. Three more
-  // have no artefact in this repository and are printed by that script rather
-  // than checked -- the Cloudflare Web Analytics switch the privacy notice
-  // already names, a legal review of the three pages, and the manual
-  // accessibility pass. `PRODUCT.md` under Open facts is the list.
-  //
-  // "routes": [{ "pattern": "wordscript.dev", "custom_domain": true }],
+  // WHAT WAS OPEN WHEN IT WAS OPENED, because a launch gate that is walked past
+  // silently is worse than one that was never written. The imprint has no
+  // second contact channel: section 5 DDG asks for a further means permitting
+  // rapid and direct communication, and the Court of Justice read that same
+  // wording in C-298/07 of 16 October 2008 as not satisfied by the address
+  // alone. `PHONE` in `src/lib/legal.ts` is still `null`. The owner decided to
+  // publish and supply the number afterwards; `scripts/launch-check.mjs` prints
+  // it on every run instead of blocking. Three further gates have no artefact
+  // in this repository and are unchanged: the Cloudflare Web Analytics switch
+  // the privacy notice already names, a legal review of the three pages, and
+  // the manual accessibility pass. `PRODUCT.md` under Open facts is the list.
+  "routes": [{ "pattern": "wordscript.dev", "custom_domain": true }],
 
   // THE BUILD COMMAND IN THE DASHBOARD IS `npm run build:ci`, NOT `npm run build`.
   //
