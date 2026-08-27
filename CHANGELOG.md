@@ -53,6 +53,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - wordscript.dev, the social card is drawn by the site instead of beside it
+
+- **The card was older than the design it stood for.** `assets/OG.png` entered
+  the repository on 2026-05-13, before a line of the site's design system was
+  written. Its wordmark is the real one, but the two lines carrying the pitch
+  are a sans italic, and the page declares Archivo roman, Fraunces italic and
+  Plex Mono and sets a sans italic nowhere. It also blew the app icon up to 242
+  pixels against the header's 26, until its border read as a picture frame, and
+  stood on flat black where the page opens on a lit ruled sheet. Worst of it
+  was the sentence: the card said you speak into any text field, which is what
+  every peer opens on, while `SITE.ogDescription` right underneath it in the
+  same preview said you speak once, it lands, it stays, it acts (ADR 0262).
+- **`web/scripts/make-og.mjs` composes the card out of the page's own rules.**
+  The ground, the lamp, the ruled sheet at the lede's 26px line box, the paper
+  grain, the `h1` with its one italic, the header lock-up, the hero's fact
+  strip and the cleanup scene inside `.stage__win` -- every one of them read
+  from `globals.css`, `site.css` or `src/lib/scenes/cursor.ts` rather than
+  redrawn. `npm run og` writes it.
+- **It is not a build step and cannot become one.** The deploy starts from a
+  clone with no browser on it (ADR 0259), so the PNG stays committed and
+  `sync-assets.mjs` copies it as before. Fonts, wordmark and icon are inlined
+  as data: URIs: a `file://` page cannot read a sibling without a flag, and a
+  mask that fails to load paints nothing while the run reports success.
+- **255 palette entries, because the grain is already a dither.** 617,727 bytes
+  truecolour against 200,272 indexed, 0.776 per cent RMSE, no banding in the
+  lamp at 200 per cent magnification. ImageMagick is not a dependency, so its
+  absence prints a line and ships the truecolour file.
+- **A correction the card nearly made to itself was measured away.** The
+  italic reads tight against the roman, and the first pass padded it here only.
+  The gap between `Speak` and the ink of `once` is 7.58px at the page's largest
+  48, 11.06 at the card's 70 and 15.16 at 96 -- ratios of 0.1579, 0.1580 and
+  0.1579. Identical setting at every size, so the padding came out.
+- **`SITE.og.alt` describes the picture rather than repeating the title.** It
+  read `WordScript`, which is the one thing a reader without the image already
+  has.
+
 ### Fixed - wordscript.dev, the reach measurement and the notice that describes it
 
 - **`/privacy` described a processing operation that was not happening, and now

@@ -1615,6 +1615,9 @@ that is what a record is for (ADR 0123: one list per fact).
 - [0261](0261-the-reach-measurement-is-a-snippet-in-the-page-and-the-notice-that-describes-it-reads-the-same-value.md):
   The reach measurement is a snippet in the page, and the notice that describes it reads the same value.
 
+- [0262](0262-the-social-card-is-drawn-from-the-site-s-own-tokens-and-drawing-it-is-not-a-build-step.md):
+  The social card is drawn from the site's own tokens, and drawing it is not a build step.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

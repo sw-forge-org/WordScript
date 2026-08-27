@@ -13,6 +13,7 @@
     "preview": "astro preview",
     "check": "astro check",
     "launch-check": "node scripts/launch-check.mjs",
+    "og": "node scripts/make-og.mjs",
     "build:ci": "npm run build && npm run launch-check",
     "deploy": "npm run build:ci && wrangler deploy"
   },

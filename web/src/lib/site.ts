@@ -33,8 +33,21 @@ export const SITE = {
   themeColor: '#0f0f11',
   email: 'forge@sw-labs.de',
   /* 1200x630, checked against the file rather than assumed. A card served with
-     the wrong dimensions is cropped by the platform, not by us. */
-  og: { path: '/assets/OG.png', width: 1200, height: 630, alt: 'WordScript' },
+     the wrong dimensions is cropped by the platform, not by us.
+
+     THE ALT IS THE CARD AND NOT THE PRODUCT. It read `WordScript`, which is
+     the one thing a reader who cannot see the image already has: the title
+     sits beside it in every preview that shows the card at all. What the
+     picture carries and the title does not is the window -- a dictated line
+     with its fillers marked and the delivered sentence under it -- so that is
+     what the sentence describes. `scripts/make-og.mjs` draws it, and a card
+     redrawn to say something else is a card that has to change this line. */
+  og: {
+    path: '/assets/OG.png',
+    width: 1200,
+    height: 630,
+    alt: 'Speak once. It lands. It stays. It acts. Beside it a text window, holding a dictated line with its filler words marked and the cleaned sentence delivered under it.',
+  },
 } as const;
 
 export const ORG = {

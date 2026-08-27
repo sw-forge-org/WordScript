@@ -178,7 +178,12 @@ FAQ answer is whether you can install it yet.
   four it uses into `web/public/assets/` at build time via
   `web/scripts/sync-assets.mjs` rather than keeping a second copy in the tree.
 - Icons at every size: `src-tauri/icons/`
-- Social card: `assets/OG.png`
+- Social card: `assets/OG.png`, **generated rather than drawn**. `web/scripts/make-og.mjs`
+  composes it out of the page's own ground, lamp, ruled sheet, grain, `h1`,
+  fact strip and `.stage__win`, and `npm run og` photographs that with headless
+  Chrome. It is deliberately not a build step: the deploy starts from a clone
+  with no browser on it, so the PNG is committed and the script is the record of
+  how (ADR 0262).
 - Typefaces, self-hosted: Archivo and IBM Plex Mono, both SIL OFL, from
   `assets/fonts/` with their licence files. The site adds one face the app has
   no use for, Fraunces italic, because the app never has to introduce itself.
@@ -491,6 +496,24 @@ Marked open rather than guessed.
   rather than families.
   **Not verified here:** nothing has been rendered by a browser other than this
   one, so the fallback stack behind Fraunces is untested.
+- **Seventh pass, 2026-08-27, the social card** (ADR 0262). `assets/OG.png`
+  dated from 2026-05-13 and predated the design system entirely: its two pitch
+  lines in a sans italic the page declares nowhere, the app icon at 242 pixels
+  against the header's 26 so that its border read as a frame, flat black under
+  it, and a sentence naming the category while
+  `SITE.ogDescription` argued the opposite directly beneath it in the same
+  preview. It is now composed by `web/scripts/make-og.mjs` from the page's own
+  rules and carries the cleanup scene inside the hero's window. Measured after
+  it: `astro check` 0 errors and 0 warnings across 55 files, `npm run
+  launch-check` no blockers in `dist/`, the built card 1200x630 as the Open
+  Graph block declares, and the palette step 617,727 bytes truecolour against
+  200,272 indexed at 0.776 per cent RMSE with no banding in the lamp. One
+  correction was measured away rather than shipped: the gap between `Speak` and
+  the ink of `once` runs 7.58, 11.06 and 15.16 px at 48, 70 and 96, ratios of
+  0.1579, 0.1580 and 0.1579, so the italic is set no tighter on the card than
+  on the page and the padding came out.
+  **Not verified here:** nothing checks that the committed PNG is what the
+  script would draw today, and a gate for it would need a browser in CI.
 - `wordscript.dev` is registered and on Cloudflare nameservers
   (`ariella.ns.cloudflare.com`, `leland.ns.cloudflare.com`). The zone was empty
   and the hostname did not resolve until 2026-08-27, when the custom-domain
