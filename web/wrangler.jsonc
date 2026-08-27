@@ -1,6 +1,10 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "wordscript-dev",
+  // The name matches the Worker that already exists in the dashboard. It was
+  // `wordscript-dev` here and `wordscript-homepage` there, and Cloudflare said
+  // so on the build page rather than failing: a mismatched name does not error,
+  // it deploys a second Worker beside the first.
+  "name": "wordscript-homepage",
   "compatibility_date": "2026-08-26",
 
   // THE SECOND PUBLIC HOSTNAME, CLOSED AT THE SOURCE.

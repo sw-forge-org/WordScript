@@ -1,6 +1,11 @@
 Typefaces served by wordscript.dev
 ==================================
 
+All three are under the SIL Open Font License 1.1. Condition 2 permits
+redistribution provided each copy carries the copyright notice and the licence,
+which is what the three text files beside them are for. They are committed, a
+fresh clone builds, and the deploy needs nothing fetched by hand.
+
 Archivo
   Omnibus-Type. SIL Open Font License 1.1.
   Full text: LICENSE-archivo.txt in this directory.
@@ -9,39 +14,34 @@ IBM Plex Mono
   IBM. SIL Open Font License 1.1.
   Full text: LICENSE-ibm-plex-mono.txt in this directory.
 
-  Both of the above may be redistributed. Condition 2 of the OFL allows it
-  provided each copy carries the copyright notice and the licence, which is
-  what the two text files beside them are for, so these are committed.
+Fraunces (italic 400 only, variable optical size)
+  Undercase Type. SIL Open Font License 1.1.
+  Full text: LICENSE-fraunces.txt in this directory.
+  Source:    https://github.com/undercasetype/Fraunces
+  Read from raw.githubusercontent.com/undercasetype/Fraunces/master on
+  2026-08-27.
 
-Zodiak (italic 400 only)
-  Indian Type Foundry, distributed through Fontshare.
-  ITF Free Font License (FFL) 2.0, 17 August 2026.
-  Font:    https://www.fontshare.com/fonts/zodiak
-  Licence: https://www.fontshare.com/licenses/itf-ffl
+THIS DIRECTORY USED TO CARRY A FOURTH FACE AND A LONG EXPLANATION
+=================================================================
 
-  THERE IS NO LICENCE TEXT FOR THIS ONE IN THIS DIRECTORY, AND THAT IS NOT AN
-  OMISSION. An earlier version of this file said it was, on the assumption that
-  every font licence works the way the SIL Open Font License does. It does not.
-  The FFL requires no text to travel with the font and asks for no attribution
-  at all.
+The display italic was Zodiak, from the Indian Type Foundry through Fontshare,
+under the ITF Free Font License 2.0. That licence permits self-hosting the font
+and forbids passing it on: section 02 rules out making the Font Software
+available to any other person or entity and names repositories among the ways
+that is done, while section 01 expressly permits serving it from your own site.
+Serving the file to a reader was the permitted case. Committing it to a public
+repository was the forbidden one.
 
-  What it requires runs the other way round. Section 01 expressly permits
-  self-hosting the font on your own site through CSS @font-face, and calls that
-  the recommended way to use it. Section 02 forbids passing the font on to
-  anybody else, naming repositories, download services and publicly accessible
-  servers among the ways that is done. Serving the file to a reader is the
-  permitted case. Committing it to a public repository is the forbidden one.
+So the font was deliberately absent from version control and every clone had to
+fetch it by hand. That was workable while deploys ran from one machine. It stops
+being workable the moment the site is built from the repository, which is what
+it does now: the build runs on a clone, the clone has no font, and the page
+preloads a file that is not there.
 
-  So zodiak-400-italic.woff2 is served from here and is deliberately absent
-  from version control. A fresh clone fetches it once from the Fontshare link
-  above and drops it in this directory. scripts/launch-check.mjs fails the
-  deploy while it is missing, because the page preloads it, and fails the
-  deploy again if it is ever committed.
+The face was replaced rather than worked around. The alternatives all kept the
+font and paid for it forever -- a secret to rotate, a bucket to hold 23 kB, a
+network call in the build that fails silently into a page with no serif. The
+licence attaches to the font, so the only fix that ends the problem is a font
+whose licence permits what this repository does.
 
-  Read from fontshare.com on 2026-08-27, when the licence was ten days old. A
-  copy kept from an older download states different terms.
-
-  NOT VERIFIED: whether the file in this directory is the untouched webfont
-  from the Fontshare download. Section 02 forbids subsetting and format
-  conversion without written consent. Checking it means reading the font's name
-  and glyph tables, which needs a Brotli decoder this machine does not have.
+ADR 0259 carries the decision and the measurements.

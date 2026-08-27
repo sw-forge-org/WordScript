@@ -1606,6 +1606,9 @@ that is what a record is for (ADR 0123: one list per fact).
 - [0258](0258-the-legal-pages-state-the-stack-the-site-really-has-and-the-fourth-footer-link-is-removed-rather-than-written.md):
   The legal pages state the stack the site really has, and the fourth footer link is removed rather than written.
 
+- [0259](0259-the-deploy-runs-from-the-repository-so-the-accent-face-is-one-the-repository-may-carry.md):
+  The deploy runs from the repository, so the accent face is one the repository may carry.
+
 ## Resolved: the number 0011 was used twice
 
 Recorded 2026-07-29, resolved the same day. Both

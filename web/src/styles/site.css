@@ -455,7 +455,7 @@ body.is-locked{overflow:hidden}
 
    ONE FACE SETS THE PAGE, ONE FACE EMPHASISES, AND THEY ARE NOT THE SAME ONE.
    Archivo sets every heading, because it is the face the app itself is set in
-   and the page is a page about that app. Zodiak is held back entirely for
+   and the page is a page about that app. Fraunces is held back entirely for
    emphasis: an italic serif word inside an Archivo line is the only thing on
    this site set in a second face, which is what makes it read as emphasis at
    all. A serif heading with a serif emphasis inside it has nothing to change
@@ -463,15 +463,26 @@ body.is-locked{overflow:hidden}
 
    AN EMPHASISED WORD IS NEVER SMALLER THAN THE WORD IT STANDS OUT FROM, and
    never a second decision either. There is exactly one emphasis rule on the
-   page: Zodiak, italic, accent, x height matched to its host. No per word
+   page: Fraunces, italic, accent, x height matched to its host. No per word
    variants. If a line needs two kinds of emphasis it needs rewriting instead.
 
-   THE SIZE. `font-size:1.04em` is a measurement, not a preference. The words
+   THE SIZE. `font-size:1.19em` is a measurement, not a preference. The words
    that get emphasised here are lowercase, so what reads as size is the x
-   height and not the cap height. Measured in this browser at the same em,
-   Archivo's x height sits at 0.530 and Zodiak italic's at 0.510; 0.530/0.510
-   is 1.039, and the 1.04 cancels exactly that. Matching on caps instead
-   (0.690 against 0.705) would have set the serif word two per cent small.
+   height and not the cap height. The instrument renders the glyph `x` at
+   400px into a canvas and measures the ink from the baseline up. Archivo 600
+   sits at 0.5275 and Fraunces italic 400 at 0.4425; 0.5275/0.4425 is 1.1921,
+   and the 1.19 cancels exactly that.
+
+   THE SAME INSTRUMENT ON THE FACE THIS ONE REPLACED returns 0.5075 for Zodiak
+   italic and a ratio of 1.0394, which is the 1.04 that stood here before. The
+   number was re-derived rather than converted, and it reproduced the old one,
+   so the rule is the same rule and only the face under it moved.
+
+   THE CORRECTION IS LARGER THAN IT LOOKS AND IT STILL ONLY NEEDS TO BE MADE
+   ONCE. Fraunces carries a live optical-size axis, so the obvious worry is
+   that a ratio measured at one size is wrong at another. Measured at 19, 23,
+   48 and 200 px its x height is 0.4694 to 0.4700 -- flat. opsz moves the
+   drawing, not the x height, so one ratio serves all three call sites.
 
    THE HEADING SIZES continue the app's own optical-size axis past --t-hero
    rather than starting a new one: as the size climbs the face narrows and
@@ -491,7 +502,7 @@ h2{
 
 em{
   font-family:var(--f-em);font-style:italic;font-weight:400;
-  font-size:1.04em;color:var(--accent);
+  font-size:1.19em;color:var(--accent);
 }
 
 .lede{

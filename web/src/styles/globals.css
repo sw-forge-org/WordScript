@@ -22,12 +22,25 @@
 @import "tailwindcss";
 
 /* ---- faces --------------------------------------------------------------
-   Zodiak is declared in the italic only, because the italic is the only cut
+   Fraunces is declared in the italic only, because the italic is the only cut
    the page can reach: the single em rule asks for italic 400 and nothing else
-   on the site asks for Zodiak at all. The roman and the bold sit unused in
-   public/fonts/ and are deliberately not declared here, so that the one face
-   one job rule is enforced by the stylesheet rather than by remembering it. */
-@font-face{font-family:'Zodiak';src:url('/fonts/zodiak-400-italic.woff2') format('woff2');font-weight:400;font-style:italic;font-display:swap}
+   on the site asks for Fraunces at all. One face, one job, enforced by the
+   stylesheet rather than by remembering it.
+
+   IT IS THE VARIABLE CUT AND THE 42 KB ARE BOUGHT DELIBERATELY. A pinned
+   instance is 22 KB, and it would be wrong at two of the three call sites:
+   the optical-size axis is live and it moves the drawing, not only the
+   metrics. Measured in this browser, `once` at 48px is 94.73 px wide at
+   opsz 48 and 80.75 px at opsz 144, a difference of 15 per cent. The three
+   places that set --f-em run at roughly 16, 23 and 48 px, so one pinned
+   optical size cannot serve them. `font-optical-sizing` is left at its
+   default of `auto`, which ties opsz to the rendered size and is the whole
+   reason this face reads correctly as both a display word and a pull quote.
+
+   The declared range is the font's own 9..144 rather than the 16..48 the page
+   uses, because Google serves the same file either way -- checked against all
+   three requests rather than assumed. */
+@font-face{font-family:'Fraunces';src:url('/fonts/fraunces-400-italic.woff2') format('woff2');font-weight:400;font-style:italic;font-display:swap}
 @font-face{font-family:'Archivo';src:url('/fonts/archivo-latin-variable.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap}
 @font-face{font-family:'Plex Mono';src:url('/fonts/ibm-plex-mono-400.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
 @font-face{font-family:'Plex Mono';src:url('/fonts/ibm-plex-mono-500.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap}
@@ -77,7 +90,7 @@
   --f-ui:'Archivo','SF Pro Display','Segoe UI Variable Display',sans-serif;
   --f-mono:'Plex Mono','SF Mono',ui-monospace,monospace;
   /* the one face the app does not own, and the page's only emphasis face */
-  --f-em:'Zodiak','Iowan Old Style',Georgia,serif;
+  --f-em:'Fraunces','Iowan Old Style',Georgia,serif;
 
   --gut:clamp(1.15rem,4.5vw,4rem);
   --wide:72rem;

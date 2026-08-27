@@ -53,6 +53,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - wordscript.dev, the deploy moved and took the typeface with it
+
+- **The site deploys from the repository on every push.** Cloudflare Workers
+  Builds, root directory `web`, build command `npm run build`, deploy command
+  `npx wrangler deploy`, Worker `wordscript-homepage`. The name is in
+  `wrangler.jsonc` now because it was `wordscript-dev` there and
+  `wordscript-homepage` in the dashboard, and a mismatch does not fail: it
+  deploys a second Worker beside the first.
+- **Zodiak is replaced by Fraunces italic, and the reason is the build machine
+  rather than the drawing.** A build from the repository starts on a clone, and
+  the ITF Free Font License forbids the repository from carrying that font, so
+  the clone had no display italic and the page preloaded a 404 that no build
+  step reports. Three ways to keep it were considered and each buys one 23 kB
+  file at a recurring price: base64 in a build variable past the per-variable
+  limit, an R2 bucket with a token to rotate, or a runtime request to the
+  Fontshare API that contradicts the third-party inventory `/privacy` states.
+  The licence attaches to the font, so the fix is a font. Fraunces is OFL 1.1
+  and is committed like the other two; the owner chose it from five candidates
+  rendered into the real hero line (ADR 0259).
+- **The emphasis ratio was re-derived rather than converted.** `em` carried
+  `font-size:1.04em` as a measured correction matching the serif word's x
+  height to its Archivo host. The instrument -- the glyph `x` rendered at
+  400 px into a canvas, ink measured up from the baseline -- was run against
+  the old pair first and returned Archivo 0.5275, Zodiak 0.5075, ratio 1.0394,
+  reproducing the number already in the file. Against Fraunces it returns
+  0.4425 and 1.1921, so the rule is `1.19em`. The x height is flat from 19 to
+  200 px, so the live optical-size axis moves the drawing and not the ratio,
+  and one correction still serves all three call sites.
+- **The variable cut ships at 42 kB where a pinned instance is 22 kB.** The
+  optical-size axis is doing real work: `once` at 48 px measures 94.73 px wide
+  at opsz 48 and 80.75 px at opsz 144. The three places that reach `--f-em` run
+  at roughly 16, 23 and 48 px, so no single pinned size is right for them.
+
+### Fixed - wordscript.dev, a check that guarded a path instead of a font
+
+- **`launch-check.mjs` asks the question a clone asks.** It reads every face
+  `globals.css` declares and requires each to be in the tree and in the index,
+  with one licence text per family, both lists taken from the tree rather than
+  carried in the script. The version before it named one file, and a second
+  copy of the same face plus two further weights sat one directory up in the
+  sketch's `fonts/` folder, uncovered -- committing `web/` as it stood would
+  have pushed three Zodiak files to a public repository. Its own first draft
+  then failed a correct tree by counting `src` urls against licence files: Plex
+  Mono is declared twice, at 400 and 500, and has one licence.
+- **`/terms` states one licence for all three faces and the sentence is true.**
+  An earlier draft said the same thing while one face was under a different
+  licence. The comment above it keeps that history and names what to re-read if
+  a fourth face is ever added.
+
+
 ### Added - wordscript.dev, the three legal pages and the fourth link that went away
 
 - **`/imprint`, `/privacy` and `/terms` exist and resolve.** The footer drew

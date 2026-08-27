@@ -32,6 +32,20 @@ const FONTS = new URL('../public/fonts/', import.meta.url).pathname;
 const failures = [];
 const fail = (what, detail) => failures.push({ what, detail });
 
+/** Is `path`, relative to web/, in the git index? `null` when git cannot
+    answer -- no binary, or not a checkout -- which is reported rather than
+    treated as a pass: the stronger of the two answers is the one that did not
+    run. */
+function gitTracks(path) {
+  try {
+    return execFileSync('git', ['ls-files', '--cached', '--', path], {
+      cwd: new URL('../', import.meta.url).pathname, encoding: 'utf8',
+    }).trim().length > 0;
+  } catch {
+    return null;
+  }
+}
+
 /** Every file under a directory, filtered by extension. */
 function walk(dir, exts, out = []) {
   for (const name of readdirSync(dir)) {
@@ -128,74 +142,97 @@ for (const file of emitted) {
   }
 }
 
-/* ---- 5. the typefaces, and the two different obligations they carry ----
-   THE FIRST VERSION OF THIS CHECK ASKED THE WRONG QUESTION. It looked for an
-   OPEN marker in NOTICE.txt because the Zodiak licence text was not in the
-   directory, on the assumption that every font licence works the way the SIL
-   Open Font License does. It does not.
+/* ---- 5. the typefaces, and the question that replaced the old one -------
+   THIS CHECK HAS ASKED THE WRONG QUESTION TWICE, AND BOTH ARE WORTH KEEPING.
 
-   Archivo and IBM Plex Mono are OFL 1.1, whose condition 2 permits
-   redistribution provided each copy carries the copyright notice and the
-   licence. Their texts sit in public/fonts/ because that is what discharges
-   it, and they may be committed.
+   The first version looked for an OPEN marker in NOTICE.txt because the Zodiak
+   licence text was not in the directory, on the assumption that every font
+   licence works the way the SIL Open Font License does. It does not: the ITF
+   Free Font License requires no text to travel with the font at all.
 
-   Zodiak is under the ITF Free Font License 2.0 (17 Aug 2026), read from
-   fontshare.com/licenses/itf-ffl on 2026-08-27. That licence requires no text
-   to travel with the font and no attribution at all. What it forbids is
-   passing the font on: section 02 rules out making the Font Software available
-   to any other person or entity, naming repositories, download services and
-   publicly accessible servers, while section 01 expressly permits self-hosting
-   it on your own site. Serving the file is the permitted case; committing it
-   to a public repository is the forbidden one.
+   The second version asked whether that font was committed, which was the
+   right question while deploys ran from one machine and the wrong one the
+   moment the site started building from the repository. A font the repository
+   may not carry is a font the build cannot have. Zodiak was replaced by
+   Fraunces for that reason and not for a typographic one (ADR 0259).
 
-   So the two checks below are the two halves of that: the file has to be here
-   when the site is built, because the page preloads it and a missing face is a
-   404 on every load, and it has to be absent from version control, because the
-   repository is public. */
-const notice = readFileSync(join(FONTS, 'NOTICE.txt'), 'utf8');
-if (notice.includes('OPEN:')) {
+   SO THE QUESTION NOW IS THE ONE A CLONE ASKS. Every face the stylesheet
+   declares has to be committed, because the build machine has nothing else,
+   and every face has to have its licence text beside it, because OFL condition
+   2 is what permits it to be there. Both are read out of the tree rather than
+   listed here: a check with its own copy of the list passes while the list
+   drifts. */
+const faceBlocks = [...readFileSync(join(SRC, 'styles/globals.css'), 'utf8')
+  .matchAll(/@font-face\s*\{([^}]*)\}/g)].map((m) => m[1]);
+
+/* Files and families are counted separately and they are different numbers.
+   A family can be declared once per cut -- Plex Mono is here twice, at 400 and
+   500 -- so counting src urls to compare against licence texts reports a
+   missing licence for a weight. The first version of this check did exactly
+   that and failed a tree that was correct. */
+const declared = [];
+const families = new Set();
+for (const block of faceBlocks) {
+  const file = block.match(/url\('\/fonts\/([^']+\.woff2)'\)/);
+  const family = block.match(/font-family\s*:\s*'([^']+)'/);
+  if (file) declared.push(file[1]);
+  if (family) families.add(family[1]);
+}
+
+if (declared.length === 0) {
+  fail('fonts: nothing declared', 'No @font-face src was found in src/styles/globals.css.');
+}
+
+for (const file of declared) {
+  try {
+    statSync(join(FONTS, file));
+  } catch {
+    fail(
+      `fonts: ${file} is declared and not in the tree`,
+      'src/styles/globals.css asks for it and public/fonts/ does not have it. '
+      + 'The build machine only has what is committed, so a face that is not '
+      + 'here is a 404 on every page that draws it.',
+    );
+  }
+  const tracked = gitTracks(`public/fonts/${file}`);
+  if (tracked === false) {
+    fail(
+      `fonts: ${file} is not in version control`,
+      'It renders here and it will not render on a build from the repository, '
+      + 'because that build starts from a clone. Commit it, or replace the '
+      + 'face with one whose licence permits committing it.',
+    );
+  }
+}
+
+/* The licence texts, checked as a set rather than per face: OFL condition 2
+   asks that the notice travel with the font, and what discharges it is a text
+   in this directory, not a particular file name. A face added without one is
+   the failure this catches. */
+const licences = readdirSync(FONTS).filter((n) => /^LICENSE-.*\.txt$/.test(n));
+if (licences.length < families.size) {
+  fail(
+    'fonts: fewer licence texts than families',
+    `public/fonts/ declares ${families.size} famil(y/ies) `
+    + `(${[...families].join(', ')}) across ${declared.length} file(s), and `
+    + `carries ${licences.length} LICENSE-*.txt file(s). OFL condition 2 `
+    + 'permits redistribution provided each copy carries the copyright notice '
+    + 'and the licence. NOTICE.txt names which face is under which.',
+  );
+}
+
+if (readFileSync(join(FONTS, 'NOTICE.txt'), 'utf8').includes('OPEN:')) {
   fail(
     'fonts: NOTICE.txt has an open item',
     'public/fonts/NOTICE.txt carries an OPEN marker. Close it or remove it.',
   );
 }
 
-const RESTRICTED = 'zodiak-400-italic.woff2';
-try {
-  statSync(join(FONTS, RESTRICTED));
-} catch {
-  fail(
-    'fonts: the display italic is not in the working tree',
-    `public/fonts/${RESTRICTED} is missing and the page preloads it. It is `
-    + 'deliberately not in version control, so a fresh clone has to fetch it '
-    + 'from fontshare.com/fonts/zodiak once. public/fonts/NOTICE.txt says why.',
-  );
-}
-/* THE TRACKED CHECK ASKS ABOUT THE FONT, NOT ABOUT ONE PATH. It used to name
-   `public/fonts/zodiak-400-italic.woff2` and would have passed while a second
-   copy of the same face, plus two further weights, sat in the sketch's own
-   web/fonts/ directory waiting to be committed to a public repository. The
-   licence attaches to the Font Software, so the question has to be asked of the
-   whole checkout: is any Zodiak file in the index anywhere. */
-try {
-  const tracked = execFileSync('git', ['ls-files', '--cached', '--', ':(glob)**/zodiak*'], {
-    cwd: new URL('../../', import.meta.url).pathname, encoding: 'utf8',
-  }).trim();
-  if (tracked) {
-    fail(
-      'fonts: a font that may not be redistributed is committed',
-      `${tracked.split('\n').join(', ')} tracked by git. The ITF Free Font `
-      + 'License forbids passing the font on through a repository. Remove it '
-      + 'from the index and from history before this repository is pushed '
-      + 'anywhere public.',
-    );
-  }
-} catch (e) {
-  /* No git, or not a checkout. Worth saying rather than passing silently: the
-     stronger of the two checks is the one that did not run. */
-  if (e && e.status === undefined) {
-    console.log('  note: git not available, the tracked-font check did not run.');
-  }
+/* Said rather than passed over in silence. The tracked check is the one that
+   speaks for the build machine, and it is also the one that can decline to
+   run. */
+if (declared.length && gitTracks(`public/fonts/${declared[0]}`) === null) {
+  console.log('  note: git did not answer, the committed-font check did not run.');
 }
 
 /* ---- the report -------------------------------------------------------- */

@@ -181,7 +181,9 @@ FAQ answer is whether you can install it yet.
 - Social card: `assets/OG.png`
 - Typefaces, self-hosted: Archivo and IBM Plex Mono, both SIL OFL, from
   `assets/fonts/` with their licence files. The site adds one face the app has
-  no use for, Zodiak italic, because the app never has to introduce itself.
+  no use for, Fraunces italic, because the app never has to introduce itself.
+  All three are OFL and all three are committed, which is what lets the site
+  build from a clone (ADR 0259).
 - The design system the app draws with: `docs/DESIGN_SYSTEM.md`, Tailwind v4
   `@theme inline` tokens, which the site adopts under the same token names.
 
@@ -208,8 +210,8 @@ generated and not to be substituted with stock.
 
 **Astro with React islands, static output, deployed to Cloudflare Workers
 static assets.** Tailwind CSS v4, shadcn/ui through React islands when one is
-first needed, Archivo and IBM Plex Mono self-hosted from the repository's own
-files.
+first needed, Archivo, IBM Plex Mono and Fraunces self-hosted from the
+repository's own files.
 
 **Two documented deviations from the SW labs stack default:**
 
@@ -228,6 +230,15 @@ files.
 
 **No adapter.** Static output needs none. `wrangler.jsonc` points at `./dist`
 and that is the whole deployment surface.
+
+**The deploy runs from the repository, on every push, through Cloudflare
+Workers Builds.** Root directory `web`, build command `npm run build`, deploy
+command `npx wrangler deploy`; the Worker is `wordscript-homepage`. That model
+is why all three typefaces are committed: the build starts from a clone, so
+anything the page needs and the repository does not carry is a 404 that no
+build step reports (ADR 0259). `npm run deploy` still exists and still runs
+`scripts/launch-check.mjs` between the build and wrangler; it is the local
+path, and the gate it runs is the one a push does not.
 
 **Two things the port settled, both recorded in ADR 0251:**
 
@@ -327,7 +338,7 @@ one piece of work, not two.
 |---|---|---|
 | Archivo | SIL OFL 1.1 | text shipped |
 | IBM Plex Mono | SIL OFL 1.1 | text shipped |
-| Zodiak italic | Indian Type Foundry, through Fontshare, ITF Free Font License 2.0 | served, never committed - the licence permits self-hosting and forbids redistribution, so the file is gitignored and the gate checks both halves |
+| Fraunces italic 400, variable optical size | SIL OFL 1.1 | text shipped. Replaced Zodiak, which the ITF Free Font License allowed us to serve and not to commit, once the deploy moved onto a machine that has only the repository (ADR 0259) |
 | The fifteen focus-band marks | Simple Icons, CC0-1.0 | read from the npm package at build time |
 
 ## Open facts
@@ -344,13 +355,14 @@ Marked open rather than guessed.
   `src/lib/legal.ts` is `null`, the imprint renders without the row, and
   `npm run deploy` refuses while it stays null. **This is now the blocker on
   publishing**, in place of the pages themselves. ADR 0258.
-- **Whether the Zodiak file is the untouched Fontshare webfont.** Section 02
-  of the ITF Free Font License forbids subsetting and format conversion without
-  written consent. Answering it means reading the font's name and glyph tables,
-  which needs a Brotli decoder that is not installed here and that `pip`
-  refuses to add under PEP 668. Recorded as unverified rather than assumed
-  either way. Not a deploy blocker: nothing suggests the file was altered, and
-  the check that would settle it is a tooling gap rather than a finding.
+- ~~**Whether the Zodiak file is the untouched Fontshare webfont.**~~ Closed
+  by removal on 2026-08-27, not by an answer. The question only mattered
+  because the ITF Free Font License forbids subsetting and format conversion,
+  and Zodiak is no longer served (ADR 0259). The three faces that replaced the
+  set are OFL 1.1, whose condition 3 permits modification outright, so the
+  question does not arise for any of them. The tooling gap that blocked it is
+  unchanged: reading a woff2's name and glyph tables needs a Brotli decoder
+  that is not installed here and that `pip` refuses to add under PEP 668.
 - **Confirmation that the analytics beacon actually arrives.** The dashboard
   switch is set. It cannot do anything yet: automatic injection happens at the
   edge for a hostname proxied through Cloudflare, `wordscript.dev` has no A or
@@ -439,6 +451,25 @@ Marked open rather than guessed.
   index carry distinct JSON-LD page nodes, verified by parsing both.
   **Not verified here:** no legal review has taken place, and the manual
   accessibility pass has not been walked.
+- **Sixth pass, 2026-08-27, the accent face and the build machine** (ADR 0259).
+  The deploy moved onto Cloudflare Workers Builds, which starts from a clone,
+  and the one face that could not be committed became a face the build cannot
+  have. Zodiak out, Fraunces italic 400 in, chosen by the owner from five OFL
+  candidates rendered into the real hero line. Measured after it: the emphasis
+  ratio re-derived with the same canvas instrument that reproduced the old
+  1.04 for Zodiak (Archivo 0.5275, Zodiak 0.5075, ratio 1.0394) and returns
+  1.1921 for Fraunces, so the rule is `1.19em`; the x height flat at 0.4694 to
+  0.4700 across 19, 23, 48 and 200 px, so one ratio serves all three call
+  sites; the optical-size axis live and worth its bytes, `once` at 48 px
+  measuring 94.73 px at opsz 48 against 80.75 px at opsz 144. All three call
+  sites resolve to Fraunces in the built page, the hero `once` computes to
+  57.12 px against a 48 px host, and the string `zodiak` appears nowhere in the
+  emitted document. `launch-check.mjs` rewritten to ask what a clone asks --
+  every declared face in the tree and in the index, one licence text per
+  family -- and its first version failed a correct tree by counting files
+  rather than families.
+  **Not verified here:** nothing has been rendered by a browser other than this
+  one, so the fallback stack behind Fraunces is untested.
 - `wordscript.dev` is registered and on Cloudflare nameservers
   (`ariella.ns.cloudflare.com`, `leland.ns.cloudflare.com`) with **no A or AAAA
   record**. The zone is empty and the hostname does not resolve.
