@@ -1,0 +1,46 @@
+# DELIVERY HEADERS. Cloudflare Workers static assets parses this file out of
+# the assets directory rather than serving it, the same way Pages does.
+#
+# ONE THING IS DELIBERATELY ABSENT: there is no `Cache-Control` on the HTML,
+# and in particular no `no-transform`. That header is what stops Cloudflare
+# injecting the Web Analytics beacon, and the injection is how analytics is
+# wired here -- no snippet in the repository, one switch in the dashboard. A
+# cache directive typed onto `/*` for tidiness would turn analytics off
+# silently, with no error anywhere to find it by.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  # Nothing here is meant to be framed, and a marketing page inside somebody
+  # else's frame is a clickjacking surface for no gain.
+  X-Frame-Options: DENY
+  # The site asks for none of these. It is a dictation product's page, not the
+  # product: no `getUserMedia` anywhere in `src/`, checked rather than assumed.
+  Permissions-Policy: microphone=(), camera=(), geolocation=()
+
+# Content-addressed by the build. A year is the point of the hash.
+/_astro/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Self-hosted faces, four of them, and they do not change without a new file
+# name being chosen for them.
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Not content-addressed: `sync-assets.mjs` copies these under stable names, so
+# a refreshed logo has to be able to land. A week, not a year.
+/assets/*
+  Cache-Control: public, max-age=604800
+
+# THE PREVIEW HOST IS NOT HANDLED HERE, AND THAT IS THE POINT.
+#
+# `<name>.<subdomain>.workers.dev` is a second public, indexable copy of this
+# site. The obvious answer is an `X-Robots-Tag: noindex` on that host, and it is
+# the wrong one twice: the syntax allows exactly one `*` per rule, so
+# `https://*.workers.dev/*` cannot be written, and a header only asks a crawler
+# not to list a page that is still being served to anyone who has the URL.
+#
+# It is closed in `wrangler.jsonc` instead, with `workers_dev: false` and
+# `preview_urls: false`. The host does not exist. If either is ever turned back
+# on, this file is where the noindex belongs, and the account's own subdomain
+# has to be spelled out in it.

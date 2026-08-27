@@ -1,0 +1,123 @@
+---
+/* THE TERMS, AND WHY THEY ARE NOT A SET OF GENERAL TERMS AND CONDITIONS.
+
+   The footer named this route Terms, and the obvious thing to put behind it
+   was the AGB skeleton the launch gate ships. It does not fit, for a reason
+   that is worth writing down rather than rediscovering.
+
+   AGB govern a contract. Nothing on this site concludes one: there is no
+   purchase, no account, no sign-up, no download and, today, no release. Terms
+   drafted for a contract that does not exist would have to invent an ordering
+   process, a payment term and a termination notice for a page whose only two
+   actions are joining a chat room and reading source. They would also come
+   with a real cost: general terms are subject to content review under sections
+   305 to 310 BGB, and a clause that fails does not soften, it disappears and
+   the statute takes its place. Terms nobody needed can leave the writer worse
+   off than none at all.
+
+   What this route is instead: the conditions under which this site is offered,
+   plus the pointer to the licence that actually governs the software. Both are
+   true today and neither pretends to a relationship the reader is not in.
+
+   THE MOMENT THIS PAGE BECOMES INSUFFICIENT is the moment something here is
+   sold, subscribed to, or accounts for. On that day this is replaced by real
+   terms with legal review behind them, and not extended clause by clause.
+   ADR 0258 carries the derivation.
+
+   NO LINK DISCLAIMER AND NO LIABILITY BOILERPLATE, for the reason the imprint
+   gives: those blocks change nothing and read as copied.
+
+   THE FONT LICENCES ARE NAMED ONE BY ONE AND NOT COLLAPSED INTO A FAMILY. An
+   earlier draft of this page said the typefaces here are licensed under the SIL
+   Open Font License 1.1, which is true of Archivo and IBM Plex Mono and false
+   of Zodiak: that one comes from the Indian Type Foundry through Fontshare,
+   under the foundry's own licence. Two of three sharing a licence is how the
+   collapse happened, and a licence statement that is wrong is worse than no
+   statement at all, because it is the sentence somebody relies on. The notice
+   served beside the font files is the list, and this page points at it rather
+   than restating it. */
+import Legal from '../layouts/Legal.astro';
+import { ENTITY } from '../lib/legal';
+import { LICENCE_ID, LICENCE_URL, ORG, REPO, SITE } from '../lib/site';
+---
+<Legal
+  title="Terms"
+  lede="The conditions this site is offered under, and the licence that governs the software it describes."
+>
+  <h2>What these terms cover</h2>
+  <p>
+    They cover this website. They are not a contract: nothing here is sold,
+    nothing is subscribed to, and there is no account to open. The software
+    itself is governed by its licence rather than by this page, and the two are
+    kept apart on purpose.
+  </p>
+
+  <h2>The software</h2>
+  <p>
+    {SITE.name} is free software licensed under{' '}
+    <a href={LICENCE_URL}>{LICENCE_ID}</a>. That licence, and not this page,
+    states what you may do with the program: use it, study it, change it and
+    pass it on, under the conditions it sets out. Its own sections 15 and 16
+    disclaim warranty and limit liability, and they apply as written to the
+    extent the law allows.
+  </p>
+  <p>
+    The source is at <a href={REPO}>{REPO.replace('https://', '')}</a>. If the
+    licence and anything on this site disagree, the licence is what governs.
+  </p>
+
+  <h2>This site</h2>
+  <p>
+    The site's own source is part of the same repository and carries the same
+    licence. Its text describes software under development. There is no release
+    yet, no date for one, and nothing on this site is an offer, a promise of a
+    feature, or a commitment to a schedule.
+  </p>
+  <p>
+    We do not promise that the site is reachable or complete at any given
+    moment, and we may change or remove any part of it.
+  </p>
+
+  <h2>Names and logos</h2>
+  <p>
+    The licence covers the software, not the naming. {SITE.name},{' '}
+    {ORG.name} and {ORG.parent.name}, together with their logos and wordmarks,
+    are not licensed by it. You may of course name the project, refer to it and
+    link to it; what needs our agreement is using the marks in a way that
+    suggests a fork, a rebuild or a separate product is ours.
+  </p>
+  <p>
+    Third-party marks shown on this site belong to their respective owners and
+    are used to identify the platforms and systems they stand for.
+  </p>
+
+  <h2>Third-party material</h2>
+  <p>
+    The typefaces served here are not all under the same licence. Archivo and
+    IBM Plex Mono are licensed under the SIL Open Font License 1.1; Zodiak comes
+    from the Indian Type Foundry through Fontshare and is licensed under that
+    foundry's own terms. The{' '}
+    <a href="/fonts/NOTICE.txt">notice served with the font files</a> names each
+    face and the licence it is under. The icon sets the site draws from are
+    credited with their licences in the source, at the module that reads each
+    one.
+  </p>
+
+  <h2>Changes</h2>
+  <p>
+    We may change this page when what it describes changes. The date at the
+    foot of it says when the whole of it was last checked.
+  </p>
+
+  <h2>Applicable law</h2>
+  <p>
+    German law applies. Where you are a consumer resident in another country,
+    the mandatory protections of that country's law remain unaffected.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    {ENTITY.name}, {ENTITY.holder}. The full details are in the{' '}
+    <a href="/imprint/">imprint</a>.
+  </p>
+</Legal>

@@ -1,0 +1,69 @@
+---
+/* THE CLOSE, WHICH IS NOW A PERSON RATHER THAN A PARAGRAPH.
+
+   It carried three sentences saying there is no installer, no date, an open
+   repository, a room and an address. Every one of those is on the page as an
+   object: the heading says there is no release, the two buttons ARE the
+   repository and the room, and the address is the line under them. The
+   paragraph was the page reading its own closing section aloud.
+
+   What is not anywhere else is who is behind it, and on a project with no
+   release that is the more useful fact. So the paragraph is a quotation and a
+   name.
+
+   This does not break the repository's rule against quoting the owner. That
+   rule governs the documentation set, where a quotation reads as the authority
+   a record rests on, and it exists because a dictated brief is one instance
+   stated under load. A signed line on a product site is the opposite artifact:
+   it is written to be published, it is the owner's to approve, and it is
+   attributed on purpose. */
+import Acts from './Acts.astro';
+---
+{/* IT IS A DARK PLANE, LIKE THE TURN AND THE NUMBERS. The page steps down to
+    `--bg-sidebar` where it wants the reader to stop moving, and this is the
+    last of those places -- the section that says there is nothing to install
+    and then asks for the one thing there is to do. It was the only one of the
+    three drawn on the ordinary ground, which read as the page trailing off
+    rather than closing. `.plane` also brings the ruled sheet up through it,
+    so the ground the page opened on is the ground it ends on. */}
+<section class="close plane">
+  <div class="wrap close__in">
+    <h2 class="rise">Nothing is released yet.<br />That is <em>the point</em>.</h2>
+
+    <figure class="quote rise" data-d="1">
+      <blockquote>
+        <p>I never wanted a better ear. They all have an ear. What I kept missing is what
+          happens after it: my words stay mine, in folders I own, and exactly one agent gets
+          to touch them. It should be the best dictation app on the desk too. Give me a year.</p>
+      </blockquote>
+      {/* THE SIGNATURE IS THE NAME, AND THE NAME IS NOT THE ADDRESS. A line
+          reading "Felix, who maintains this" set at eleven pixels is a
+          footnote nobody finds, and it spends the reader's attention on the
+          sentence rather than on the person. This is how a letter closes
+          instead: the role in small type, the name signed under it, in the
+          italic the page already loads.
+
+          NO DOT IN THE SIGNATURE. What is drawn is `felixontv`, which is the
+          name; what it points at is the domain. Signing a page with a URL is
+          not signing it, and the dot is the one character that makes a reader
+          parse the word as an address instead of as a person. The href is
+          unchanged, so the link still goes where a reader would expect the
+          name to take them.
+
+          One line in the source per element, because Astro trims the
+          indentation of the next one. */}
+      <figcaption class="sig">
+        <span class="sig__k mono">maintained by</span>
+        <a class="sig__n" href="https://felixon.tv" rel="me">felixontv</a>
+      </figcaption>
+    </figure>
+
+    <Acts delay="2" />
+    {/* A BUTTON, BECAUSE PRESSING IT DOES NOT NAVIGATE. It hands over the
+        address rather than opening a client the reader may not have bound to
+        the scheme; `src/lib/copy.ts` carries the derivation. */}
+    <p class="close__mail rise" data-d="2">
+      Or write to <button type="button" class="close__addr mono" data-copy="forge@sw-labs.de">forge@sw-labs.de</button>
+    </p>
+  </div>
+</section>

@@ -1,0 +1,76 @@
+---
+import Base from '../layouts/Base.astro';
+import Hero from '../components/Hero.astro';
+import Focus from '../components/Focus.astro';
+import Demo from '../islands/Demo.tsx';
+import Turn from '../components/Turn.astro';
+import Numbers from '../components/Numbers.astro';
+import Engines from '../components/Engines.astro';
+import What from '../components/What.astro';
+import Faq from '../components/Faq.astro';
+import Close from '../components/Close.astro';
+---
+{/* No title and no description here. They are the site's, not this route's:
+    ../lib/site owns them because the head, the JSON-LD graph and /llms.txt all
+    state them, and a fourth copy typed into the one page that exists is the
+    copy that drifts. A second route overrides them; this one is the site. */}
+<Base>
+  {/* TWO PLANES, AND THE SECOND ONE COVERS THE FIRST.
+
+      The page opens on one claim and then argues it, and until now the two
+      shared a scroll: the hero was 434px tall, so at 1440x900 the heading, the
+      capsule, the focus band and the next section's heading were all on screen
+      at once. Everything was visible and nothing was first. The opening claim
+      had no moment of its own and the argument had no beginning.
+
+      So the opening is a plane the page is pinned to, and the argument is a
+      plane that slides up over it. The reader scrolls the cover into place
+      rather than scrolling the hero away, which is a different gesture and
+      makes a different promise: the hero is not gone, it is underneath.
+
+      IT IS `position: sticky` AND NOTHING ELSE. No ScrollTrigger, no
+      transform, no listener. The seam is a sticky element and an opaque one
+      after it in normal flow, which means it works before any script arrives,
+      it works with script disabled, and it works when the reader has asked for
+      reduced motion -- because it is not motion. Nothing animates; one box
+      stops moving while the box after it keeps going.
+
+      It composes with the rest of the page for the reason `lib/smooth.ts`
+      already documents: Lenis animates the real scroll offset, so the reveal
+      observer, the header's is-stuck toggle and the anchor jumps are all
+      unaware of this. Verified against the built page before it was written:
+      a sticky probe in `main` holds at top 0 through a 1500px scroll, so
+      `body { overflow-x: hidden }` -- which the ASCII band needs -- does not
+      cost sticky here.
+
+      WHAT IS ON WHICH PLANE IS NOT A LAYOUT DETAIL. The hero and the focus
+      band are one claim: it lands in the window you already had open, and here
+      are the windows. Splitting them would put the evidence on the cover and
+      the claim underneath it. The argument starts where the page starts asking
+      questions, which is "Where your words go." */}
+  <div class="pin">
+    <Hero />
+    <Focus />
+  </div>
+
+  <div class="over">
+    <section class="sec" id="how">
+      <div class="wrap">
+        <div class="sec__head rise">
+          <h2>Where your words go.</h2>
+          <p>Putting text at the cursor is the easy third. Everyone can do it, and soon
+            everyone will do it for free.</p>
+        </div>
+
+        <Demo client:visible />
+      </div>
+    </section>
+
+    <Turn />
+    <Numbers />
+    <What />
+    <Engines />
+    <Faq />
+    <Close />
+  </div>
+</Base>

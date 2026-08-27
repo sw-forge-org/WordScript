@@ -1,0 +1,98 @@
+---
+/* THE IMPRINT. Section 5 DDG, and the parts of it that apply to this site.
+
+   THE HEADING NAMES THE DDG AND NOT THE TMG. The Telemediengesetz ceased to
+   apply on 2024-05-14 and the Digitale-Dienste-Gesetz took its place. A page
+   headed "in accordance with section 5 TMG" cites a statute that no longer
+   exists, which is the single most common defect on a German site and one that
+   has been warned over. Naming the section is optional -- what is prescribed
+   is the information, not the citation -- but where it is named it has to be
+   the live one.
+
+   IT IS IN ENGLISH ONLY, AND THAT FOLLOWS FROM WHO READS IT. Section 5 DDG
+   requires the details to be easily recognisable, directly accessible and
+   permanently available. Article 12 (1) GDPR requires the information it
+   governs to be concise, transparent, intelligible and in clear, plain
+   language. Both standards are addressed at the audience the service is aimed
+   at, and neither prescribes a language; there is no supreme-court decision
+   that supplies one either.
+
+   This site is English throughout, its readers are international and
+   English-speaking, and there is no sales relationship to the German market
+   behind it. English is therefore the language in which its readers can
+   actually understand these pages, which is what both provisions ask for.
+
+   German law applies regardless: section 3 DDG puts a German provider under
+   German law wherever the reader sits. That is a different question from the
+   language the page is set in, and the two are easy to run together.
+
+   The language question is not conclusively settled, and ADR 0258 carries it
+   as a deliberately borne interpretation risk together with the conditions
+   that reopen it.
+
+   THE BLOCKS THAT ARE NOT HERE ARE NOT MISSING. Register court, register
+   number, VAT identification number, supervisory authority for a licensed
+   trade, and the MStV responsible party each apply to a case this provider is
+   not in, and the template rule is that a block which does not apply is
+   deleted rather than filled with a dash: an imprint with empty rubrics draws
+   the eye to exactly the thing it does not have. ../lib/legal carries which
+   and why, including the one most likely to change.
+
+   THE LEGAL FORM IS NOT STATED, and it was for one afternoon. It was struck
+   without replacement on the owner's instruction: what section 5 (1) no. 1 DDG
+   asks for beside the name is the legal form of a legal person, and the two
+   lines above already identify a natural person trading under a business name.
+   Nothing was substituted for it, and nothing else in the address block moved
+   with it.
+
+   THE DATA PROTECTION AUTHORITY IS NOT HERE EITHER, and it is not an omission.
+   It belongs to the right to complain under Article 77 GDPR, which is a
+   privacy notice's subject; naming it here as well would be a second copy of a
+   fact that has an owner one page over.
+
+   WHAT IS DELIBERATELY NOT HERE AT ALL: the liability and link disclaimers
+   that circulate in every German boilerplate imprint. They rest on a judgment
+   that never said what they claim it said, they change nothing about liability
+   under sections 7 to 10 DDG, and their only reliable effect is to make an
+   imprint read as copied. */
+import Legal from '../layouts/Legal.astro';
+import { ENTITY } from '../lib/legal';
+import { ORG, SITE } from '../lib/site';
+---
+<Legal
+  title="Imprint"
+  lede="Who publishes wordscript.dev, and how to reach them."
+>
+  <h2>Information required under section 5 DDG</h2>
+  <address>
+    {ENTITY.name}<br />
+    {ENTITY.holder}<br />
+    {ENTITY.street}<br />
+    {ENTITY.postcode} {ENTITY.city}<br />
+    {ENTITY.country}
+  </address>
+
+  <h2>Contact</h2>
+  <p>
+    Email: <a href={`mailto:${SITE.email}`}>{SITE.email}</a>
+  </p>
+  {/* Rendered only when there is a number. ../lib/legal says why it is a null
+      and not a placeholder, and why the deploy script refuses while it is. */}
+  {ENTITY.phone && (
+    <p>Telephone: <a href={`tel:${ENTITY.phone.replace(/\s/g, '')}`}>{ENTITY.phone}</a></p>
+  )}
+
+  <h2>The brand this site publishes under</h2>
+  <p>
+    {SITE.name} is built and published under {ORG.name}, the open source brand
+    of {ORG.parent.name}. {ORG.name} is a brand rather than a separate legal
+    entity: the provider named above is responsible for this site and for the
+    software it describes.
+  </p>
+
+  <h2>Consumer dispute resolution</h2>
+  <p>
+    We are neither willing nor obliged to take part in dispute resolution
+    proceedings before a consumer arbitration board.
+  </p>
+</Legal>

@@ -1,0 +1,347 @@
+---
+import '../styles/globals.css';
+import Top from '../components/Top.astro';
+import Band from '../islands/Band.tsx';
+import Foot from '../components/Foot.astro';
+import { MARK_SPRITE } from '../lib/marks';
+import { graphJson } from '../lib/schema';
+import { SITE } from '../lib/site';
+
+interface Props {
+  title?: string;
+  description?: string;
+  ogDescription?: string;
+  /** Off the index, and off nothing else. The 404 is the only route that is
+   *  reachable, renders, and must never be a search result. */
+  noindex?: boolean;
+}
+
+const {
+  title = SITE.title,
+  description = SITE.description,
+  ogDescription = SITE.ogDescription,
+  noindex = false,
+} = Astro.props;
+
+/* `Astro.site` is the deployed origin and `Astro.url` is this route. Both are
+   needed: the canonical is this page's absolute URL, and every `@id` in the
+   graph and every absolute asset URL hang off the origin. Building the
+   canonical from `pathname` rather than from `Astro.url` itself drops any
+   query string a share button appended, which is the whole job of a canonical
+   on a one-page site. */
+const origin = new URL(Astro.site!);
+const canonical = new URL(Astro.url.pathname, origin);
+const og = new URL(SITE.og.path, origin);
+---
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+{/* THE ONE THING `svh` CANNOT SEE.
+
+    `svh` sizes against the small viewport, which is the browser's own chrome
+    retracted or not -- that covers Safari's bottom bar and Chrome's address
+    bar, and it is what the pinned plane in site.css is written against.
+
+    An in-app browser is a different problem with the same symptom. Instagram,
+    Facebook and the rest draw their bar from the NATIVE APP, over the WebView
+    and outside the document: no `resize` fires when it appears, no
+    `env(safe-area-inset-*)` reports it -- that pair is the notch and the home
+    indicator -- and `z-index` cannot reach it, because it is not in this
+    page's stacking context at all. It is a spacing problem, not a stacking
+    one, and the only signal available is the user agent string.
+
+    So this runs before the first paint and sets one class; the rules that
+    answer it are `html.iab` in site.css. It is deliberately a floor and not a
+    measurement -- there is no API that reports the bar's height -- and the
+    string list is maintenance, not a fixture: Meta changes these. Check it
+    when the site is next audited. */}
+<script is:inline>
+  (function () {
+    var ua = navigator.userAgent || '';
+    if (/Instagram|FBAN|FBAV|FB_IAB|FBIOS|Line\/|MicroMessenger|TikTok|BytedanceWebview|Snapchat|Pinterest|LinkedInApp/i.test(ua)) {
+      document.documentElement.classList.add('iab');
+    }
+  })();
+</script>
+<link rel="icon" href="/assets/logos/wordscript-icon-128.png" />
+<link rel="icon" href="/assets/icons/icon-32.png" sizes="32x32" type="image/png" />
+<link rel="apple-touch-icon" href="/assets/icons/icon-512.png" />
+<title>{title}</title>
+<meta name="description" content={description} />
+<link rel="canonical" href={canonical} />
+<link rel="sitemap" type="application/xml" href="/sitemap-index.xml" />
+{noindex && <meta name="robots" content="noindex, follow" />}
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content={SITE.name} />
+<meta property="og:locale" content="en" />
+<meta property="og:url" content={canonical} />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={ogDescription} />
+<meta property="og:image" content={og} />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content={String(SITE.og.width)} />
+<meta property="og:image:height" content={String(SITE.og.height)} />
+<meta property="og:image:alt" content={SITE.og.alt} />
+{/* THE CARD TAGS ARE NOT REDUNDANT WITH THE OG BLOCK. X reads `og:*` as a
+    fallback but picks its layout off `twitter:card` alone, and without it a
+    1200x630 image is served into a small square crop. Slack, Discord and
+    LinkedIn all read the OG block, which is why the rest is not repeated. */}
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image:alt" content={SITE.og.alt} />
+<meta name="theme-color" content={SITE.themeColor} />
+{/* The page restated for a machine. ../lib/schema carries what is in the
+    graph, and more to the point what is deliberately not. */}
+<script type="application/ld+json" is:inline set:html={graphJson(canonical, origin, { name: title, description })} />
+{/* Two faces at most, in this order. The mono cuts are fetched when the
+    cascade first asks for them; preloading four would be four blocking
+    requests for two faces that are not in the first paint.
+
+    THE DISPLAY ITALIC IS PRELOADED ON THE INDEX AND NOWHERE ELSE. It is
+    reached by `em`, `.close .quote p` and `.sig__n`, and counted on the built
+    output those appear four times, once and once respectively -- all of them
+    on the index. The three legal pages and the 404 contain none, so the other
+    four routes were each fetching 23 kB they never drew, which the browser
+    reports as an unused-preload warning of its own accord. */}
+<link rel="preload" href="/fonts/archivo-latin-variable.woff2" as="font" type="font/woff2" crossorigin />
+{canonical.pathname === '/' && (
+  <link rel="preload" href="/fonts/zodiak-400-italic.woff2" as="font" type="font/woff2" crossorigin />
+)}
+</head>
+<body>
+
+{/* THE VENDOR MARKS, DEFINED ONCE.
+
+    Every mark the page draws lives here as a `<symbol>` and every use site is
+    a `<use href="#m-...">`. It is first in the body so that no `<use>` can
+    render before its definition exists, and it is `aria-hidden` with no size
+    because it is a definition rather than a picture: `display:none` would take
+    the symbols out of rendering in some engines and the marks with them, which
+    is why the hiding is done with the two attributes below instead.
+
+    ../lib/marks carries why the marks are in colour, why four of them are not,
+    and why a sprite rather than inlining. */}
+<svg class="sprite" aria-hidden="true" focusable="false" set:html={MARK_SPRITE} />
+
+<Top />
+
+<main>
+  <slot />
+</main>
+
+{/* THE CLOSING STRIP. The mark stands ON the signal rather than under it: the
+    band is the page's last moving thing and the anvil is what it is being made
+    on, so the two are one object and not two stacked rows. It is placed here
+    rather than inside the island because the island hydrates on visibility and
+    a mark that arrives late is a mark that arrives after the reader has read
+    the footer. */}
+<div class="closing">
+  <Band client:visible />
+  <div class="wrap closing__over">
+    <a class="closing__mark" href="https://github.com/sw-forge-org" aria-label="SW forge">
+      <img src="/assets/logos/sw-forge-logo-transparent.png" width="1700" height="878" alt="" />
+    </a>
+  </div>
+</div>
+
+<Foot />
+
+{/* THE ONE FLOATING SURFACE ON THE PAGE, and it is empty until something is
+    copied. It is rendered here rather than beside the button because a copy
+    can be started from more than one place and the report is the same report;
+    `aria-live` is on the host, so it has to be in the document before the text
+    arrives or the announcement is missed. */}
+<div class="toast" data-toast role="status" aria-live="polite">
+  <span class="toast__tile" aria-hidden="true">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"
+         stroke-linecap="round" stroke-linejoin="round">
+      <path d="M6 2.6h4M5.4 3.4H4.2a1 1 0 0 0-1 1v8.4a1 1 0 0 0 1 1h7.6a1 1 0 0 0 1-1V4.4a1 1 0 0 0-1-1h-1.2" />
+      <path d="M5.6 1.8h4.8v2.2H5.6z" />
+      <path d="m5.9 8.6 1.6 1.6 3-3.4" />
+    </svg>
+  </span>
+  <span class="toast__text" data-toast-text></span>
+</div>
+
+<script>
+  import { armCounters } from '../lib/counters';
+  import { armCopy } from '../lib/copy';
+  import { armSmoothScroll } from '../lib/smooth';
+
+  armCopy();
+  armSmoothScroll();
+
+  /* Page chrome, and the one script that is not an island: it owns no surface
+     of its own, it only tells the surfaces when they have been reached.
+
+     The reveal adds .is-in and then fires ws:rise on the element. An island
+     that has to act on its own reveal listens for that rather than observing
+     the same element a second time, because two observers on one element run
+     in registration order and the counters read a transition-delay that only
+     exists once .is-in is on. One mechanism, one order. */
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  /* THE BACK LINK ON A SUBPAGE RETURNS TO THE POSITION, NOT ONLY TO THE PAGE.
+     The href is `/` and stays `/` for a middle click, a bookmark, a crawler
+     and a reader without JavaScript. Where the index is genuinely the entry
+     behind this one, a plain navigation would drop the reader at the top of a
+     page they were halfway down, so the press becomes `history.back()` and the
+     browser restores the offset it already recorded.
+
+     The referrer check is what keeps the two honest. Arriving from another
+     legal page, a search result or a link in a chat, there is no index entry
+     behind this one and going back would land somewhere the label did not
+     promise, so the href stands. Modified clicks are left alone entirely:
+     Ctrl, Cmd, Shift and the middle button all mean open it, not follow it. */
+  const back = document.querySelector<HTMLAnchorElement>('a[data-back]');
+  if (back) {
+    back.addEventListener('click', (e) => {
+      if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      let from: URL | null = null;
+      try { from = document.referrer ? new URL(document.referrer) : null; } catch { from = null; }
+      if (from && from.origin === location.origin && from.pathname === '/' && history.length > 1) {
+        e.preventDefault();
+        history.back();
+      }
+    });
+  }
+
+  const top = document.querySelector('.top');
+  if (top) {
+    const onScroll = () => top.classList.toggle('is-stuck', window.scrollY > 8);
+    onScroll();
+    addEventListener('scroll', onScroll, { passive: true });
+  }
+
+  /* THE MENU. Three things a checkbox cannot do, which is why this is here:
+     it closes when a link inside it is followed (otherwise the reader lands on
+     the section with the panel still over it), it locks the page behind it,
+     and it answers Escape. Focus moves into the panel on open and back to the
+     button on close, so a keyboard does not end up somewhere behind a surface
+     it cannot see. */
+  const menu = document.querySelector<HTMLElement>('[data-menu]');
+  const menuOpen = document.querySelector<HTMLButtonElement>('[data-menu-open]');
+  if (menu && menuOpen) {
+    const setMenu = (on: boolean) => {
+      menu.hidden = !on;
+      menuOpen.setAttribute('aria-expanded', String(on));
+      document.body.classList.toggle('is-locked', on);
+      /* Focus the panel itself, not its first control. Moving focus onto a
+         button programmatically paints a focus ring on it, so the reader who
+         opened the menu with a thumb sees a ring around the close button --
+         the one thing they did not ask for. `tabindex="-1"` on the container
+         takes focus without being a tab stop, and the next Tab goes to the
+         first link, which is the order a keyboard wants anyway. */
+      if (on) menu.focus();
+      else menuOpen.focus();
+    };
+    menuOpen.addEventListener('click', () => setMenu(true));
+    menu.querySelector('[data-menu-close]')?.addEventListener('click', () => setMenu(false));
+    /* Delegated, so the action and the address close it too -- an outbound
+       link leaving a locked body behind is a page the reader comes back to
+       and cannot scroll. */
+    menu.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('a')) setMenu(false);
+    });
+    addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && !menu.hidden) setMenu(false);
+    });
+    /* A phone rotated into landscape crosses the breakpoint that hides the
+       button; the panel it opened would stay over a page whose bar is back. */
+    matchMedia('(min-width:681px)').addEventListener('change', (e) => {
+      if (e.matches && !menu.hidden) setMenu(false);
+    });
+  }
+
+  const rises = [...document.querySelectorAll<HTMLElement>('.rise')];
+  /* `instant` is the restored-history path below: the block is marked revealed
+     rather than played, and its counters take their printed value instead of
+     running up to it. */
+  const reveal = (el: HTMLElement, instant = false) => {
+    el.classList.add('is-in');
+    armCounters(el, reduced || instant);
+    el.dispatchEvent(new CustomEvent('ws:rise', { bubbles: false }));
+  };
+
+  /* THE ACTIVITY FIELD'S READING (ADR 0189's shape, minus the day names).
+     Delegated on the field, so one listener serves 364 cells; the panel is
+     positioned per hover and clamped to the viewport, because a cell in the
+     first column would otherwise hang its panel off the left edge, where it is
+     unreadable rather than merely misplaced. */
+  const tip = document.querySelector<HTMLElement>('[data-own-tip]');
+  const grid = document.querySelector<HTMLElement>('.own__grid');
+  if (tip && grid) {
+    const HALF = 150;
+    const show = (cell: HTMLElement) => {
+      const parts = (cell.dataset.tip || '').split('|');
+      if (!parts[0]) return;
+      tip.innerHTML = `<b></b>${parts.slice(1).map(() => '<span></span>').join('')}`;
+      const b = tip.querySelector('b')!;
+      b.textContent = parts[0];
+      tip.querySelectorAll('span').forEach((el, i) => { el.textContent = parts[i + 1]; });
+      const r = cell.getBoundingClientRect();
+      tip.style.left = `${Math.min(Math.max(r.left + r.width / 2, HALF + 8), innerWidth - HALF - 8)}px`;
+      tip.style.top = `${r.top - 8}px`;
+      tip.setAttribute('data-on', '');
+    };
+    const hide = () => tip.removeAttribute('data-on');
+    grid.addEventListener('pointerover', (e) => {
+      const cell = (e.target as HTMLElement).closest<HTMLElement>('[data-tip]');
+      if (cell) show(cell); else hide();
+    });
+    grid.addEventListener('pointerleave', hide);
+    addEventListener('scroll', hide, { passive: true });
+  }
+
+  if (reduced) {
+    /* Not `forEach(reveal)`: forEach hands the index in as the second
+       argument, which is this function's `instant` flag, so every block but
+       the first would take a path meant for a different case. */
+    rises.forEach(el => reveal(el));
+  } else {
+    const io = new IntersectionObserver((es) => es.forEach(e => {
+      if (e.isIntersecting) {
+        reveal(e.target as HTMLElement);
+        io.unobserve(e.target);
+      }
+    }), { rootMargin: '0px 0px -12% 0px', threshold: 0.1 });
+    rises.forEach(el => io.observe(el));
+
+    /* A RESTORED HISTORY ENTRY LANDS MID-PAGE, AND EVERYTHING ABOVE IT HAS
+       ALREADY BEEN READ.
+
+       The offset itself comes back on its own -- `history.scrollRestoration`
+       is `auto` and nothing here changes it -- but the observer only ever
+       fires for what intersects, and what sits above the viewport on arrival
+       never does. Measured on the built page: leaving the index at 3000px for
+       /privacy/ and pressing back returned to 3000px with five of
+       twenty-eight blocks still at opacity 0, so scrolling up replayed the
+       entrance animation over text the reader had already passed.
+
+       So everything above the fold line is marked revealed on arrival, with
+       the transition suppressed for the frame that takes. `pageshow` rather
+       than `load`, because that is the event a bfcache restore fires, and a
+       bfcache restore re-runs no script at all. Called once directly as well,
+       for the ordinary load where `scrollY` is 0 and this returns at the first
+       line. */
+    const settle = () => {
+      if (!scrollY) return;
+      const passed = rises.filter(
+        (el) => !el.classList.contains('is-in') && el.getBoundingClientRect().top < innerHeight,
+      );
+      if (!passed.length) return;
+      const root = document.documentElement;
+      root.classList.add('is-settling');
+      passed.forEach((el) => { reveal(el, true); io.unobserve(el); });
+      void root.offsetHeight;
+      requestAnimationFrame(() => root.classList.remove('is-settling'));
+    };
+    settle();
+    addEventListener('pageshow', () => requestAnimationFrame(settle));
+  }
+</script>
+
+</body>
+</html>

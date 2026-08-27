@@ -100,3 +100,24 @@ storybook-static
 
 # Ad-hoc measurement scripts in the repo root; the kept ones live in scripts/
 /_*.mjs
+
+# A font that may not be redistributed. The ITF Free Font License permits
+# self-hosting Zodiak on our own site and forbids passing it on through a
+# repository, so the file is served from web/public/fonts/ and never committed.
+# web/public/fonts/NOTICE.txt carries the clauses; web/scripts/launch-check.mjs
+# fails the deploy if the file is missing locally or ever appears in the index.
+#
+# THE RULE IS THE FONT, NOT THE PATH. It used to name exactly one file, and a
+# second copy of the same face sat one directory up in the sketch's own fonts/
+# folder together with two further weights, none of them covered. That folder is
+# archived now, but the near miss is the reason this is a glob: the licence
+# attaches to the font, so a rule that attaches to a path is one `cp` away from
+# being wrong, and this repository is public.
+zodiak*.woff2
+zodiak*.woff
+zodiak*.ttf
+zodiak*.otf
+
+# Local state of the impeccable design tooling. Per-run caches and exploration
+# renders, none of it a project artefact.
+.impeccable/

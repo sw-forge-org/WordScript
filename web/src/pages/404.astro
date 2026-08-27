@@ -1,0 +1,45 @@
+---
+/* THE ROUTE `wrangler.jsonc` HAS BEEN POINTING AT SINCE IT WAS WRITTEN.
+
+   `assets.not_found_handling` is already set to `404-page`, which serves the
+   nearest `404.html` for anything that does not match a file. There was no
+   `404.html`, so the setting resolved to Cloudflare's bare default and the
+   four legal links in the footer -- all of which 404'd at the time -- landed
+   the reader on an unbranded error with no way back.
+
+   THE LEGAL ROUTES RESOLVE NOW, and one of the four does not exist on purpose:
+   `/dpa` was drawn into the footer and then removed rather than written, so a
+   link to it survives in somebody's notes and lands here. ../lib/legal carries
+   why there is no agreement to put at that address.
+
+   It is `noindex, follow`: reachable, rendered, and never a search result.
+   `follow` rather than `nofollow` because the one link on it is the way home,
+   and a crawler that arrives here through a stale link should take it. */
+import Base from '../layouts/Base.astro';
+import { SITE } from '../lib/site';
+---
+<Base
+  title={`Not found | ${SITE.name}`}
+  description="This page does not exist."
+  noindex
+>
+  <section class="sec">
+    <div class="wrap">
+      {/* An `h1` and not the `h2` every other section head carries: this is
+          the whole page, not a section of one, and a document whose only
+          heading starts at level two is a document a screen reader reports as
+          having no title. */}
+      <div class="sec__head rise">
+        <h1>Nothing at this address.</h1>
+        <p>The page you asked for does not exist. If you were looking for the
+          legal pages, they are in the footer: the imprint, the privacy notice
+          and the terms.</p>
+      </div>
+      {/* Same `data-back` contract as the legal pages: the href is what it
+          is, and the press becomes a `history.back()` only where the index is
+          the entry behind this one. Arriving here from a stale link, it is
+          not, and the href stands. */}
+      <a class="btn btn--primary" href="/" data-back>Back to the start</a>
+    </div>
+  </section>
+</Base>

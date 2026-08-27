@@ -1,0 +1,54 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wordscript-dev",
+  "compatibility_date": "2026-08-26",
+
+  // THE SECOND PUBLIC HOSTNAME, CLOSED AT THE SOURCE.
+  //
+  // A Worker is reachable at `<name>.<subdomain>.workers.dev` unless this is
+  // turned off, and `workers_dev` defaults to true -- checked against the
+  // schema wrangler ships rather than assumed. That host is public and
+  // indexable, so the site would stand in the index twice, the second time
+  // under a URL nobody should ever be sent to.
+  //
+  // It is closed here rather than with an `X-Robots-Tag` in `_headers`,
+  // because a header only asks a crawler not to list a page that is still
+  // being served, and because that rule cannot even be written: `_headers`
+  // allows exactly one `*` per rule, so `https://*.workers.dev/*` is invalid
+  // and the account's own subdomain would have to be spelled in by hand.
+  // Not existing beats not being listed.
+  //
+  // `preview_urls` is the same hazard one version deeper --
+  // `<version>-<name>.<subdomain>.workers.dev`, created by
+  // `wrangler versions upload`. It already defaults to false; it is written
+  // out because a default is a thing that can change, and this one is a
+  // posture rather than a preference.
+  "workers_dev": false,
+  "preview_urls": false,
+
+  // THE CUSTOM DOMAIN IS COMMENTED, AND THAT IS THE LAUNCH GATE, NOT A TODO.
+  //
+  // Uncommenting this and deploying does not configure a route: it creates the
+  // DNS record for `wordscript.dev` and the site is live from that second. So
+  // the route stays off and `wrangler deploy` produces a Worker that is
+  // reachable nowhere, which makes an accidental launch impossible rather than
+  // merely unlikely.
+  //
+  // WHAT IS LEFT BEFORE IT MAY BE UNCOMMENTED changed on 2026-08-27. It used to
+  // be the legal pages themselves; they are written and gate 4 of
+  // `web-launch-gate` has run (ADR 0258). Two of the remaining items are
+  // enforced by `npm run deploy`, which runs `scripts/launch-check.mjs` between
+  // the build and this command: the imprint has no second contact channel yet,
+  // and one typeface licence is still missing from `public/fonts/`. Three more
+  // have no artefact in this repository and are printed by that script rather
+  // than checked -- the Cloudflare Web Analytics switch the privacy notice
+  // already names, a legal review of the three pages, and the manual
+  // accessibility pass. `PRODUCT.md` under Open facts is the list.
+  //
+  // "routes": [{ "pattern": "wordscript.dev", "custom_domain": true }],
+
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "404-page"
+  }
+}

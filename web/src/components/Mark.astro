@@ -1,0 +1,25 @@
+---
+/* ONE VENDOR MARK, POINTED AT THE SPRITE.
+
+   Every mark on this page goes through here, which is what makes the sprite
+   worth having: the path data is defined once in Base.astro and this is a
+   five-attribute reference to it. `data-c` says the symbol carries its own
+   colours, so the stylesheet knows which marks to tint with `currentColor` and
+   which to leave alone.
+
+   A VENDOR THE MARK SET DOES NOT CARRY RIDES AS A DOT. A 14px outlined square
+   in a row of logos reads as a broken image, which is a claim about the vendor
+   rather than about the icon package. A dim dot holds the same column so the
+   labels stay on one baseline and says nothing at all. Dropping the glyph is a
+   rendering decision; dropping the vendor would be a claim about the product. */
+import { markHref } from '../lib/marks';
+import type { Vendor } from '../lib/catalogue';
+
+interface Props { v: Vendor }
+const { v } = Astro.props;
+---
+{v.mark
+  ? <svg class="mk" data-c={v.colour ? '1' : undefined} aria-hidden="true">
+      <use href={markHref(v.mark)} />
+    </svg>
+  : <span class="mk mk--none" aria-hidden="true"></span>}

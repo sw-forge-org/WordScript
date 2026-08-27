@@ -1,0 +1,67 @@
+---
+/* THE SHELL THE THREE LEGAL PAGES SHARE.
+
+   It exists so that the pages themselves are text and nothing else. A legal
+   document that carries its own heading sizes and its own column width is a
+   document whose next edit is a layout decision, and the next edit to one of
+   these is going to be made by somebody checking a section against a statute
+   rather than against a stylesheet.
+
+   IT IS `.sec` AND `h1`, THE SAME PAIR THE 404 USES. These are whole pages
+   rather than sections of one, so the heading starts at level one and the
+   document's own headings run from level two down. The reveal is the page's
+   own `.rise`, so a reader who asked for reduced motion gets these pages
+   rendered rather than faded in, for free.
+
+   THE STAMP IS PART OF THE SHELL AND NOT OF THE PAGE. All three carry the same
+   review date from ../lib/legal, which is the point: three dates that can
+   diverge are three dates that will, and the one that matters is when the set
+   was last checked as a set. */
+import Base from '../layouts/Base.astro';
+import { REVIEWED } from '../lib/legal';
+import { SITE } from '../lib/site';
+
+interface Props {
+  /** The document's own name, which is also the `h1`. The head title takes
+   *  `<name> | WordScript`, the pattern ../lib/site reserves for a second
+   *  route. */
+  title: string;
+  /** One line under the heading saying what the document is for. It is the
+   *  meta description too, because a legal page that describes itself twice in
+   *  two different ways has one description that is wrong. */
+  lede: string;
+}
+
+const { title, lede } = Astro.props;
+---
+<Base title={`${title} | ${SITE.name}`} description={lede} ogDescription={lede}>
+  <section class="sec">
+    <div class="wrap">
+      {/* THE WAY BACK, AND WHY THE MARKUP SAYS `/`. A reader who took a
+          footer link down here was some distance into a page they were
+          reading. The header's wordmark already goes home, but it goes to the
+          top of home, which is not where they were. This href is the honest
+          fallback -- what a middle click, a bookmark and a crawler get -- and
+          the script in ./Base upgrades the press to `history.back()` when the
+          index is genuinely the entry behind this one, so the position comes
+          back with the page. */}
+      <a class="back rise" href="/" data-back>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M9.5 3.5L5 8l4.5 4.5"/></svg>
+        Back to home
+      </a>
+
+      <div class="sec__head rise">
+        <h1>{title}</h1>
+        <p>{lede}</p>
+      </div>
+
+      <div class="legal rise" data-d="1">
+        <slot />
+
+        {/* Inside the prose column rather than under it, because it is the
+            document's own last line and not a footer of the page. */}
+        <p class="legal__stamp mono">Last reviewed {REVIEWED}</p>
+      </div>
+    </div>
+  </section>
+</Base>

@@ -1,0 +1,306 @@
+---
+/* WHAT RUNS EACH JOB
+
+   Three objects: a lane picker, one profile that mixes three lanes, and two
+   cards for the questions the lanes cannot answer.
+
+   ── WHY THE LANES ARE A PICKER AND NOT FOUR CARDS ──────────────────────────
+
+   They were four cards side by side: what the lane is, who runs on it, what
+   credential it costs, how many of the eight jobs it serves. All true, all
+   readable, and between them they named four model ids out of the thirty-five
+   in the file. A reader deciding between lanes could read the entire section
+   and still not know what would run their dictation.
+
+   Before the cards there was a grid -- eight jobs by three lanes, twenty-four
+   model ids, and it was the worst surface on the page for the reason the
+   catalogue module's header records: what a reader takes from a wall of mono
+   strings is "there are a lot of models", which is not the claim, and the four
+   `none` cells were the only actionable thing on it and its quietest text.
+
+   THE PICKER IS THE SAME VALUES WITH THE READER'S HAND ON THEM. One lane's
+   eight jobs at a time, and the reader opened that lane. That is the whole
+   difference and it is not cosmetic: a matrix has to be compared with itself
+   before it says anything, while a column somebody chose is an answer to the
+   question they asked by choosing. The `none` rows stop being the quietest
+   text on a grid and become the visible shape of the lane you just opened.
+
+   AND IT IS FOUR RADIOS AND `:checked ~`, NOT AN ISLAND. The whole section
+   still ships no JavaScript. A radio group is what a one-of-four choice IS,
+   which means the keyboard works, the labels are hit targets, the state
+   survives with script disabled, and a screen reader is told it is a choice
+   rather than being handed four buttons that mysteriously change a panel.
+
+   ── AND WHY THERE ARE TWO CARDS UNDER IT ───────────────────────────────────
+
+   Two questions decide whether somebody downloads a dictation app, and until
+   now this page answered neither. The first is whether it speaks their
+   language. The second is whether it works with the network off. Both are
+   properties of the engine rather than of any one lane, which is why they sit
+   under the picker instead of inside it.
+
+   Every value is read at build time. Lanes, jobs, models, vendors and download
+   sizes come from ../lib/catalogue, which reads shared/model_catalogue.json;
+   the two language numbers come from ../lib/languages, which reads that same
+   file and `src-tauri/src/core/language_detect.rs` and throws rather than
+   guessing. Vendor marks come from ../lib/marks. */
+import { COUNTS, JOBS, LANE_CARDS, LOCAL_INSTALL, PROFILE } from '../lib/catalogue';
+import Mark from './Mark.astro';
+import { DETECTED, RECOGNISED } from '../lib/languages';
+import { LANGS, MORE } from '../lib/flags';
+---
+
+<section class="sec" id="engines">
+  <div class="wrap">
+    <div class="sec__head rise">
+      <h2>Nothing runs on one engine.</h2>
+      <p>A profile decides what handles each job, and the jobs do not have to agree. Cleanup
+        on a small local model, the agent on a frontier one, dictation wherever it is fastest
+        that week. Four lanes, and you pick by what it costs you to run rather than by
+        whichever model is fashionable this month.</p>
+    </div>
+
+    {/* THE PICKER. The radios live here rather than inside the tab list so
+        that `:checked ~ .lanes` can reach the panels: a sibling combinator
+        only walks forward, so the inputs have to come first in the DOM. They
+        are visually hidden, never `display:none` -- a hidden input is out of
+        the tab order and takes no keyboard, which would leave the labels as
+        the only way in and the arrow keys dead. */}
+    <div class="pick rise" data-d="1">
+      {LANE_CARDS.map((lane, i) => (
+        <input
+          class="pick__r"
+          type="radio"
+          name="lane"
+          id={`lane-${lane.key}`}
+          checked={i === 0}
+        />
+      ))}
+
+      <div class="pick__tabs" role="presentation">
+        {LANE_CARDS.map((lane) => (
+          <label class="pick__t" for={`lane-${lane.key}`}>
+            <b>{lane.label}</b>
+            <span class="mono">{lane.jobs} of 8</span>
+          </label>
+        ))}
+      </div>
+
+      <div class="lanes">
+        {LANE_CARDS.map((lane) => (
+          <div class="lane" data-lane={lane.key}>
+            <div class="lane__top">
+              <p class="lane__what">{lane.what}</p>
+              <p class="lane__cred mono"><b>needs</b> {lane.credential}</p>
+            </div>
+
+            {lane.typed ? (
+              /* NO ROWS, AND THE ABSENCE IS THE LANE. The server is the
+                 reader's and its model list belongs to whoever runs it, so
+                 eight rows of model ids here would be asserting a
+                 compatibility matrix nobody has measured -- and eight rows of
+                 the SAME sentence would be a wall that says less than the
+                 sentence does once. What it has instead is the two fields it
+                 actually takes, which is `src/screens/data.ts`'s own sentence
+                 standing where a model id would. */
+              <div class="lane__typed">
+                <p class="lane__field mono">
+                  <span>https://your-host:8000/v1</span>
+                  <span>typed on the endpoint</span>
+                </p>
+                <p class="lane__note">Every one of the eight, on whatever that server serves.
+                  The model list is yours, so this page does not have one.</p>
+                {/* THE AXIS ITSELF, WHERE THE PER-JOB ANSWER CANNOT EXIST. */}
+                <p class="lane__eight"><b>all eight</b>{
+                  JOBS.map((j) => <i>{j.label}</i>)
+                }</p>
+              </div>
+            ) : (
+              <ol class="jobs">
+                {lane.rows.map((r) => (
+                  <li class="job" data-none={r.none ? '1' : undefined}>
+                    <span class="job__n">
+                      <b>{r.job}</b>
+                      <span class="job__w">{r.what}</span>
+                    </span>
+                    {r.none ? (
+                      /* THE ROWS THAT DO NOT RUN ARE THE POINT OF THE LANE.
+                         On the grid this replaced they read `none` in the
+                         quietest type on the surface; here they are the shape
+                         of the column the reader just opened. The card's own
+                         sentence above says why. */
+                      <span class="job__none mono">not on this lane</span>
+                    ) : (
+                      <span class="job__m">
+                        <Mark v={r.vendor} />
+                        <span class="job__id mono">{r.model}</span>
+                        {r.size && <span class="job__size mono">{r.size}</span>}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+
+            {!lane.typed && (
+              <p class="lane__marks">
+                {lane.vendors.map((v) => (
+                  <span>
+                    <Mark v={v} />
+                    <span>{v.label}</span>
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+
+    {/* THE CLAIM, PERFORMED ONCE. Four jobs on three different lanes, and
+        every model on it is the catalogue's own default for that pair -- so
+        this is not an illustration of what a profile could look like, it is
+        what the runtime would do if you set these four. */}
+    <div class="prof rise lit" data-d="1">
+      <div class="prof__head">
+        <b class="prof__t">One profile, and the jobs disagree on purpose</b>
+        <span class="prof__sub">four of the eight, set to three different lanes</span>
+      </div>
+      <ol class="prof__rows">
+        {PROFILE.map((r) => (
+          <li class="prof__r">
+            <span class="prof__job">
+              <b>{r.job}</b>
+              <span class="prof__jw">{r.what}</span>
+            </span>
+            <span class="prof__lane mono">{r.lane}</span>
+            <span class="prof__v">
+              <Mark v={r.vendor} />
+              <span class="prof__m mono">{r.model}</span>
+            </span>
+            <span class="prof__why">{r.why}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+
+    <div class="eng__two rise" data-d="2">
+      {/* TWO NUMBERS, AND THEY ARE DIFFERENT NUMBERS ON PURPOSE.
+
+          Every product in this category prints one language figure and none of
+          them says what it measures. These are two, because the questions are
+          two: what the recogniser can TRANSCRIBE, which is a property of
+          Whisper and comes off the catalogue rows that state it, and what
+          WordScript can NAME afterwards, which is the detector's own table and
+          is smaller.
+
+          A THIRD ROW WAS HERE AND IT IS GONE. It read `0 guessed`, with the
+          word floor under it, and the argument for it was that a detector
+          which refuses is the one claim on this page a competitor would have
+          to change their product to match. Reported on reading it: nobody
+          arrives at this card wondering whether the product guesses, so a card
+          that answers it is answering an accusation nobody made -- and a
+          product that volunteers what it does not do reads as a product with
+          something to be defensive about. The refusal is still the behaviour
+          and it is still documented where it belongs, in ADR 0180 and in
+          `core/language_detect.rs`. It is not a selling point, and printing it
+          as one cost the card its credibility rather than earning it. */}
+      <div class="card lang">
+        <h3>Switch language mid-paragraph.</h3>
+        <p class="lang__p">Nothing has to be set first and nothing has to be set back. The
+          language is read off the text that came back, not off a dropdown and not from the
+          provider &mdash; on the two lanes most dictations go through, no provider reports
+          one.</p>
+        <dl class="lang__f mono">
+          <div>
+            <dt>{RECOGNISED}+</dt>
+            <dd>languages the recogniser transcribes</dd>
+          </div>
+          <div>
+            <dt>{DETECTED}</dt>
+            <dd>it names in your own record, so the app can count what you actually
+              dictate in</dd>
+          </div>
+        </dl>
+        {/* SEVENTEEN OF THE SEVENTY, EACH IN ITS OWN SCRIPT.
+
+            The flag is a convention and the name beside it is the answer --
+            ../lib/flags argues that out, including why the two languages the
+            detector names that have no country are not on this row. Every
+            name is an endonym read from ICU at build time, so what a chip says
+            is what a speaker calls their own language.
+
+            The count at the end is subtracted rather than typed: adding a chip
+            takes one off it without anyone having to remember. */}
+        <ul class="lang__c">
+          {LANGS.map((l) => (
+            <li>
+              <svg class="fl" viewBox={l.viewBox} aria-hidden="true" set:html={l.body} />
+              <span lang={l.code}>{l.name}</span>
+            </li>
+          ))}
+          <li class="lang__more mono">+{MORE} more</li>
+        </ul>
+
+      </div>
+
+      {/* THE OFFLINE CARD SAYS ONE WORD THE PAGE HAS NEVER SAID.
+
+          The Local lane's credential line has always read "none, by
+          construction", which is the fact -- but a reader scanning for whether
+          this thing works on a train is scanning for the word "offline", and
+          the word was nowhere on the page. It is not a fifth lane and not a
+          mode; it is what the Local lane already is, said in the words
+          somebody searches with. */}
+      <div class="card off">
+        <h3>With the network off, it is the same app.</h3>
+        <p class="off__p">The Local lane is the whole product, not a degraded one: dictation,
+          cleanup, rewrite, translate, the agent. Weights on your disk, a runner on{' '}
+          <span class="mono">127.0.0.1</span>, no account and no key.</p>
+        <ul class="off__l">
+          <li><b>No key</b><span>nothing to sign up for, nothing to revoke</span></li>
+          <li><b>No request</b><span>no bytes leave the machine, so nothing can be logged</span></li>
+        </ul>
+        {/* WHAT IT COSTS ON DISK, AT BOTH ENDS, BECAUSE NOTHING HERE KNOWS
+            WHICH END A READER LANDS ON.
+
+            This was one figure -- the whole lane, deduped -- and it was a
+            prediction dressed as a measurement. Nobody can be told which
+            models somebody installs. A reader who only dictates fetches one
+            speech model; a reader who runs all eight jobs locally holds four
+            files. Printing only the second told the first that they owed seven
+            gigabytes for a hundred-and-fifty-megabyte job.
+
+            The spread is also the section's own argument restated: a profile
+            decides each job separately, so there is no single download, and
+            one number would contradict the paragraph at the top of the
+            section.
+
+            The ceiling is deduped by model in ../lib/catalogue -- eight jobs
+            resolve to four files, two of them shared across jobs, so adding up
+            the rows in the picker would report about triple. */}
+        <dl class="off__f mono">
+          <div>
+            <dt>{LOCAL_INSTALL.floor}</dt>
+            <dd>if you only dictate &mdash; one speech model, and that is a working install</dd>
+          </div>
+          <div>
+            <dt>{LOCAL_INSTALL.ceiling}</dt>
+            <dd>if you run all eight jobs locally &mdash; {LOCAL_INSTALL.files} files, fetched once</dd>
+          </div>
+        </dl>
+      </div>
+    </div>
+
+    {/* The count, and nothing after it. This line used to close by saying that
+        every default is one entry in a list and that keys stay in the secret
+        store. Both are already on the surface above it: the credential line
+        under every lane says where the key lives, and the profile block is
+        four defaults being overridden. */}
+    <p class="eng__foot mono rise" data-d="2">
+      <b>{COUNTS.lanes}</b> lanes and <b>{COUNTS.models}</b> models across
+      {' '}<b>{COUNTS.vendors}</b> vendors, in the catalogue both runtimes read.
+      Every row above is that file's own default for that job. Last checked {COUNTS.read}.
+    </p>
+  </div>
+</section>

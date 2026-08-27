@@ -1,0 +1,15 @@
+---
+import Arrow from './Arrow.astro';
+interface Props { delay?: string }
+const { delay } = Astro.props;
+---
+<div class="acts rise" data-d={delay}>
+  <a class="btn btn--primary" href="https://discord.com/invite/BHfApphz8h">
+    Join on Discord
+    <Arrow />
+  </a>
+  <a class="btn" href="https://github.com/sw-forge-org/WordScript">
+    Read the source
+    <Arrow />
+  </a>
+</div>

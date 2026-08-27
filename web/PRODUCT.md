@@ -1,0 +1,447 @@
+# wordscript.dev - the product site
+
+What this site is for, who reads it, what it asks them to do, and what it is
+allowed to claim. Nothing here is design: the design contract is the built site
+itself, and how it got there is [ADR 0251](../docs/decisions/0251-the-marketing-sketch-is-a-design-contract-so-the-astro-port-is-checked-by-computed-style-rather-than-by-eye.md).
+
+Written 2026-08-25, rewritten 2026-08-26 after the positioning below replaced
+the one this file used to argue. Repository documentation is American English
+(`AGENTS.md`).
+
+## The one decision that shapes everything else
+
+**There is no download, and the site does not pretend otherwise.**
+
+WordScript is `0.2.2-alpha` and nothing is published. Where a product site puts
+its download button, this one puts a choice of ways to follow the build:
+Discord, GitHub. That absence is the site's honest signal that the product is
+not out yet, and it is a stronger one than any "coming soon" badge.
+
+**The site therefore presents WordScript as it is envisioned, not as it is
+wired today, and it does not label built against planned.** Decided by the
+owner on 2026-08-25, and the reasoning is that the distinction has no meaning
+before a first release exists: with no download there is nothing a reader could
+mistake for a shipping promise. The built-versus-planned split is the *app's*
+problem, and it is what `developer_mode` and ADR 0250 solve inside the product;
+importing it into pre-release marketing would be answering a question nobody
+asked.
+
+**The window closes with the first release.** From the day an artifact is
+downloadable, a reader can act on what this site claims, and every claim on it
+becomes a claim about a thing they can install. This section gets rewritten
+that day rather than inherited.
+
+## The line that stays either way
+
+No invented claims. No testimonials, user counts, adoption figures, accuracy
+percentages, latency numbers, comparison tables against named competitors, or
+prices that are not measured facts we can produce evidence for. Under UWG that
+is actionable, not merely embarrassing, and it is orthogonal to showing the
+product as envisioned: a design of our own unreleased software is a legitimate
+statement about intent; a fabricated benchmark is not.
+
+Three consequences the built page carries:
+
+- **The five figures in the Numbers section are labelled on the page as a
+  constructed example of the surface, not an average of anybody.** That label
+  stays as long as the figures do.
+- **The three research measurements are other people's**, cited by author,
+  title and year, each read out of the paper it belongs to rather than off a
+  site quoting it. One of them says speech lost, and it stays because the row
+  after it is worth nothing without it.
+- **The wiring diagram's destinations are generic.** It is a comparative
+  drawing, and a real vendor mark inside one asserts something about that
+  vendor's integrations that we have not verified.
+
+## Positioning
+
+**The voice is the input. What stays is context. The output is the cursor, an
+object, or an agent.** That is `docs/VISION.md`, and it is the authority.
+
+The page is built on an equally weighted triangle, **Cursor, Context, Agent**,
+and the weighting is the argument: every dictation tool does the first one, and
+the first one is becoming a commodity. VISION.md says outright that
+transcription accuracy is commoditising, so a pitch built on transcribing
+honestly argues the losing half.
+
+**The differentiator is ADR 0046: WordScript does not build a connector
+layer.** Context is written into a directory the user's own tools already open,
+rather than living inside the product. The agent channel is the proof of that
+claim rather than the spearhead of it.
+
+### What was rejected, and why it is not coming back
+
+- **"It shows you what it did."** The transcript pair is real and it is a good
+  property, but it is a claim about the dictation half, which is the half that
+  is commoditising. It survives on the page as one of six items under *The
+  dictation half, done properly*, which is the weight it deserves.
+- **Speed, and privacy.** The nearest peer is `openwhispr.com`: MIT,
+  local-first, already shipping meeting notes, folders, semantic search and
+  cross-meeting chat. Privacy is a tie. Speed is a tie. Neither is a position.
+- **The category's own opening sentence.** `wisprflow.ai` and
+  `superwhisper.com` both open on an imperative speech verb and both sell a
+  speed multiple. That is a line-up WordScript cannot win on spend, and the
+  numbers are ones we cannot produce.
+
+## Audience
+
+Primary: heavy writers who already dictate and already have a tool they are
+unhappy with. Engineers writing docs and issues, support and success people
+answering in volume, writers and researchers, anyone whose day is text.
+
+Secondary: people who want a dictation tool that is local-capable and whose
+data handling they can read in the source.
+
+Not the audience: casual voice-memo users, and mobile.
+
+Both groups arrive from GitHub, from Discord, or from a link. Nobody arrives
+from search yet, so the site is not built as an SEO surface first. That changes
+with the release.
+
+## Primary action and conversion
+
+**Primary action: follow the build.** In order of weight:
+
+1. **Discord** - `https://discord.com/invite/BHfApphz8h`. Where releases are
+   announced, and the highest-signal thing a reader can do. It is also the only
+   channel where they can talk back before there is anything to install.
+2. **GitHub** - `https://github.com/sw-forge-org/WordScript`. Star and watch;
+   the source is the product's own argument.
+
+There is also an address, `forge@sw-labs.de`, in the footer and under the two
+buttons in the close. It is deliberately not a third button: the buttons are
+rooms you join, and an address is not a room.
+
+**Email is deliberately not built for launch.** Discord and GitHub both already
+exist, both already notify on release, and a list is a data-protection
+obligation, a double-opt-in flow and a sender reputation to maintain for a
+signal the other two already carry. It stays a candidate, not a launch item.
+
+**Conversion is not measured as a rate.** With no purchase and no download
+there is no funnel; what the site is judged on is whether the two channels grow
+after it goes live, read off Discord and GitHub directly rather than off
+analytics.
+
+## The site's own reach into the app
+
+The app already links here, which makes this less optional than a marketing
+site usually is.
+
+`src/lib/appMeta.ts` carries four canonical addresses and the Help menu
+(ADR 0069) draws them as four rows:
+
+| Row | Address | State |
+|---|---|---|
+| Website | `https://wordscript.dev` | **draws live and does not resolve** - the domain is registered and on Cloudflare nameservers with an empty zone |
+| Discord | `https://discord.com/invite/BHfApphz8h` | live |
+| GitHub | `https://github.com/sw-forge-org/WordScript` | live |
+| Documentation | `null` | drawn inert on purpose, hint reads *No address yet* |
+
+**The Website row is currently the defect the Documentation row was made inert
+to avoid.** ADR 0069's own comment states the rule - a URL that does not
+resolve yet is a link that must not be drawn yet - and one row over, a live row
+opens a hostname with no A record. Publishing this site is what closes it,
+which is the better fix than making the row inert.
+
+**And `/docs` later is what makes the fourth row live.** Documentation on this
+domain is not a nice-to-have for the site; it is the condition under which
+`APP_DOCS_URL` stops being `null`. That is a Phase 2 scope item, not launch.
+
+## Scope
+
+**Launch (v1 of the site):** one page that presents the product, plus the two
+follow channels, plus imprint and privacy. Nothing else.
+
+**The page presents the product whole, and carries no readiness labels**
+(ADR 0252). It does not sort its own contents into what is wired today and what
+is drawn, and it never wears `PreviewTag` or `PreviewBanner`. That is the app's
+rule and it is right there, where a user is trying to do something now. Here
+there is no release at all, so the honesty sits in four places instead and none
+of them may be softened: there is no download, the primary action is to follow
+the build, the source is the second action at near-equal weight, and the first
+FAQ answer is whether you can install it yet.
+
+**Vision, in the order it is likely to arrive:**
+
+- `/docs` - public documentation, which retires `APP_DOCS_URL = null`
+- photography and recordings of the real thing, which is the one open content
+  item and the only one nobody but the owner can supply
+- `/download` - with the first release, gated on V1 gates G3, G5, G6 and G12
+- release notes, which the release itself owes anyway (G6, G10)
+
+## Content and assets
+
+**In the repository already:**
+
+- Wordmark and logo lock-ups: `assets/wordscript_wordmark.png`,
+  `assets/wordscript_wordmark+logo.png`, `assets/logos/`. The site copies the
+  four it uses into `web/public/assets/` at build time via
+  `web/scripts/sync-assets.mjs` rather than keeping a second copy in the tree.
+- Icons at every size: `src-tauri/icons/`
+- Social card: `assets/OG.png`
+- Typefaces, self-hosted: Archivo and IBM Plex Mono, both SIL OFL, from
+  `assets/fonts/` with their licence files. The site adds one face the app has
+  no use for, Zodiak italic, because the app never has to introduce itself.
+- The design system the app draws with: `docs/DESIGN_SYSTEM.md`, Tailwind v4
+  `@theme inline` tokens, which the site adopts under the same token names.
+
+**Producible on demand, and this is the unusual advantage:** the workspace
+renders headless in a plain browser behind a stubbed `__TAURI_INTERNALS__`, so
+product imagery for the site is **real screenshots of the real UI at any width**
+rather than mockups. Nothing on this site needs to be drawn in Figma to look
+like the product.
+
+**The demo question is answered, and it was answered by building rather than by
+filming.** The capsule on the page is not a screenshot and not a recording: it
+is the app's own overlay rebuilt as live DOM against the geometry in
+`src/styles/overlay-pill.css`, driven through the runtime's own `levelToBars`
+curve. If the shipped pill moves, this moves with it.
+
+**Still missing, and it is the expensive one:** the page is entirely
+self-drawn. Nothing on it is a photograph. In descending order of value: the
+app running over a real application with the capsule visible and text arriving;
+the actual desk, shot dark enough to sit in the palette; the Context folder in
+a real file manager with real filenames and timestamps. These are not to be
+generated and not to be substituted with stock.
+
+## Stack
+
+**Astro with React islands, static output, deployed to Cloudflare Workers
+static assets.** Tailwind CSS v4, shadcn/ui through React islands when one is
+first needed, Archivo and IBM Plex Mono self-hosted from the repository's own
+files.
+
+**Two documented deviations from the SW labs stack default:**
+
+1. **Astro instead of Next.js App Router.** The site renders no dynamic data,
+   so everything Next.js is paid for - RSC, ISR, middleware, route handlers -
+   is unused weight here, and reaching Workers with it means
+   `@opennextjs/cloudflare`, a third-party adapter that must track a
+   fast-moving framework forever. Astro ships a zero-JS baseline and hydrates
+   only the islands that animate, and Starlight makes the `/docs` scope item
+   cheap when it arrives. Islands are also the better substrate for motion,
+   because what hydrates is explicit.
+2. **Workers instead of Pages.** Pages is in maintenance for new projects;
+   Workers static assets is Cloudflare's current path and is where a later
+   server route (a redirect to the newest release, for instance) can be added
+   without a migration.
+
+**No adapter.** Static output needs none. `wrangler.jsonc` points at `./dist`
+and that is the whole deployment surface.
+
+**Two things the port settled, both recorded in ADR 0251:**
+
+- **The component CSS is authored CSS in `@layer components`, not utilities.**
+  The derivations live in its comments, and a utility class at the call site
+  has nowhere to put them. Tailwind supplies preflight, the token-to-utility
+  bridge and the substrate for what gets built next.
+- **Four islands hydrate and nothing else does.** `HeroStage`, `Demo`,
+  `Wiring`, `Band`. Every other section is `.astro` and ships no JavaScript.
+
+**And one thing the first review settled, recorded in ADR 0252: the page reads
+its facts out of the files that own them.** Three build-time inputs so far,
+none of them copied into `web/`:
+
+| Input | What it feeds | Why not typed |
+|---|---|---|
+| `shared/model_catalogue.json` | the vendor, lane and model grid | ADR 0115 puts a model id in that file and nowhere else; the site is its third reader |
+| `simple-icons` | the fifteen focus-band marks | a brand refresh is an `npm update` |
+| `src-tauri/src/core/config.rs` | the shipped hotkey defaults | transcribed once with the source named beside each; a candidate for the same treatment if it drifts |
+
+**Analytics: Cloudflare Web Analytics, cookieless, no consent banner required
+for it.** No Google Analytics, no tag manager. This is the standing SW labs
+decision, not a per-project choice. The owner reported the dashboard switch set
+on 2026-08-27. It is **still not measuring anything**, wiring it is **not a code
+change**, and it **cannot take effect before the site is deployed**:
+automatic injection happens at the edge for a hostname proxied through
+Cloudflare, and `wordscript.dev` has no A or AAAA record. There is nothing to
+add a site for until the custom-domain route in `wrangler.jsonc` is
+uncommented. Nor is it scriptable from here: wrangler has no Web Analytics
+command, and the RUM API refuses the OAuth token wrangler holds (HTTP 403,
+authentication error) because that token carries no analytics scope.
+
+When the moment comes, Manage site offers four settings and the choice is
+**Enable**, the automatic default. Not *Enable, excluding visitor data in the
+EU*: that option drops the beacon for EU visitors, which for a German-run
+project is most of the audience, and the exclusion buys nothing that is
+required -- Web Analytics sets no cookie and reads nothing off the device, so
+TDDDG section 25 does not apply and the processing runs on legitimate interest.
+Not *Enable with JS Snippet installation* either: automatic injection keeps the
+beacon out of the repository, keeps the site token out of the HTML, and sends
+to the same origin, so a later CSP needs `connect-src 'self'` rather than a
+second host. What the repository owes it is one thing, and `public/_headers`
+already pays it: no `Cache-Control` carrying `no-transform` on the HTML, which
+is the header that blocks the injection with no error anywhere to find it by.
+If data still does not arrive after that, the second suspect is the injection
+not applying to a static-assets Worker response, and the fallback is the JS
+snippet.
+
+**The crawl surface is generated, and it reads the same facts the page does**
+(ADR 0257). `src/lib/site.ts` and `src/lib/faq.ts` are the two modules; the
+head, the JSON-LD graph, `/llms.txt` and the FAQ section are readers of them.
+`robots.txt` is a route rather than a file in `public/` so its `Sitemap:` line
+is not a second copy of `site`, `@astrojs/sitemap` keeps the sitemap correct as
+the legal routes and `/docs` land, and `404.astro` is what the already-set
+`not_found_handling: "404-page"` had been pointing at. Every crawler is
+allowed, the AI ones included.
+
+**No CMS.** Content lives in the repository beside the code that renders it.
+
+## Repository placement
+
+The site lives in **`web/`**, with its own `package.json` and its own lockfile,
+and is deliberately **not** wired into a root workspace.
+
+The reason is that the repository root is the Tauri app: `npm test`,
+`npm run build` and `npm run tauri dev` are the eval loop the concurrent tracks
+depend on, and their meaning must not change because a marketing site moved in
+next door. A root workspace would put the site's dependency tree in the app's
+`node_modules` and its failures in the app's test run.
+
+Consequences to carry:
+
+- CI needs path filters in both directions so an app change does not run the
+  site build and a site change does not run the Rust suite
+- the Husky pre-commit hooks are the root's and apply to `web/` too, which is
+  correct and wanted, gitleaks in particular
+- `npm audit` after dependency changes applies here as well
+- `web/public/assets/` is gitignored on purpose. It is a build-time copy of
+  `assets/`, and a copy that can be committed is a copy that can drift.
+
+## Licence and trademark
+
+The site inherits the repository's **AGPL-3.0**, and that is fine: for site
+code it means a forker must publish their changes, which costs us nothing.
+
+**What a copyleft licence explicitly does not convey is the trademark**, and in
+an AGPL repository with no notice that question is left open. The repository
+needs a `NOTICE` or `TRADEMARK.md` reserving the WordScript wordmark, the logo
+lock-ups and the SW forge mark. It needs one anyway for V1 gate G12 (AGPL
+source offer plus third-party notices in the distributed artifact), so this is
+one piece of work, not two.
+
+**Third-party assets the site serves**, and each needs its licence beside it in
+`web/public/fonts/` or named here:
+
+| Asset | Licence | State |
+|---|---|---|
+| Archivo | SIL OFL 1.1 | text shipped |
+| IBM Plex Mono | SIL OFL 1.1 | text shipped |
+| Zodiak italic | Indian Type Foundry, through Fontshare, ITF Free Font License 2.0 | served, never committed - the licence permits self-hosting and forbids redistribution, so the file is gitignored and the gate checks both halves |
+| The fifteen focus-band marks | Simple Icons, CC0-1.0 | read from the npm package at build time |
+
+## Open facts
+
+Marked open rather than guessed.
+
+- **A second contact channel for the imprint.** Section 5 DDG asks for a way to
+  reach the provider that is as fast as email and is not email. The Court of
+  Justice settled the point on the same wording in C-298/07 of 16 October 2008:
+  the address alone does not satisfy it, and the second channel need not be a
+  telephone number. The owner decided for one anyway, because the alternative a
+  static site could offer is a form with a response time attached to it. The
+  number has not been supplied. `PHONE` in
+  `src/lib/legal.ts` is `null`, the imprint renders without the row, and
+  `npm run deploy` refuses while it stays null. **This is now the blocker on
+  publishing**, in place of the pages themselves. ADR 0258.
+- **Whether the Zodiak file is the untouched Fontshare webfont.** Section 02
+  of the ITF Free Font License forbids subsetting and format conversion without
+  written consent. Answering it means reading the font's name and glyph tables,
+  which needs a Brotli decoder that is not installed here and that `pip`
+  refuses to add under PEP 668. Recorded as unverified rather than assumed
+  either way. Not a deploy blocker: nothing suggests the file was altered, and
+  the check that would settle it is a tooling gap rather than a finding.
+- **Confirmation that the analytics beacon actually arrives.** The dashboard
+  switch is set. It cannot do anything yet: automatic injection happens at the
+  edge for a hostname proxied through Cloudflare, `wordscript.dev` has no A or
+  AAAA record and the route in `wrangler.jsonc` is still commented out. So the
+  privacy notice describes something that is armed rather than running, which
+  is correct the moment the domain is live and unverifiable until then. The
+  check is one grep for the beacon in the served HTML after the first deploy,
+  and it belongs in the deploy runbook rather than in the launch gate, which
+  runs before the site exists.
+- **A legal review of the three pages.** They are drafts from the
+  `web-launch-gate` templates until they have had one. Two questions are worth
+  putting to it by name: the English-only decision (ADR 0258), and whether the
+  terms hold as conditions of use rather than as general terms.
+- **The manual accessibility pass.** Not a BFSG obligation for this site as it
+  stands, and the derivation for that is in ADR 0258; still the gate an
+  automated run does not clear on its own.
+- **Photography.** See Content and assets.
+- **Email.** Deferred, not decided against forever.
+- **`/docs`.** Scope, and whether it is Starlight or hand-built. After launch.
+
+## Verified state, 2026-08-26
+
+- The site **builds** and has been audited twice, and the two audits ask
+  different questions. Against the sketch it replaced (ADR 0251): a
+  computed-style diff over 78 selectors and 22 properties, no overflow at ten
+  widths, no AA contrast failure, reduced motion complete, zero banned
+  punctuation, four font requests for four declared faces. Against the runtime
+  (ADR 0252): every capsule state, delivery path, hotkey and model id read back
+  to the file that owns it, which is the pass the first audit is blind to
+  because both of its sides came from the same sketch.
+- **Re-measured 2026-08-26 after that second pass:** no overflow at ten widths
+  from 360 to 1920, no AA failure across the twenty-two surfaces added, all
+  seven modes reaching their end state under **both** delivery modes with every
+  rule fired, reduced motion complete at 25 of 25 reveals, zero banned
+  punctuation in the HTML and in every emitted chunk, zero page errors.
+  Transfer 111.6 KB gzipped, of which 59.0 is the React runtime.
+- The site is **not publishable**, and the reason changed on 2026-08-27. The
+  imprint, the privacy notice and the terms exist and resolve; gate 4 of
+  `web-launch-gate` has run. What is left is the list under Open facts, of
+  which two are enforced by `npm run deploy` and three are gates outside this
+  repository. The custom-domain route in `wrangler.jsonc` stays commented.
+- **Third pass, 2026-08-26, copy and marks.** Six explanatory sub-lines cut,
+  the hero's caption removed, AGPL-3.0 and the three desktops drawn as marks,
+  `local or cloud` corrected to the four lanes, and the close signed. Re-checked
+  after it: `astro check` 0 errors and 0 warnings, zero banned punctuation in
+  the built HTML and in every emitted chunk, no overflow from any changed
+  element at 360 and at 1440. Not re-run: the full ten-width sweep and the AA
+  contrast pass, which the next launch-gate run owns.
+- **Fourth pass, 2026-08-26, the crawl surface** (ADR 0257). Canonical, the
+  full Open Graph block with the card's measured 1200x630, `twitter:card`, a
+  square touch icon, one JSON-LD `@graph` of four nodes, generated
+  `robots.txt`, `/llms.txt`, `@astrojs/sitemap` and `404.astro`, plus
+  `public/_headers`. Re-checked after it: `astro check` 0 errors and 0
+  warnings across 48 files, the graph parses and carries none of `offers`,
+  `aggregateRating`, `softwareVersion`, `downloadUrl` or `datePublished`,
+  `sitemap-0.xml` holds the one canonical URL and not the 404, zero banned
+  punctuation in the built HTML and in every emitted chunk. Cost on
+  `index.html`: 4.36 KB raw, 1.18 KB gzipped. No copy, CSS or island moved.
+  The `workers.dev` preview host is closed in `wrangler.jsonc` rather than
+  noindexed in `_headers`: `workers_dev: false` and `preview_urls: false`, so
+  the second public copy of the site does not exist. The custom-domain route
+  stays commented, which means `wrangler deploy` produces a Worker reachable
+  nowhere -- the correct state for a site that may not be published, and one
+  that makes an accidental launch impossible rather than unlikely. Checked with
+  `wrangler deploy --dry-run`.
+  **Not verified and not verifiable here:** nothing has been fetched by a real
+  crawler and no rich-result validator has run, because the zone still does not
+  resolve.
+- **Fifth pass, 2026-08-27, the legal routes** (ADR 0258). `/imprint`,
+  `/privacy` and `/terms` written against the real third-party inventory;
+  `/dpa` removed from the footer rather than written, because there is no
+  Article 28 processing to put behind it. Entity facts in `src/lib/legal.ts`,
+  prose styles in `site.css`, `scripts/launch-check.mjs` gating
+  `npm run deploy`. Two fixes the new routes forced: the header's six section
+  links were bare fragments and pointed at nothing off the index, and ADR
+  0257's graph typed every page as an `FAQPage` under the site's own name.
+  Measured after it: `astro check` 0 errors and 0 warnings across 54 files,
+  five pages built, the sitemap lists four URLs and excludes the 404, no
+  overflow on the four secondary routes across eight widths from 360 to 1920
+  (document scroll width and per-element rectangles), every new colour pair
+  passes AA against the ground -- 14.83:1 for the 20px headings, 9.27:1 for the
+  16px prose, 8.14:1 for links, 5.91:1 for the 11px stamp -- and the accent
+  against the body colour is 1.14:1, which is why prose links carry an
+  underline rather than colour alone. Zero banned punctuation in every emitted
+  file, checked by the new script rather than by hand. The imprint page and the
+  index carry distinct JSON-LD page nodes, verified by parsing both.
+  **Not verified here:** no legal review has taken place, and the manual
+  accessibility pass has not been walked.
+- `wordscript.dev` is registered and on Cloudflare nameservers
+  (`ariella.ns.cloudflare.com`, `leland.ns.cloudflare.com`) with **no A or AAAA
+  record**. The zone is empty and the hostname does not resolve.
+- `package.json` and `src-tauri/tauri.conf.json` both read `0.2.2-alpha`;
+  nothing is published.
+- The four canonical addresses are in `src/lib/appMeta.ts`, one of them `null`.

@@ -1,0 +1,51 @@
+---
+const GETS = [
+  {
+    k: 'Profiles',
+    h: 'A profile that changes the output.',
+    p: 'Vocabulary, style, delivery and model belong to whatever you are working on. A commit message and a mail to a client are not the same job.',
+  },
+  {
+    k: 'Models',
+    h: 'Four lanes, picked per job.',
+    p: 'The local runtime as a real option, not a weekend of configuration. Picked per profile, not once for the whole app.',
+  },
+  {
+    k: 'The record',
+    h: 'It shows what it changed.',
+    p: 'Raw and delivered are stored apart. Every rule that fired is named, and audio it could not hear is marked as a gap instead of guessed at.',
+  },
+  {
+    k: 'Credentials',
+    h: 'Your keys, your machine.',
+    p: 'API keys live in the operating system secret store, and the config file is scrubbed on save. Nothing leaves for anywhere you did not pick.',
+  },
+  {
+    k: 'Sources',
+    h: 'Bring audio in.',
+    p: 'An uploaded file, or a pasted video, podcast or direct audio link, becomes the same kind of record as something you said out loud.',
+  },
+  {
+    k: 'Licence',
+    h: 'AGPL-3.0, the whole thing.',
+    p: 'No open core with the good half behind a login. Read it before you decide anything.',
+  },
+];
+---
+<section class="sec" id="what">
+  <div class="wrap">
+    <div class="sec__head rise">
+      <h2>The dictation half, done properly.</h2>
+    </div>
+
+    <ul class="gets rise" data-d="1">
+      {GETS.map((g) => (
+        <li>
+          <span class="k">{g.k}</span>
+          <h3>{g.h}</h3>
+          <p>{g.p}</p>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>

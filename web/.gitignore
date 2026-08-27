@@ -1,0 +1,13 @@
+# Astro
+dist/
+.astro/
+
+# Node
+node_modules/
+
+# Wrangler
+.wrangler/
+
+# Assets copied in from the repository's own assets/ at build time.
+# The source of truth is <repo>/assets; scripts/sync-assets.mjs is the copy.
+public/assets/

@@ -1,0 +1,224 @@
+---
+/* THE PRIVACY NOTICE. Articles 13 and 14 GDPR for the site, section 25 TDDDG
+   for anything that would touch the reader's device, and one section for the
+   application because the reader who came here came to ask about that.
+
+   IT DESCRIBES THE REAL STACK AND NOTHING ELSE. The inventory it is written
+   against is small and was read out of the repository rather than remembered:
+   Cloudflare serves the site and resolves its name, the four typefaces are
+   served from this origin, the four outbound links in the footer are links and
+   not embeds, and `src/` contains no `localStorage`, no `sessionStorage`, no
+   `document.cookie` and no `indexedDB` -- checked, not assumed. A service
+   named here that does not run is the same defect as a service that runs and
+   is not named.
+
+   THE APPLICATION SECTION IS NOT DECORATION. A dictation product's privacy
+   page that only discusses its marketing site answers the question nobody
+   asked. What the app does with audio is the question, the FAQ answers it in
+   one line, and this is where that line is allowed to be exact. Every claim in
+   it is read off the runtime: `src-tauri/src` carries no telemetry client, and
+   its only outbound hosts are the transcription providers and the GitHub
+   releases endpoint that `core::updates` calls.
+
+   THE THIRD COUNTRY PARAGRAPH IS DELIBERATELY DOUBLE. The EU-US Data Privacy
+   Framework is in force and Cloudflare is certified under it, and an appeal
+   against the adequacy decision is pending before the Court of Justice after
+   the General Court dismissed the first challenge on 2025-09-03. Naming the
+   standard contractual clauses alongside it means this page does not have to
+   be rewritten in a hurry on the day that appeal is decided.
+
+   ON SECTION 25 TDDDG: the statute is the TDDDG and has been since 2024. A
+   page that still calls it the TTDSG is citing a name that was replaced, the
+   same class of defect as an imprint that cites the TMG. */
+import Legal from '../layouts/Legal.astro';
+import { AUTHORITY, ENTITY, HOST } from '../lib/legal';
+import { LINKS } from '../lib/linkMarks';
+import { LICENCE_URL, SITE } from '../lib/site';
+
+/* The outbound set, named from the module the footer draws it from, so a link
+   added to the row cannot go unnamed here. */
+const OUTBOUND = LINKS.map((l) => l.label).join(', ');
+---
+<Legal
+  title="Privacy"
+  lede="What this site processes, what the application does with what you say, and the rights you have over both."
+>
+  <h2>Controller</h2>
+  <p>The controller for the processing described here is:</p>
+  <address>
+    {ENTITY.name}<br />
+    {ENTITY.holder}<br />
+    {ENTITY.street}<br />
+    {ENTITY.postcode} {ENTITY.city}<br />
+    {ENTITY.country}<br />
+    Email: <a href={`mailto:${SITE.email}`}>{SITE.email}</a>
+  </address>
+
+  <h2>What this notice covers</h2>
+  <p>
+    Two different things, kept apart because they behave differently. The first
+    part is this website. The second part is the {SITE.name} application, which
+    runs on your own machine and which we never see.
+  </p>
+
+  <h2>This website in one paragraph</h2>
+  <p>
+    It sets no cookies, stores nothing on your device, has no accounts, no
+    forms and no embedded third-party content. Nothing on it profiles you and
+    nothing follows you to another site. What remains is the connection data
+    that reaching any web server produces, plus a reach measurement that does
+    not touch your device. Both are described below.
+  </p>
+
+  <h2>Hosting, content delivery and DNS</h2>
+  <p>
+    This site is delivered by {HOST.name}, {HOST.address}, which also resolves
+    its domain name. All traffic between your browser and this site therefore
+    passes over Cloudflare's network. Cloudflare processes technical connection
+    data, including your IP address, in order to deliver the site, to keep it
+    available and to defend it against attacks.
+  </p>
+  <p>
+    The legal basis is our legitimate interest in providing this site securely
+    and efficiently, Article 6 (1) (f) GDPR. A data processing agreement under
+    Article 28 GDPR is in place with the provider. Transfers to the United
+    States are covered by Cloudflare's certification under the EU-US Data
+    Privacy Framework and, in addition, by standard contractual clauses. Their
+    own notice is at <a href={HOST.privacy}>{HOST.privacy}</a>.
+  </p>
+
+  <h2>Server log files</h2>
+  <p>
+    We operate no web server of our own for this site and we neither receive
+    nor keep access logs. The connection data described in the previous section
+    arises at Cloudflare and is retained by Cloudflare under its own policy. We
+    have no access to it in a form that identifies you.
+  </p>
+
+  <h2>Reach measurement</h2>
+  <p>
+    We use Cloudflare Web Analytics to see how this site is used and how
+    quickly it loads. The service sets no cookies and stores nothing on your
+    device. It does not build profiles across devices and does not recognize
+    you on other sites.
+  </p>
+  <p>
+    Processed are: the pages requested, the referring page, country, browser,
+    operating system and load-speed measurements. IP address, user agent and
+    further request headers are used to tell one visit from another, are hashed
+    immediately in the process and are not stored. Query strings are not
+    logged. The data is available to us for six months.
+  </p>
+  <p>
+    The legal basis is our legitimate interest in a site that is shaped by how
+    it is actually used, Article 6 (1) (f) GDPR. Because nothing is stored on
+    or read from your device, no consent under section 25 TDDDG is required and
+    this site therefore has no cookie banner.
+  </p>
+
+  <h2>Typefaces</h2>
+  <p>
+    Every typeface this site uses is served from this domain. No request goes
+    to a font provider and no connection to a third party is opened in order to
+    render text.
+  </p>
+
+  <h2>Links to other sites</h2>
+  <p>
+    We link to {OUTBOUND}. These are ordinary links, not embedded content:
+    nothing is transferred to those providers before you click one, and no
+    request to them exists while you are only reading this site. Once you
+    follow a link you have left this site, and the provider's own terms and
+    privacy notice apply from that point.
+  </p>
+
+  <h2>Contact by email</h2>
+  <p>
+    If you write to us, your message and the details in it are processed in
+    order to answer it and to deal with follow-up questions. The legal basis is
+    Article 6 (1) (b) GDPR where your enquiry relates to a contract or its
+    initiation, and otherwise our legitimate interest in answering enquiries
+    addressed to us, Article 6 (1) (f) GDPR. We keep correspondence for as long
+    as the matter it concerns is open, and delete it afterwards unless a
+    statutory retention period applies to it.
+  </p>
+
+  <h2>The {SITE.name} application</h2>
+  <p>
+    {SITE.name} is a desktop application. It runs on your machine, it has no
+    account and no sign-up, and there is no server of ours behind it. It
+    contains no telemetry, no usage reporting and no crash reporting: it sends
+    us nothing, and we hold no data about how you use it.
+  </p>
+  <p>
+    What you dictate is written to a directory you chose, on your own disk. The
+    application also keeps a runtime log and a record of its own operations
+    there. None of it leaves the machine.
+  </p>
+  <p>
+    Audio leaves your machine only if you point a profile at a cloud model.
+    Then that profile's audio and the text made from it go to the vendor you
+    selected, over your own account and your own key, and that vendor's terms
+    and privacy notice govern what happens to it. We are not a party to that
+    relationship and we receive nothing from it. The choice is made per
+    profile, not once for the whole application, and a profile on the local
+    lane reaches no network at all.
+  </p>
+  <p>
+    Your provider key is held in your operating system's own secret store and
+    is stripped from the application's configuration file whenever that file is
+    written.
+  </p>
+  <p>
+    The application makes one request of its own accord: when you first open
+    its About section, and again whenever you ask it to check, it queries the
+    GitHub releases endpoint for this project to find out whether a newer
+    version exists. That request reaches GitHub and carries your IP address and
+    the version you are running. It does not run at startup and it runs for no
+    other section.
+  </p>
+
+  <h2>Your rights</h2>
+  <p>You have the right at any time to:</p>
+  <ul>
+    <li>access the data held about you, Article 15 GDPR</li>
+    <li>have inaccurate data corrected, Article 16 GDPR</li>
+    <li>have data erased, Article 17 GDPR</li>
+    <li>have processing restricted, Article 18 GDPR</li>
+    <li>receive your data in a portable form, Article 20 GDPR</li>
+    <li>withdraw a consent you gave, with effect for the future, Article 7 (3) GDPR</li>
+  </ul>
+  <p>
+    Write to <a href={`mailto:${SITE.email}`}>{SITE.email}</a> to exercise any
+    of them.
+  </p>
+
+  <h2>Right to object</h2>
+  <p>
+    Where we process data on the basis of legitimate interests under Article 6
+    (1) (f) GDPR, you may object at any time on grounds arising from your
+    particular situation, Article 21 GDPR. We will then stop processing the
+    data unless we can demonstrate compelling legitimate grounds that override
+    your interests, rights and freedoms.
+  </p>
+
+  <h2>Right to complain</h2>
+  <p>
+    You may complain to a supervisory authority, Article 77 GDPR. The authority
+    responsible for the private sector at our seat is the{' '}
+    <a href={AUTHORITY.url}>{AUTHORITY.name}</a>, {AUTHORITY.street},{' '}
+    {AUTHORITY.postcode} {AUTHORITY.city}, {AUTHORITY.country}. You may also
+    approach the authority in your own country of residence or place of work.
+  </p>
+
+  <h2>Changes to this notice</h2>
+  <p>
+    We update this notice when what it describes changes: a service added or
+    removed, a change in the entity behind the site, or a change in the law it
+    rests on. The date at the foot of this page is when the whole of it was
+    last checked against the site and the application, not when a word in it
+    last moved. The source of both is public, and the licence is{' '}
+    <a href={LICENCE_URL}>AGPL-3.0</a>: what this page describes can be
+    verified rather than taken on trust.
+  </p>
+</Legal>

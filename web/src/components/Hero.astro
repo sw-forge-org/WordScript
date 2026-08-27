@@ -1,0 +1,60 @@
+---
+/* THE HERO, AND THE TWO LINES THAT ARE NO LONGER UNDER IT.
+
+   It carried a note reading "Nothing is released yet. This is the part where
+   it gets built." That sentence is the closing section's HEADING, set three
+   times the size, and a page that opens with its own ending has spent the
+   ending. The reader who needs it reaches it.
+
+   The fact strip moved out of the island and into this file for two reasons.
+   The first is that its marks are read from a package at build time, and an
+   island that imported them would ship vendor path data as JavaScript for
+   three glyphs that never change. The second is that it was never part of the
+   demonstration: the window above it runs, and these three facts are true
+   whether or not a byte of script arrives. */
+import Acts from './Acts.astro';
+import HeroStage from '../islands/HeroStage.tsx';
+import { DESKTOPS, DESKTOPS_LABEL, LICENCE } from '../lib/osMarks';
+---
+<section class="hero">
+  <div class="wrap">
+    <div class="hero__in">
+      <h1 class="rise">
+        <span class="b">Speak <em>once</em>.</span>
+        <span class="b">It lands. It stays.</span>
+        <span class="b">It acts.</span>
+      </h1>
+      <p class="lede rise" data-d="1">
+        For people who talk faster than they type. What you say lands in the window you
+        already had open, <b>stays as a file in a folder you named</b>, and can be handed
+        to one agent that acts on it.
+      </p>
+      <Acts delay="2" />
+    </div>
+
+    <div class="hero__right">
+      <HeroStage client:visible />
+
+      {/* Three facts, and the two that have a mark are shown as one. The
+          desktops carry no visible text: three logos in a row are read faster
+          than "macOS, Windows, Linux" and take a third of the width, and the
+          reader who cannot see them gets the sentence instead. */}
+      <ul class="hero__facts mono rise" data-d="2">
+        <li>
+          <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d={LICENCE.path} /></svg>
+          {LICENCE.label}
+        </li>
+        <li class="hero__os">
+          {DESKTOPS.map((d) => (
+            <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d={d.path} /></svg>
+          ))}
+          <span class="vh">{DESKTOPS_LABEL}</span>
+        </li>
+        {/* Not "local or cloud". That named two of the four lanes the product
+            has, and the reader it lost is the one who runs their own box --
+            the same reader ADR 0252 found the engines section had lost. */}
+        <li>cloud, local, your server, enterprise</li>
+      </ul>
+    </div>
+  </div>
+</section>

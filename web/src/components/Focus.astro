@@ -1,0 +1,36 @@
+---
+/* WHERE IT LANDS
+   The hero claims the text arrives in the window you already had focus in, and
+   until now the page never showed it. A logo row normally reads as an
+   integration list, which is the exact claim the schematic below disproves, so
+   the note under it says what these are instead.
+
+   Zero JS. The sketch built these fifteen list items at runtime and appended a
+   second copy of them for the roll; both halves are printed here instead, and
+   the reduced-motion rule in site.css hides the duplicate. That is the same
+   picture from a stylesheet rather than from a media query sampled once at
+   load, so a reader who changes the setting gets the change. */
+import { FOCUS_APPS } from '../lib/focusApps';
+---
+<section class="focus" aria-labelledby="focus-h">
+  <div class="wrap">
+    <p class="focus__h" id="focus-h">It lands in whatever window has focus.</p>
+    <div class="focus__rail">
+      {/* The roll translates by exactly -50%, so the row has to be two
+          identical halves or it jumps at the seam. */}
+      <ul class="focus__row is-rolling" data-focus-row>
+        {[0, 1].map((half) => FOCUS_APPS.map((app) => (
+          <li
+            style={app.colour ? `--c:${app.colour}` : undefined}
+            aria-hidden={half === 1 ? 'true' : undefined}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d={app.path} /></svg>
+            <span>{app.label}</span>
+          </li>
+        )))}
+      </ul>
+    </div>
+    <p class="focus__note">Not integrations. There is nothing to install into any of
+      these: WordScript types where you type.</p>
+  </div>
+</section>

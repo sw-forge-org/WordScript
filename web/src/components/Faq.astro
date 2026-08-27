@@ -1,0 +1,22 @@
+---
+/* The six pairs live in ../lib/faq because this section is not their only
+   reader: the JSON-LD graph emits them as a FAQPage and /llms.txt writes them
+   out as text. The module carries why. */
+import { FAQ } from '../lib/faq';
+---
+<section class="sec" id="faq">
+  <div class="wrap">
+    <div class="sec__head rise">
+      <h2>The honest answers.</h2>
+    </div>
+
+    <div class="faq rise" data-d="1">
+      {FAQ.map((x) => (
+        <details>
+          <summary>{x.q}</summary>
+          <p>{x.a}</p>
+        </details>
+      ))}
+    </div>
+  </div>
+</section>

@@ -1,0 +1,22 @@
+---
+/* THE TURN
+   This was the page's largest claim stated as a sentence and shown as nothing.
+   ADR 0046 is a claim about wiring, so it is drawn as wiring. The two states
+   differ in one readable quantity: how many connections the product itself has
+   to own. Five, or one. */
+import Wiring from '../islands/Wiring.tsx';
+---
+<section class="turn plane" id="turn">
+  <div class="wrap">
+    <p class="turn__lead rise">
+      {/* The `{' '}` is load-bearing. Astro collapses the newline between the
+          closing tag and the next word to nothing, not to a space, so the
+          built page read "their own product.WordScript keeps it". */}
+      <span class="dim">Most dictation tools end at the cursor. The ones that keep
+      anything keep it inside their own product.</span>{' '}
+      WordScript keeps it in a directory <em>your own tools already open</em>.
+    </p>
+
+    <Wiring client:visible />
+  </div>
+</section>

@@ -1,0 +1,77 @@
+---
+/* THE MARK IS NOT IN THIS ROW. It stands on the ASCII band directly above,
+   which is where the page closes; what is left here is one thin row, and it
+   is thin on purpose: a footer that has to be scrolled through is a footer
+   that has been given something to say.
+
+   TWO GROUPS, AND THE SIDE EACH ONE SITS ON IS WHAT IT IS FOR. Left is the
+   project and the house it is built in -- licence, source, room, SW labs,
+   LinkedIn. Right is what the law wants. A reader looking for either knows
+   which half to look at without reading the other.
+
+   The address is gone from here on purpose. It is the one thing in this row
+   that would ask to be acted on, and the section above is where the page asks
+   for that action -- an address in both places is the reader deciding which of
+   the two is the real one.
+
+   THE LEGAL LINKS ARE THREE AND THEY RESOLVE. They were four and they
+   resolved to nothing: the row was drawn ahead of the pages so that the day
+   the pages landed nothing here had to be found and rewired, which is what
+   happened. Imprint, Privacy and Terms are written; DPA is gone, and the
+   reason it is gone is in ../lib/legal beside the list itself, because a
+   removed link is exactly the kind of decision that gets quietly re-added.
+
+   THE ROW IS NOT A LIST TYPED HERE. It comes off `LEGAL_ROUTES`, which the
+   pages themselves do not read -- their routes are their filenames -- so this
+   is still the one place that decides what the footer offers. What it buys is
+   that the deploy check can walk the same list and refuse a build where one of
+   them is missing.
+
+   SW LABS IS `sw-labs.de`, NOT `.com`. The brief said `.com`; the canonical
+   URL in the SW labs site's own head, the CMS and deck subdomains, and the
+   address in the section above are all `.de`. */
+import { LICENCE } from '../lib/osMarks';
+import { LINKS } from '../lib/linkMarks';
+import { LEGAL_ROUTES } from '../lib/legal';
+---
+<footer class="foot">
+  <div class="wrap foot__in">
+    <nav class="foot__meta mono" aria-label="Project">
+      {/* The same mark the hero's fact strip carries, at the same size. The
+          licence is named twice on this page and it is a mark both times. */}
+      <span class="foot__lic">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d={LICENCE.path} /></svg>
+        {LICENCE.label}
+      </span>
+      {/* FOUR LINKS, EACH WITH A MARK, AND THE ORDER IS NEAREST-TO-THE-CODE
+          FIRST: where it is written, where it is talked about, where the house
+          is, where the house posts.
+
+          THE HOUSE'S PAGE IS IN THE LEFT GROUP because this half of the row is
+          the project and the house it is built in, and LinkedIn is where the
+          house is.
+
+          THERE IS NO X AND THERE WILL NOT BE ONE. The account exists and it
+          belongs to the maintainer rather than to SW labs, so a link here
+          would point a reader looking for the company at a person.
+
+          Three of the four marks are the vendor's own, licensed rather than
+          copied, and the fourth is a globe because SW labs has no mark to
+          license -- ../lib/linkMarks carries why, including why the whole row
+          moved onto one package to get LinkedIn's real mark.
+
+          Each keeps its own viewBox: they are all 16 today, and a row drawn on
+          a number typed here would be wrong the day one of them is not. */}
+      {LINKS.map((l) => (
+        <a class="foot__l" href={l.href}>
+          <svg class="mark" viewBox={l.viewBox} aria-hidden="true"><path d={l.path} /></svg>
+          {l.label}
+        </a>
+      ))}
+    </nav>
+
+    <nav class="foot__legal mono" aria-label="Legal">
+      {LEGAL_ROUTES.map((l) => <a href={l.href}>{l.label}</a>)}
+    </nav>
+  </div>
+</footer>

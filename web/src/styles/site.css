@@ -1,0 +1,2444 @@
+/* ==========================================================================
+   wordscript.dev - the component grammar
+
+   Imported into @layer components by globals.css, so a Tailwind utility at a
+   call site still wins over anything here. That is the same arrangement the
+   app uses for src/styles/shell.css.
+
+   The faces, the ladder, the radius steps, the type scale, the reset and the
+   ground live in globals.css. What follows is the page's own components, and
+   the comments in it carry the derivations: where a value looks arbitrary, the
+   comment beside it is the record of why it is that value.
+   ========================================================================== */
+
+/* ---- light and planes --------------------------------------------------
+   The grain above answers what the ground is made of. It does not answer why
+   one part of the page is not the same distance away as another, and without
+   that a long dark page is one flat sheet: correct, and inert.
+
+   Two devices, both cheap and both deliberate. Sections step down the ladder
+   from --bg-base to --bg-sidebar and back, with the step made by a gradient
+   rather than a rule, so the seam is felt where a border would be counted.
+   And the objects worth looking at get a light: warm, very flat, and placed
+   only where there is something to light. A glow on everything is the
+   category's look and says nothing; a glow on three things says where to
+   look.
+
+   A light belongs to an object, so it is drawn as that object's own shadow
+   rather than as a field behind it. Both surfaces that carry one clip their
+   overflow, and a shadow is the one form of light that survives that. Those
+   rules live beside the components they light, further down. */
+.plane{position:relative;isolation:isolate}
+.plane::before{
+  content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:linear-gradient(180deg,
+    transparent 0,var(--bg-sidebar) 9%,var(--bg-sidebar) 91%,transparent 100%);
+}
+
+/* THE SHEET RUNS UNDER THE WHOLE PAGE, and the dark planes are where it shows.
+
+   The hero is a ruled surface (`.pin::after`, and the derivation is there).
+   These two sections are the page's other ruled surfaces, and they carry the
+   same rules at the same pitch for a reason that is not decoration: the ground
+   the page is written on does not change halfway down it. A texture that
+   appears once in the hero and never again is an ornament on the hero; the
+   same texture surfacing wherever the page steps down to its darkest plane is
+   the page having a ground.
+
+   NO SECOND LAMP. The hero's rules are lit by a warm radial light, which is
+   what makes them read there against a plane that is otherwise empty. These
+   two are full of drawn objects -- the wiring diagram, the activity field,
+   the counters -- and every one of them is already lit by its own shadow. A
+   lamp here would be the fourth light in a section that has three, against
+   the rule in globals.css that a glow on everything says nothing. So the
+   rules take the band's own profile instead: they arrive as the plane darkens
+   and leave as it lightens, which is the same 9%-to-91% envelope `::before`
+   fades the ground on, and they sit a step fainter than the hero's because
+   nothing is lifting them.
+
+   `z-index:-1` and DOM order put them above the band gradient and below the
+   content, and `isolation:isolate` on the plane keeps that negative index
+   inside this section rather than sending it behind the page. */
+.plane::after{
+  content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:repeating-linear-gradient(180deg,
+    rgba(242,239,233,.055) 0 1px,transparent 1px var(--rule,26px));
+  -webkit-mask-image:linear-gradient(180deg,
+    transparent 0,#000 9%,#000 91%,transparent 100%);
+          mask-image:linear-gradient(180deg,
+    transparent 0,#000 9%,#000 91%,transparent 100%);
+}
+
+:root{
+  /* THE RULED PITCH, and it is the lede's own line box: `--t-lead` is 16px and
+     the lede runs at 1.62, which is 25.92. Every ruled surface on the page
+     reads it, so there is one rhythm rather than one per section. */
+  --rule:26px;
+}
+
+.wrap{width:100%;max-width:var(--wide);margin-inline:auto;padding-inline:var(--gut)}
+.mono{font-family:var(--f-mono);font-weight:400;letter-spacing:.02em}
+.micro{font-stretch:var(--w-micro);letter-spacing:var(--ls-micro);font-size:var(--t-micro);font-weight:var(--wt-micro)}
+
+/* ==========================================================================
+   HEADER - a floating window, not a full-bleed rectangle
+   ========================================================================== */
+/* THE HEADER'S HEIGHT IS A NUMBER THE PAGE BELOW IT NEEDS.
+
+   It is `sticky`, which means it also takes its height in normal flow, and the
+   pinned plane starts under it. A plane sized at a plain `100svh` is therefore
+   a plane that ends one header below the fold -- measured at every width from
+   360 to 1440, the overhang on first paint was exactly this box: 58px narrow,
+   62px wide. So the height is declared once here and read there, rather than
+   being a literal in two files that drift the next time this bar changes. */
+:root{--top-in-h:52px;--top-pad:.6rem;--top-h:calc(var(--top-in-h) + var(--top-pad))}
+
+.top{position:sticky;top:0;z-index:60;padding:var(--top-pad) 0 0}
+.top__in{
+  max-width:calc(var(--wide) - var(--gut));margin-inline:auto;
+  margin-left:max(var(--gut),calc((100vw - var(--wide) + 2 * var(--gut)) / 2));
+  margin-right:max(var(--gut),calc((100vw - var(--wide) + 2 * var(--gut)) / 2));
+  height:var(--top-in-h);padding:0 .55rem 0 .85rem;
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  border:1px solid transparent;border-radius:var(--r-window);
+  transition:background-color .28s ease,border-color .28s ease,box-shadow .28s ease;
+}
+.top.is-stuck .top__in{
+  background:rgba(28,28,30,.72);
+  -webkit-backdrop-filter:blur(14px) saturate(1.4);
+          backdrop-filter:blur(14px) saturate(1.4);
+  border-color:var(--border);
+  box-shadow:var(--elev-raised);
+}
+.brand{display:inline-flex;align-items:center;gap:.6rem}
+.brand img{width:26px;height:27px}
+.brand .wm{
+  display:block;width:128px;height:22px;background:var(--fg);
+  -webkit-mask:url('/assets/wordscript_wordmark.png') no-repeat left center/contain;
+          mask:url('/assets/wordscript_wordmark.png') no-repeat left center/contain;
+}
+.top__nav{display:flex;align-items:center;gap:.15rem}
+
+/* ---- the burger, and the panel it opens --------------------------------
+   Hidden above 680px, where the ghost links are on the bar and there is
+   nothing for it to reveal. */
+.burger{
+  display:none;width:34px;height:32px;margin-left:.15rem;
+  align-items:center;justify-content:center;flex-direction:column;gap:5px;
+  background:transparent;border:1px solid transparent;border-radius:var(--r-control);
+  color:var(--fg-dim);cursor:pointer;
+  transition:background-color var(--dur-fast) var(--ease),color var(--dur-fast) var(--ease);
+}
+.burger:hover{background:var(--bg-elevated);color:var(--fg)}
+/* TWO BARS, NOT THREE. Three is the icon everyone draws and the third bar
+   carries no information; two reads as a menu at this size and leaves the
+   glyph lighter than the wordmark beside it, which is the order of importance
+   on this bar. */
+.burger span{display:block;width:17px;height:1.5px;border-radius:1px;background:currentColor}
+
+/* THE PANEL STANDS ON THE PAGE'S OWN GROUND.
+
+   It was a flat dark plane with a warm glow at the foot, which is the shape
+   every phone menu has and one reference in particular. The page already has a
+   ground and it is the one ADR 0254 chose for the opening: a sheet ruled at
+   the lede's own line box, washed by one warm light, masked so the rules exist
+   only where the light falls. A dictation app that keeps what you said as a
+   file in a folder you named is a writing surface before it is software, and
+   this is the surface -- so the panel is written on it too rather than
+   inventing a second ground for the one screen that covers everything.
+
+   The rules run behind the list rather than between its items. Hairline
+   dividers under each row would be a second horizontal rhythm crossing the
+   first, and the sheet already separates the rows by being ruled. */
+.menu{
+  position:fixed;inset:0;z-index:90;
+  display:flex;flex-direction:column;
+  padding:calc(.6rem + env(safe-area-inset-top)) var(--gut)
+          calc(1.1rem + env(safe-area-inset-bottom));
+  background:var(--bg-inset);
+  /* A LANDSCAPE PHONE IS THE CASE THAT BREAKS THIS. At 640 by 360 the burger
+     is still on the bar -- the breakpoint is a width -- and six rows plus the
+     header plus the action come to 499px against 360 of viewport. Measured
+     before this line was here: the action sat 139px below the fold on a panel
+     that could not be scrolled to reach it. `contain` keeps the flick inside
+     the panel rather than handing the overscroll to the locked page. */
+  overflow-y:auto;overscroll-behavior:contain;
+}
+.menu[hidden]{display:none}
+/* The container takes focus so no control has to; it is not a control, so it
+   does not draw a ring for having been given it. */
+.menu:focus{outline:none}
+/* The sheet and its lamp, `.pin`'s rule at the panel's own scale.
+
+   THE LIGHT SITS BEHIND THE LIST AND NOT UNDER IT. The first version put it
+   low, which is where the reference it was replacing puts its glow -- and on a
+   panel whose list ends halfway down the screen, that lights the empty half.
+   The rules were then brightest in the void and faintest under the words,
+   which is a texture pointing at nothing. It is at the list's own height now,
+   and both the rules and the warmth fall away below it, so the bottom of the
+   panel is quiet and the action is the only thing standing in it. */
+.menu::before{
+  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:repeating-linear-gradient(180deg,
+    rgba(242,239,233,.10) 0 1px,transparent 1px var(--rule,26px));
+  -webkit-mask-image:
+    linear-gradient(180deg,transparent,#000 9%,#000 52%,transparent 74%),
+    radial-gradient(ellipse 84% 44% at 30% 34%,#000 26%,transparent 78%);
+          mask-image:
+    linear-gradient(180deg,transparent,#000 9%,#000 52%,transparent 74%),
+    radial-gradient(ellipse 84% 44% at 30% 34%,#000 26%,transparent 78%);
+  -webkit-mask-composite:source-in;mask-composite:intersect;
+}
+.menu::after{
+  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 90% 46% at 30% 33%,
+    rgba(255,156,43,.10),transparent 72%);
+}
+.menu > *{position:relative;z-index:1}
+.menu{animation:menu-in .26s var(--ease) both}
+@keyframes menu-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+
+.menu__top{
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  height:48px;padding-right:.1rem;flex:0 0 auto;
+}
+.menu__x{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:36px;height:36px;margin-right:-.4rem;
+  background:transparent;border:0;border-radius:var(--r-control);
+  color:var(--fg-dim);cursor:pointer;
+}
+.menu__x svg{width:20px;height:20px}
+.menu__x:hover{background:var(--bg-elevated);color:var(--fg)}
+
+/* THE LIST. A number and a name, which is the demo tab row's own shape at the
+   size a phone menu needs -- mono micro, muted, and it takes the accent on the
+   row being pressed the same way the selected tab's number does. */
+.menu__list{display:flex;flex-direction:column;margin-top:1.15rem;gap:.15rem}
+.menu__list a{
+  display:grid;grid-template-columns:2.1rem 1fr;align-items:baseline;
+  padding:.72rem .15rem;border-radius:var(--r-card);
+  color:var(--fg);text-decoration:none;
+}
+.menu__n{
+  font-size:var(--t-micro);color:var(--fg-muted);
+  transition:color var(--dur-fast) var(--ease);
+}
+.menu__t{
+  font-size:clamp(1.3rem,5.8vw,1.55rem);line-height:1.18;font-weight:600;
+  font-stretch:var(--w-lead);letter-spacing:var(--ls-lead);
+}
+.menu__list a:hover{background:color-mix(in srgb,var(--bg-surface) 70%,transparent)}
+.menu__list a:hover .menu__n,
+.menu__list a:active .menu__n{color:var(--accent)}
+.menu__list a:active .menu__t{color:var(--accent)}
+
+/* Pushed to the bottom, because a panel that ends where its list ends leaves
+   the action floating in the middle of an empty screen. */
+.menu__foot{margin-top:auto;padding-top:1.6rem;display:grid;gap:.85rem;justify-items:start}
+.menu__foot .acts{width:100%}
+.menu__foot .btn{height:42px;flex:1 1 auto;justify-content:center}
+.menu__mail{
+  font-size:var(--t-label);color:var(--fg-dim);
+  text-decoration:none;border-bottom:1px solid var(--border-strong);
+}
+.menu__mail:hover{color:var(--fg)}
+
+/* THE SAME PANEL ON A SHORT VIEWPORT. Scrolling is the guarantee that nothing
+   is unreachable; this is so that on the common short case nothing has to be
+   scrolled for. The list is the part that yields, because a menu's job is to
+   show its destinations and its action at once. */
+@media(max-height:560px){
+  .menu{padding-top:calc(.35rem + env(safe-area-inset-top));
+        padding-bottom:calc(.7rem + env(safe-area-inset-bottom))}
+  .menu__top{height:42px}
+  .menu__list{margin-top:.5rem}
+  .menu__list a{padding:.44rem .15rem}
+  .menu__t{font-size:1.06rem}
+  .menu__foot{padding-top:1.1rem;gap:.6rem}
+  .menu__foot .btn{height:38px}
+}
+
+/* The page behind a covering panel does not scroll. Without this the reader
+   flicks the overlay and the document moves underneath it, which reads as the
+   panel being broken rather than as the page being reachable. */
+body.is-locked{overflow:hidden}
+
+/* ==========================================================================
+   BUTTONS - src/styles/shell.css .ws-btn, at page scale
+   A rectangle with text in it is a rectangle (the radius ladder). The one
+   capsule on this page is the overlay pill, which is physically a capsule.
+   ========================================================================== */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  height:32px;padding:0 11px;border-radius:var(--r-control);
+  font-stretch:var(--w-label);letter-spacing:var(--ls-label);
+  font-size:var(--t-label);font-weight:550;white-space:nowrap;
+  background:var(--bg-elevated);color:var(--fg);border:1px solid var(--border);
+  transition:background-color var(--dur-fast) var(--ease),opacity var(--dur-fast) var(--ease);
+}
+.btn svg{width:13px;height:13px}
+.btn:hover{background:color-mix(in srgb,var(--bg-elevated) 82%,white)}
+.btn:active{transform:translateY(.5px)}
+.btn--primary{
+  background:linear-gradient(180deg,
+    color-mix(in srgb,var(--accent) 94%,white) 0%,
+    var(--accent) 52%,
+    color-mix(in srgb,var(--accent) 95%,black) 100%);
+  color:var(--on-accent);
+  border-color:color-mix(in srgb,var(--accent) 72%,black);
+  box-shadow:inset 0 1px 0 color-mix(in srgb,white 34%,transparent),
+             0 1px 1.5px color-mix(in srgb,black 34%,transparent);
+  font-weight:600;
+}
+.btn--primary:hover{
+  background:linear-gradient(180deg,
+    color-mix(in srgb,var(--accent) 88%,white) 0%,
+    color-mix(in srgb,var(--accent) 96%,white) 52%,
+    var(--accent) 100%);
+}
+.btn--ghost{background:transparent;border-color:transparent;color:var(--fg-dim)}
+.btn--ghost:hover{background:var(--bg-elevated);color:var(--fg)}
+/* the page's own calls to action are the same button, one step larger */
+.acts{display:flex;flex-wrap:wrap;gap:.5rem}
+.acts .btn{height:38px;padding:0 15px;font-size:var(--t-body);font-stretch:var(--w-body)}
+.acts .btn svg{width:14px;height:14px;opacity:.65}
+
+/* ==========================================================================
+   THE LIVE OVERLAY PILL - src/styles/overlay-pill.css, rebuilt as live DOM
+   ========================================================================== */
+.ov{
+  --ov-surface:#1b1b1d;
+  --ov-border:rgba(255,255,255,.09);
+  --ov-highlight:inset 0 1px 0 rgba(255,255,255,.06);
+  --ov-accent:#e8912a;
+  --ov-text:#e9e9ec;
+  display:inline-flex;font-family:var(--f-ui);color:var(--ov-text);max-width:100%;
+}
+.pill{
+  display:inline-flex;align-items:center;gap:2px;
+  width:max-content;max-width:100%;height:40px;padding:0 6px;
+  background:var(--ov-surface);border:1px solid var(--ov-border);
+  border-radius:999px;                     /* exempt: it IS a capsule */
+  box-shadow:var(--ov-highlight),0 14px 34px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.4);
+  user-select:none;position:relative;
+  transition:border-color .16s ease-out,box-shadow .16s ease-out;
+}
+.pill--recording{
+  border-color:rgba(232,145,42,.34);
+  box-shadow:var(--ov-highlight),inset 0 0 0 1px rgba(232,145,42,.16),0 14px 34px rgba(0,0,0,.55);
+}
+.pill--processing{border-color:rgba(232,145,42,.26)}
+.pill__mic{
+  flex:0 0 auto;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;
+  border:none;border-radius:50%;background:transparent;color:var(--ov-text);position:relative;padding:0;
+}
+.pill__mic::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;
+  background:radial-gradient(circle at 48% 42%,rgba(255,255,255,.10),rgba(255,255,255,.03) 55%,transparent 80%);
+  box-shadow:var(--ov-highlight);
+}
+.pill__mic svg{position:relative;z-index:1;width:18px;height:18px}
+.pill--recording .pill__mic{color:var(--ov-accent)}
+.pill__bars{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;gap:2px;height:30px;padding:0 6px}
+.pill__bars .bar{
+  width:3px;height:5px;border-radius:999px;background:rgba(255,255,255,.92);
+  box-shadow:0 0 8px rgba(255,255,255,.10);flex-shrink:0;
+  transition:height 60ms linear,opacity .12s ease-out;
+}
+.pill--processing .pill__bars .bar{animation:ov-shimmer 1.4s ease-in-out infinite}
+.pill--processing .pill__bars .bar:nth-child(1){animation-delay:0s}
+.pill--processing .pill__bars .bar:nth-child(2){animation-delay:.07s}
+.pill--processing .pill__bars .bar:nth-child(3){animation-delay:.14s}
+.pill--processing .pill__bars .bar:nth-child(4){animation-delay:.21s}
+.pill--processing .pill__bars .bar:nth-child(5){animation-delay:.28s}
+.pill--processing .pill__bars .bar:nth-child(6){animation-delay:.35s}
+.pill--processing .pill__bars .bar:nth-child(7){animation-delay:.42s}
+.pill--processing .pill__bars .bar:nth-child(8){animation-delay:.49s}
+.pill--processing .pill__bars .bar:nth-child(9){animation-delay:.56s}
+.pill--processing .pill__bars .bar:nth-child(10){animation-delay:.63s}
+.pill--processing .pill__bars .bar:nth-child(11){animation-delay:.70s}
+@keyframes ov-shimmer{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes ov-spin{to{transform:rotate(360deg)}}
+.pill__divider{flex:0 0 auto;width:1px;height:20px;margin:0 2px;background:rgba(255,255,255,.10)}
+.pill__mode{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px 0 10px;border:none;border-radius:999px;background:transparent}
+.pill__mode-dot{width:5px;height:5px;border-radius:50%;background:var(--ov-accent);box-shadow:0 0 6px rgba(232,145,42,.6)}
+.pill__mode-label{font-size:12px;font-weight:600;letter-spacing:.01em;line-height:1;white-space:nowrap}
+.pill__timer{flex:0 0 auto;font-size:13px;font-weight:600;line-height:1;letter-spacing:.01em;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 2px}
+.pill__text{flex:0 1 auto;min-width:0;max-width:230px;padding:0 8px 0 10px;font-size:12px;font-weight:500;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill__text--pre{color:#9a9a9e}
+.pill__group{flex:0 0 auto;display:inline-flex;align-items:center;gap:2px;padding:0 2px}
+.pill__act{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:none;border-radius:999px;background:rgba(255,255,255,.07);color:var(--ov-text)}
+.pill__act svg{width:16px;height:16px}
+.pill__act--primary{background:var(--ov-accent);color:#17140f}
+.pill__spin{animation:ov-spin .7s linear infinite}
+/* THE LEARNED-WORD TAB, AT THE SHIPPED GEOMETRY.
+   Every value below is read off `.ov-learned-tab` in
+   src/styles/overlay-pill.css rather than chosen here, because this object is
+   the app's own and the page's copy of it was wrong in four ways at once: it
+   tucked itself 14px UNDER the pill instead of standing 6px clear of it, it
+   was 26px tall against 22, it was half-rounded with its right border cut
+   away, and it carried a word the shipped tab does not print.
+
+   The shutter paints nothing and only its width animates, anchored by `right`
+   so that growing extends it leftward and the tab reads as emerging from
+   behind the capsule. The inner element is pinned to the shutter's right edge
+   at its content width, so the content never moves: it is uncovered. Both of
+   those are the shipped construction and both are why the reveal reads as a
+   slide rather than as a box growing in place.
+
+   The gap is 6px, which is what makes it a separate object rather than a
+   growth of the capsule. `.pill` is not the containing block here -- it has
+   `position:relative` for exactly this. */
+.pill__learn{
+  position:absolute;right:calc(100% + 6px);top:50%;margin-top:-11px;
+  height:22px;width:0;overflow:hidden;pointer-events:none;
+  transition:width .17s cubic-bezier(.22,.85,.28,1);
+}
+.pill__learn.is-on{width:var(--w,140px)}
+.pill__learn-in{
+  position:absolute;right:0;top:0;height:100%;width:max-content;max-width:168px;
+  box-sizing:border-box;display:flex;align-items:center;gap:5px;
+  padding:0 9px;border-radius:999px;      /* exempt: it IS a capsule */
+  white-space:nowrap;
+  background:var(--ov-surface);border:1px solid rgba(232,145,42,.34);
+  box-shadow:var(--ov-highlight);
+  font-size:10.5px;font-weight:500;letter-spacing:.01em;color:var(--ov-text);
+}
+/* The accent is the dot and nothing else. Colouring the term as well would put
+   two marks on one statement, and the term is the part that has to be read as
+   text rather than as a highlight. */
+.pill__learn-dot{flex:0 0 auto;width:6px;height:6px;border-radius:999px;background:var(--ov-accent)}
+.pill__learn-label{min-width:0}
+
+/* THE CHIP IS A BUTTON, AND IT HAS TO LOOK PRESSABLE.
+   The app's overlay answers "how do I change the mode" three ways, and this is
+   the one a reader can find without knowing a shortcut exists. A chip that
+   cycles but reads as a label teaches nothing, so it takes a hover ground and
+   a pointer the way it does in src/styles/overlay-pill.css. */
+.pill__mode{cursor:pointer;transition:background .14s ease-out}
+.pill__mode:hover{background:rgba(255,255,255,.05)}
+
+/* The target language, and only in Translate. Every language the runtime
+   offers has a two-letter code, so the chip has a fixed width. No dot: the dot
+   on .pill__mode marks where the mode group starts, and a second one would
+   read as a second group rather than the same statement continued. */
+.pill__lang{
+  flex:0 0 auto;display:inline-flex;align-items:center;height:20px;
+  margin-left:-2px;padding:0 6px;border:1px solid var(--ov-border);
+  border-radius:6px;background:transparent;font-family:var(--f-ui);
+  font-size:11px;font-weight:600;letter-spacing:.04em;line-height:1;
+  color:#9a9a9e;cursor:pointer;white-space:nowrap;
+  transition:background .14s ease-out,color .14s ease-out;
+}
+.pill__lang:hover{background:rgba(255,255,255,.05);color:var(--ov-text)}
+
+/* Alt+S. Nothing is being captured: no mic, no timer, no spinner. The soft
+   accent ring is what says "selectable" instead of "running". */
+.pill--mode-picker{
+  border-color:rgba(232,145,42,.24);
+  box-shadow:var(--ov-highlight),inset 0 0 0 1px rgba(232,145,42,.10),0 14px 34px rgba(0,0,0,.55);
+}
+.pill--error{
+  border-color:rgba(255,122,107,.34);
+  box-shadow:var(--ov-highlight),0 0 24px rgba(255,122,107,.20),0 10px 30px rgba(0,0,0,.42);
+}
+.pill__act--bad{background:rgba(255,122,107,.14);color:#ff9a8e}
+
+/* A committed clipboard_only preview leaves nothing behind, so the capsule has
+   to be able to leave. Width and opacity, not transform: a transform promotes
+   the capsule to its own layer, which is the bleed ADR 0089 exists about. */
+.ov--gone{opacity:0;transition:opacity .28s var(--ease)}
+
+/* ==========================================================================
+   TYPE, AND THE EMPHASIS SYSTEM
+
+   ONE FACE SETS THE PAGE, ONE FACE EMPHASISES, AND THEY ARE NOT THE SAME ONE.
+   Archivo sets every heading, because it is the face the app itself is set in
+   and the page is a page about that app. Zodiak is held back entirely for
+   emphasis: an italic serif word inside an Archivo line is the only thing on
+   this site set in a second face, which is what makes it read as emphasis at
+   all. A serif heading with a serif emphasis inside it has nothing to change
+   into, so it emphasises by colour alone and the colour then has to shout.
+
+   AN EMPHASISED WORD IS NEVER SMALLER THAN THE WORD IT STANDS OUT FROM, and
+   never a second decision either. There is exactly one emphasis rule on the
+   page: Zodiak, italic, accent, x height matched to its host. No per word
+   variants. If a line needs two kinds of emphasis it needs rewriting instead.
+
+   THE SIZE. `font-size:1.04em` is a measurement, not a preference. The words
+   that get emphasised here are lowercase, so what reads as size is the x
+   height and not the cap height. Measured in this browser at the same em,
+   Archivo's x height sits at 0.530 and Zodiak italic's at 0.510; 0.530/0.510
+   is 1.039, and the 1.04 cancels exactly that. Matching on caps instead
+   (0.690 against 0.705) would have set the serif word two per cent small.
+
+   THE HEADING SIZES continue the app's own optical-size axis past --t-hero
+   rather than starting a new one: as the size climbs the face narrows and
+   the tracking tightens, on the same slope the seven steps already use.
+   ========================================================================== */
+h1{
+  font-family:var(--f-ui);font-weight:600;
+  font-size:clamp(2.05rem,1.15rem + 2.8vw,3rem);
+  font-stretch:95%;line-height:1.1;letter-spacing:-.032em;
+}
+h1 .b{display:block}
+h2{
+  font-family:var(--f-ui);font-weight:600;
+  font-size:clamp(1.55rem,1.02rem + 1.5vw,2.15rem);
+  font-stretch:96%;line-height:1.16;letter-spacing:-.028em;
+}
+
+em{
+  font-family:var(--f-em);font-style:italic;font-weight:400;
+  font-size:1.04em;color:var(--accent);
+}
+
+.lede{
+  margin-top:1.15rem;max-width:var(--read);
+  font-size:var(--t-lead);font-stretch:var(--w-lead);letter-spacing:var(--ls-lead);
+  color:var(--fg-dim);line-height:1.62;
+}
+.lede b{color:var(--fg);font-weight:550}
+
+/* ==========================================================================
+   THE SEAM - one plane is pinned, the next one covers it
+
+   `.pin` holds the opening claim still while `.over` scrolls up across it. The
+   whole effect is those two rules; the file below adds no third.
+
+   `100svh` AND NOT `100vh`. On a phone `vh` is the LARGE viewport - the height
+   the page would have if the browser chrome retracted - so a hero sized in
+   `vh` is taller than the screen on first paint and its last line sits under
+   the address bar until the reader scrolls. `svh` is the small viewport, which
+   is what is actually on screen before anything moves. It is `min-height`
+   rather than `height` because a narrow screen may need more than a viewport
+   for the same content, and content that overflows a fixed height is content
+   that is cut off. AND THE HEADER COMES OFF IT: the bar is `sticky`, so it
+   takes its height in normal flow and this plane starts under it. A plain
+   `100svh` here is a plane that ends one header below the fold -- measured at
+   every width from 360 to 1440, the overhang on first paint was exactly the
+   header, 58px narrow and 62px wide, at all of them.
+
+   AND BELOW A CERTAIN SCREEN IT DOES NOT PIN AT ALL. A sticky box taller than
+   the viewport pins its top and then hangs: the reader scrolls and the bottom
+   of the hero never arrives, because the top is holding at 0. It is not merely
+   the effect not paying -- it is content that no scroll can reach.
+
+   THE GATE IS A WIDTH, AND IT WAS A HEIGHT FOR ONE RELEASE. That was the wrong
+   axis, and a phone is what proved it: the plane's demand is set by how wide
+   it is, because a single column stacks the sentence, the window and the fact
+   strip that a second column would put side by side. Measured as the content's
+   own height plus the header, with the pin off:
+
+     360px wide -> needs 918      768px -> 769
+     390px      -> needs 871     1024px -> 828
+     430px      -> needs 871     1080px -> 590   <- the two-column break
+     600px      -> needs 782     1440px -> 626
+
+   Under 1080 the plane wants between 751 and 918 CSS pixels of viewport, which
+   no phone has with a browser bar on screen and no tablet has in landscape.
+   Above it the two-column hero halves the demand and 626 is the worst case. So
+   the pin is gated on the width where the layout it needs actually exists, and
+   the height check stays as the landscape backstop. Measured at 390x664 before
+   the gate moved: the focus band was 0 of 130px visible AT EVERY SCROLL
+   POSITION and the fact strip 15 of 42, permanently. Under the gate the page
+   is what it was: two boxes, one after the other, and all of it reachable.
+
+   THE GROUND IS THE SEAM, NOT THE RADIUS. The ladder in globals.css has four
+   rungs assigned by what a thing IS, and the aggregate went soft the last time
+   a fifth was added by eye - so the cover takes `--r-window`, which at this
+   width is a hairline's worth of corner and is not what the reader reads. What
+   the reader reads is that the two planes are different grounds: the pinned
+   one steps DOWN to `--bg-inset`, the ground this design system uses for a
+   well, a log, a text field - anything recessed - and the cover keeps
+   `--bg-base`. A plane that is underneath is recessed. The hairline and the
+   cast shadow are the third and fourth signals, and by the material rule in
+   globals.css a cast shadow is exactly what a surface genuinely above the
+   plane is allowed to have.
+   ========================================================================== */
+/* THE HEADER SITS IN `body`, NOT IN THE PINNED PLANE, so the plane starts
+   under it and the strip it leaves at the top of the page was `--bg-base`
+   against the hero's `--bg-inset` -- a seam across the top of the window that
+   said nothing. The plane bleeds upward past its own top edge to cover it.
+
+   It travels with the plane rather than being painted on `body`, which is what
+   makes it correct in both states: unpinned it covers the header strip,
+   pinned it is off-screen and costs nothing. Painting `body` instead would
+   have carried the hero's ground down past the footer, where the page is not
+   the hero any more. */
+.pin{position:relative;background:var(--bg-inset)}
+.pin::before{
+  content:"";position:absolute;left:0;right:0;bottom:100%;height:50vh;
+  background:var(--bg-inset);pointer-events:none;
+}
+.over{
+  position:relative;z-index:1;
+  background:var(--bg-base);
+  border-radius:var(--r-window) var(--r-window) 0 0;
+  box-shadow:0 -1px 0 var(--border-strong),0 -30px 60px -16px rgba(0,0,0,.66);
+}
+
+/* ---- THE SHEET, AND THE LAMP ON IT --------------------------------------
+   The pinned plane is a ruled surface with a warm light falling on it, and
+   the two halves come from two different candidates for a reason worth
+   writing down.
+
+   THE RULES ARE THE MOTIF. A dictation app that keeps what you said as a file
+   in a folder you named is a writing surface before it is a piece of
+   software, and ruled paper says that in a way a dot grid cannot: a dot grid
+   is what every developer tool ships this year and it means nothing, whereas
+   a ruled sheet is the one ground on this page that could only belong to this
+   product.
+
+   THE LAMP IS WHY IT READS AT ALL. Rendered flat, the rules were tasteful and
+   invisible -- a texture the reader's eye slides off. The candidate that beat
+   it was a cell grid, and measured against this one the grid was not what won
+   it: the grid was almost as faint. What won was a warm radial light behind
+   the heading, which gave the plane a source and therefore a depth. So the
+   light is kept and the grid is dropped, which is the whole finding: the
+   generic half of that candidate was doing none of the work.
+
+   The light is a ground wash AND a mask, composited with the sheet's own
+   top-and-bottom fade. That is what makes it a lamp rather than a glow: the
+   rules EXIST only where the light falls, so the surface reads as one thing
+   lit from one place instead of as two effects stacked. It obeys the material
+   rule in globals.css -- a light belongs where there is something to light,
+   and a glow on everything is the category's look and says nothing.
+
+   THE PITCH IS THE LEDE'S OWN LINE BOX. `--t-lead` is 16px and the lede runs
+   at 1.62, which is 25.92 -- so 26px, and the paragraph in the hero sits at
+   the rhythm of the rules behind it. What is NOT claimed is registration: the
+   phase depends on where the plane centres at a given viewport height, so the
+   lines coincide with the text at some sizes and fall between at others. A
+   sheet that nearly registers reads worse than one that plainly does not, so
+   the rules stay faint enough that neither case is something the reader
+   catches themselves checking.
+
+   AND THERE IS NO MARGIN RULE. The sheet carried one for a while -- a hairline
+   down the left margin in the accent, the thing that makes ruled paper read as
+   paper rather than as stripes. It was removed. On a page whose only accent is
+   the primary action and the one italic in the heading, a second accent line
+   running the full height of the opening plane is not a detail of the ground,
+   it is a third thing competing for the same eye. The lamp already says the
+   surface is lit and the rules already say what surface it is. */
+.pin{
+  /* the lamp, as a ground wash. Its centre is the heading's, not the
+     plane's: a light centred on the box would light the empty half. */
+  background-image:radial-gradient(ellipse 60% 54% at 32% 46%,
+    rgba(255,156,43,.075),transparent 72%);
+}
+.pin > *{position:relative;z-index:1}
+.pin::after{
+  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:repeating-linear-gradient(180deg,
+    rgba(242,239,233,.10) 0 1px,transparent 1px var(--rule));
+  /* the sheet's own fade AND the lamp, intersected. Two masks rather than one
+     because they answer different questions: the first keeps the sheet off
+     the header and out of the cover's shadow, the second is the light. */
+  -webkit-mask-image:
+    linear-gradient(180deg,transparent,#000 13%,#000 78%,transparent),
+    radial-gradient(ellipse 80% 72% at 32% 46%,#000 26%,transparent 78%);
+          mask-image:
+    linear-gradient(180deg,transparent,#000 13%,#000 78%,transparent),
+    radial-gradient(ellipse 80% 72% at 32% 46%,#000 26%,transparent 78%);
+  -webkit-mask-composite:source-in;
+          mask-composite:intersect;
+}
+
+@media(min-width:1080px) and (min-height:700px){
+  .pin{
+    position:sticky;top:0;z-index:0;
+    min-height:calc(100svh - var(--top-h));
+    display:flex;flex-direction:column;justify-content:center;
+  }
+}
+
+/* ==========================================================================
+   HERO
+   ========================================================================== */
+.hero{position:relative;padding:clamp(2rem,4.5vw,3.5rem) 0 clamp(2rem,4vw,3.25rem)}
+.hero__in{position:relative;max-width:52rem}
+.hero .acts{margin-top:1.5rem}
+.hero__right{min-width:0}
+
+.stage{margin-top:clamp(1.75rem,3.5vw,2.75rem);position:relative;max-width:60rem;padding-bottom:28px}
+.stage::before{
+  content:"";position:absolute;left:50%;bottom:-2rem;width:min(40rem,100%);height:15rem;
+  transform:translateX(-50%);pointer-events:none;
+  background:radial-gradient(ellipse 50% 50% at 50% 50%,rgba(255,156,43,.16),transparent 72%);
+}
+.stage__win{
+  position:relative;padding:.85rem 1.15rem 1.6rem;
+  border:1px solid var(--border);border-radius:var(--r-window);
+  background:var(--bg-inset);box-shadow:var(--elev-window);
+}
+.stage__float{position:absolute;left:50%;bottom:-20px;transform:translateX(-50%);z-index:4;max-width:calc(100% - 1.6rem)}
+.stage__chrome{display:flex;align-items:center;flex-wrap:wrap;gap:.35rem .5rem;margin-bottom:.8rem}
+.stage__chrome .dots{display:inline-flex;gap:5px}
+.stage__chrome .dots i{width:8px;height:8px;border-radius:50%;background:rgba(242,239,233,.14)}
+.stage__chrome .t{font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted);white-space:nowrap}
+.stage__hint{margin-left:auto;font-family:var(--f-mono);font-size:var(--t-micro);color:var(--accent);opacity:.85;white-space:nowrap}
+.stage__body{font-size:var(--t-lead);line-height:1.6;color:var(--fg);min-height:3.6rem}
+.stage__body .raw,.field .raw{color:var(--fg-dim)}
+.stage__body .fill,.field .fill{color:var(--danger);background:rgba(255,122,107,.10);border-radius:var(--r-small)}
+.stage__body .out,.field .out{color:var(--fg)}
+
+/* The desktop hero is two columns, and the right one is not an illustration:
+   it is the same live capsule, running the same sequence, beside the sentence
+   that claims it rather than under it. The window is narrower here than it was
+   when it spanned the section, so it is formatted for the column: no section
+   wide glow, a taller body so the delivered line has room to arrive, and the
+   pill floating at the bottom edge the way it floats over a real window. */
+@media(min-width:1080px){
+  .hero{padding-block:clamp(2.5rem,4vw,4rem)}
+  .hero .wrap{
+    display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.02fr);
+    gap:clamp(2.25rem,3.6vw,3.5rem);align-items:center;
+  }
+  .hero__in{max-width:none;min-width:0}
+  .hero__in .lede{max-width:none}
+  .stage{margin-top:0;max-width:none;min-width:0;padding-bottom:34px}
+  .stage::before{
+    left:50%;bottom:1rem;width:100%;height:11rem;
+    background:radial-gradient(ellipse 58% 50% at 50% 60%,rgba(255,156,43,.15),transparent 74%);
+  }
+  .stage__win{padding:.9rem 1.25rem 1.9rem}
+  /* the field keeps its full height whatever the sequence is showing, so the
+     window never grows or shrinks under the sentence beside it. Text starts at
+     the top and the rest stays empty, which is what a text field looks like. */
+  .stage__body{min-height:7.5rem}
+}
+/* The right column used to end in empty space below the window. Three facts
+   that are true today close the composition without claiming a release. */
+/* THE FACT STRIP, WHICH IS NOW THE ONLY THING UNDER THE WINDOW.
+
+   It is a sibling of `.stage` rather than a child, so the clearance under the
+   capsule is the stage's own `padding-bottom` PLUS this margin. That matters:
+   `.stage__float` hangs twenty pixels below the window's lower edge, and the
+   caption this strip replaced was set thirty below it -- close enough that the
+   capsule stood on the sentence. Fifty-eight is not close. */
+.hero__facts{
+  display:flex;flex-wrap:wrap;gap:.4rem 1.1rem;margin-top:1.9rem;
+  font-size:var(--t-micro);color:var(--fg-muted);
+}
+.hero__facts li{display:inline-flex;align-items:center;gap:.45rem}
+.hero__facts li+li::before{
+  content:"";width:3px;height:3px;border-radius:50%;
+  background:var(--fg-muted);opacity:.5;margin-right:.65rem;
+}
+/* MONOCHROME, AND THE REASON IS THE ONE `marks.ts` GIVES. The page spends its
+   colour budget on the focus band a screen below this, where a burst of brand
+   colour is the point; three coloured operating-system logos twenty pixels
+   under the hero would compete with it and would read as a badge row. These
+   take the ground they are drawn on, at the size of the type beside them. */
+/* SIXTEEN, AGAINST ELEVEN-PIXEL TYPE AND THE FOCUS BAND'S NINETEEN. Thirteen
+   was the first try and it was measured back: at thirteen the penguin is a
+   blob. `osMarks.ts` carries what that measurement decided about the set. */
+.hero__facts .mark,.foot__lic .mark{width:16px;height:16px;fill:currentColor;flex:none}
+.hero__os{gap:.5rem}
+
+.caret{display:inline-block;width:2px;height:1.05em;margin-left:1px;background:var(--accent);vertical-align:-.16em;animation:blink 1.05s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* ==========================================================================
+   SECTIONS
+   ========================================================================== */
+/* ---- the focus band ----------------------------------------------------
+   Fills what was 250px of nothing under the hero, and shows the claim the
+   hero makes. The brand marks are Simple Icons (CC0-1.0) at their official
+   hex; the three whose brand colour is black are lifted to the page's own
+   foreground, because black on this ground is not a colour. */
+.focus{padding:clamp(.5rem,1.5vw,1.25rem) 0 clamp(.5rem,1.2vw,1rem)}
+/* The turn is not a `.sec`, so it did not inherit the landing offset the rest
+   of the anchors have. It was not a destination until the phone menu named it;
+   without this a tap on it puts its first line under the header. */
+.turn{scroll-margin-top:76px}
+.focus__h{
+  font-size:var(--t-note);color:var(--fg-dim);
+  font-stretch:var(--w-note);letter-spacing:var(--ls-note);
+}
+.focus__rail{
+  position:relative;margin-top:1rem;overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);
+          mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);
+}
+.focus__row{display:flex;align-items:center;gap:clamp(1.6rem,3.6vw,2.9rem);width:max-content}
+.focus__row.is-rolling{animation:focus-roll 46s linear infinite}
+.focus__rail:hover .focus__row.is-rolling{animation-play-state:paused}
+@keyframes focus-roll{to{transform:translateX(-50%)}}
+.focus__row li{
+  display:inline-flex;align-items:center;gap:.5rem;flex:none;
+  color:var(--c,var(--fg-muted));
+}
+.focus__row svg{width:19px;height:19px;fill:currentColor;opacity:.92}
+.focus__row span{
+  font-size:var(--t-micro);color:var(--fg-muted);white-space:nowrap;
+  font-stretch:var(--w-micro);letter-spacing:var(--ls-micro);
+}
+.focus__note{
+  margin-top:1.15rem;max-width:34rem;
+  font-size:var(--t-note);line-height:1.55;color:var(--fg-muted);
+}
+
+.sec{padding:clamp(2.75rem,5vw,4.5rem) 0;scroll-margin-top:76px}
+.sec__head{max-width:var(--read);margin-bottom:clamp(1.5rem,2.6vw,2.25rem)}
+.sec__head p{margin-top:.8rem;color:var(--fg-dim);font-size:var(--t-lead);font-stretch:var(--w-lead);letter-spacing:var(--ls-lead)}
+
+/* ---- cards ------------------------------------------------------------- */
+.card{
+  background:var(--bg-surface);border:1px solid transparent;border-radius:var(--r-card);
+  box-shadow:var(--edge-light);
+}
+.slab{background:var(--bg-surface);border-radius:var(--r-card);box-shadow:var(--edge-light);padding:.9rem 1rem 1rem}
+/* THE SURFACE BEING ACTED ON IS A WINDOW, SO IT IS DRAWN AS ONE. With the
+   stage's frame gone it stands on the section's ground, and a window on a
+   ground takes the radius, the edge and the elevation the ladder reserves for
+   one -- otherwise the reader is looking at a flat card claiming to be an app.
+   `.desk` and `.hud` take the same treatment where they are defined. */
+.d1__win > .slab{
+  border:1px solid var(--border);border-radius:var(--r-window);
+  box-shadow:var(--elev-window);
+}
+/* A slab that reports on the scene does not need to be a slab: the rules, the
+   disk listing and the run all sat on their own plane inside a window that was
+   already on its own plane inside a tray. They report from the window's floor
+   now, and only the surface being acted on keeps a raised ground. */
+.panel .d1 > .slab,.panel .d2__r > .slab,.panel .d3__r > .slab{
+  background:none;box-shadow:none;padding:.9rem 0 0;
+}
+.slab__k{
+  font-stretch:var(--w-micro);letter-spacing:.08em;font-size:var(--t-micro);
+  text-transform:uppercase;color:var(--fg-muted);margin-bottom:.7rem;
+}
+.slab__note{margin-top:1rem;font-size:var(--t-note);line-height:1.55;color:var(--fg-muted);max-width:24rem}
+
+/* ==========================================================================
+   THE DEMO
+   Two levels of control, and they are drawn as two levels. The three tabs are
+   the page's spine, so they carry a number, a name and a line; the strip
+   inside a panel is the app's own sub-tab row at the app's own scale, its
+   divider included.
+   ========================================================================== */
+/* The tabs used to sit inside a bordered tray, which put a box in front of a
+   box in front of a box: tray, window, and the slabs inside the window. Three
+   frames for one idea. They stand on the ground now and the window is the only
+   thing on this section with an edge. */
+.demo__tabs{
+  display:grid;gap:.55rem;margin-bottom:clamp(1rem,2vw,1.5rem);
+  padding:0;background:none;border:0;
+}
+@media(min-width:720px){.demo__tabs{grid-template-columns:repeat(3,1fr)}}
+.demo__tab{
+  display:grid;grid-template-columns:auto 1fr;gap:0 .6rem;
+  text-align:left;padding:.75rem .9rem .8rem;
+  border:1px solid var(--border);border-radius:var(--r-card);
+  background:color-mix(in srgb,var(--bg-inset) 62%,transparent);
+  cursor:pointer;
+  transition:background var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease);
+}
+.demo__tab-n{grid-row:1 / 3;align-self:center;font-size:var(--t-micro);color:var(--fg-muted)}
+.demo__tab-t{
+  font-size:var(--t-lead);font-stretch:var(--w-lead);letter-spacing:var(--ls-lead);
+  font-weight:600;color:var(--fg-dim);line-height:1.25;
+  transition:color var(--dur-fast) var(--ease);
+}
+.demo__tab-s{font-size:var(--t-label);color:var(--fg-muted);line-height:1.35}
+.demo__tab:hover .demo__tab-t{color:var(--fg)}
+.demo__tab[aria-selected="true"]{
+  background:var(--bg-surface);border-color:var(--border-strong);box-shadow:var(--edge-light);
+}
+.demo__tab[aria-selected="true"] .demo__tab-t{color:var(--fg)}
+.demo__tab[aria-selected="true"] .demo__tab-n{color:var(--accent)}
+/* --fg-muted is a card plane colour: 4.71:1 on --bg-card but 3.94:1 once the
+   ground lifts to --bg-elevated, which is under AA. Every place on this page
+   where a row carrying muted text changes ground, the text steps up with it. */
+.demo__tab[aria-selected="true"] .demo__tab-s{color:var(--fg-dim)}
+
+/* the second level: src/styles/shell.css .ws-subtabs, at its own scale */
+.strip{
+  display:flex;flex-wrap:wrap;gap:4px;align-self:flex-start;
+  width:max-content;max-width:100%;padding:2px;margin-bottom:1rem;
+  background:var(--bg-inset);border:1px solid var(--border);border-radius:var(--r-control);
+}
+.strip__b{
+  padding:5px 13px;border:none;border-radius:var(--r-small);background:transparent;
+  font-stretch:var(--w-label);letter-spacing:var(--ls-label);font-size:var(--t-label);
+  font-weight:500;color:var(--fg-dim);cursor:pointer;
+  transition:color var(--dur-fast) var(--ease),background-color var(--dur-fast) var(--ease);
+}
+.strip__b:hover{color:var(--fg)}
+.strip__b[aria-selected="true"]{background:var(--bg-elevated);color:var(--fg);font-weight:550}
+/* The mode strip that used to share this grammar is gone -- the capsule's own
+   chip changes the mode now -- and its three extra rules (`.strip__k`,
+   `.strip__t`, `.strip__rule`) went with it rather than staying as a
+   stylesheet describing markup nothing renders. What is left is the Context
+   tab's three intakes, which are three names and no keys. */
+
+.demo{position:relative}
+/* one light under the window, the same move the hero makes. It is what stops
+   a dark panel on a dark ground from reading as a hole. */
+.demo::before{
+  content:"";position:absolute;z-index:0;pointer-events:none;
+  left:6%;right:6%;top:22%;bottom:-4%;
+  background:radial-gradient(ellipse 55% 46% at 50% 55%,rgba(255,156,43,.10),transparent 72%);
+}
+.demo > *{position:relative;z-index:1}
+/* THE STAGE IS NOT A WINDOW. It used to be one -- window radius, window
+   border, window elevation -- and inside it stood the meeting window, which
+   has its own native decoration and its own resize grip, and the desk, which
+   is a full application frame. A window drawn around a window says the inner
+   one is a picture of an app rather than an app, and at this width the outer
+   frame was simply the largest object in the section.
+
+   So it is a stage in the theatre sense now: no edge of its own, and the
+   surfaces it carries stand on the section's ground the way they stand on a
+   desktop. The one light under them (`.demo::before`, the same move the hero
+   makes) is what holds them together, which is the job the border was doing
+   badly. */
+.demo__stage{background:none;border:0;border-radius:0;box-shadow:none;overflow:visible}
+/* THE LEGEND, NOT A TITLE BAR. The same three keys, on the page's own ground,
+   under a hairline: it answers "how do I get in" and reports what the scene is
+   doing, and neither of those belongs to any one of the three windows below. */
+.demo__bar{
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  padding:0 0 .6rem;border-bottom:1px solid var(--border);background:none;
+  font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted);
+}
+.demo__bar .step{min-width:0;color:var(--accent);text-align:right}
+.demo__keys{display:inline-flex;align-items:center;gap:.5rem;flex-wrap:wrap;min-width:0}
+.demo__keys b{
+  font-weight:500;color:var(--fg-dim);padding:1px 5px;border-radius:var(--r-small);
+  background:var(--bg-surface);box-shadow:var(--edge-light);
+}
+.demo__keys i{width:1px;height:10px;background:var(--border-strong);display:inline-block}
+@media(max-width:640px){.demo__keys i,.demo__keys{gap:.35rem}}
+/* The inset that kept the panel off the stage's border is gone with the
+   border. What is left is the gap under the legend. */
+.panel{display:none;padding:1.35rem 0 0}
+.panel[data-on="1"]{display:block}
+.panel__lead{max-width:46rem;font-size:var(--t-body);color:var(--fg-dim);margin-bottom:1rem}
+.panel__lead b{color:var(--fg);font-weight:550}
+.demo__foot{
+  display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;
+  margin-top:.85rem;padding:0;
+  font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted);
+}
+.demo__foot .btn{height:26px;padding:0 9px;font-size:var(--t-micro)}
+
+/* ---- shared instruments ------------------------------------------------
+   A status dot, and the quantised level meter the meeting window and the
+   desk's answer strip both draw. A hardware level indicator has had this
+   shape for fifty years precisely because it survives being small, and a
+   still one on a surface that claims to be listening is a fake state. */
+.dot{width:6px;height:6px;border-radius:50%;background:var(--fg-muted);flex:none}
+.dot--rec{background:var(--danger);box-shadow:0 0 7px color-mix(in srgb,var(--danger) 55%,transparent)}
+.dot--ok{background:var(--success)}
+.dot--acc{background:var(--accent);box-shadow:0 0 7px color-mix(in srgb,var(--accent) 55%,transparent)}
+
+.mx{display:inline-flex;align-items:flex-end;gap:1px;flex:none}
+.mx__c{display:flex;flex-direction:column-reverse;gap:1px}
+.mx__c i{width:2px;height:2px;border-radius:1px;background:var(--fg-dim);opacity:.14;transition:opacity 90ms linear}
+.mx__c[data-l="1"] i:nth-child(-n+1),
+.mx__c[data-l="2"] i:nth-child(-n+2),
+.mx__c[data-l="3"] i:nth-child(-n+3),
+.mx__c[data-l="4"] i:nth-child(-n+4),
+.mx__c[data-l="5"] i:nth-child(-n+5),
+.mx__c[data-l="6"] i:nth-child(-n+6),
+.mx__c[data-l="7"] i:nth-child(-n+7){opacity:1}
+
+/* ---- 1: cursor ----------------------------------------------------------
+   ONE COLUMN, NOT TWO. The two-column cut gave the rules a full-height column
+   they fill for one second at the end of a sequence, so the panel stood at the
+   height of its emptiest moment: a 285px transcript box holding two lines, and
+   beside it a column holding nothing at all. Down the page instead, and the
+   rules wrap into as many columns as they need rather than as many as the grid
+   left them. */
+/* THE PANEL IS FOUR THINGS AND IT HAS TO READ AS FOUR THINGS.
+   The complaint that everything in this section stuck together was a rhythm
+   complaint before it was a volume one: five blocks at a uniform 1rem gap on
+   one ground have no edges, so the eye finds no place to stop. The window, the
+   controls, the rules and the note now step apart, and the rules take a
+   hairline above them because they are a report on what just happened rather
+   than another control. */
+.d1{display:grid;gap:1.5rem;grid-template-columns:1fr}
+.d1__ctl{margin-top:-.5rem}
+.d1__what{margin-top:-1.1rem}
+.d1__rules{padding-top:1.35rem;border-top:1px solid var(--border)}
+.d1__win{position:relative;padding-bottom:26px}
+/* The capsule overlaps the window's lower edge the way it overlaps a real one:
+   it is an overlay, and an overlay that respects the window's box is a panel. */
+.d1__float{position:absolute;left:50%;bottom:0;transform:translateX(-50%);z-index:4;max-width:calc(100% - 1.2rem)}
+.field{font-size:var(--t-body);line-height:1.6;min-height:3.4rem}
+
+/* ---- the control row ----------------------------------------------------
+   Two controls on one line, under the surface they act on, and both of them
+   are one line tall. What stood here was a seven-button mode strip above the
+   window and a pair of full-width delivery cards below it -- about 190px of
+   chrome around a 210px window, which is why the panel read as a stack of
+   unrelated blocks rather than as one demonstration.
+
+   The mode reads left, because it names what the window is currently doing.
+   The delivery sits right as a two-state segment, because it is a choice
+   between two things and a segment is what a choice between two things looks
+   like. The sentence under the row belongs to whichever is selected. */
+.d1__ctl{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:.75rem 1rem;flex-wrap:wrap;
+}
+.d1__mode{
+  display:inline-flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;
+  padding:.3rem .55rem;margin-left:-.55rem;
+  border:1px solid transparent;border-radius:var(--r-control);
+  background:transparent;text-align:left;cursor:pointer;
+  transition:background .16s ease-out,border-color .16s ease-out;
+}
+.d1__mode:hover{background:var(--bg-elevated);border-color:var(--border)}
+.d1__mode b{
+  font-size:var(--t-note);font-weight:550;color:var(--fg);
+}
+.d1__key{font-size:var(--t-micro);color:var(--accent)}
+/* The affordance, and it is deliberately quiet. It has to be readable by
+   somebody looking for it and must not compete with the mode name, which is
+   the reading. */
+.d1__hint{font-size:var(--t-micro);color:var(--fg-muted)}
+.d1__mode:hover .d1__hint{color:var(--fg-dim)}
+
+/* Delivery: two named paths, one chosen. One control, not two cards. */
+.seg{
+  display:inline-flex;padding:2px;gap:2px;
+  border:1px solid var(--border);border-radius:var(--r-control);
+  background:var(--bg-inset);
+}
+.seg__b{
+  padding:.32rem .6rem;border:none;border-radius:var(--r-small);
+  background:transparent;color:var(--fg-muted);font-size:var(--t-micro);
+  cursor:pointer;white-space:nowrap;
+  transition:background .16s ease-out,color .16s ease-out;
+}
+.seg__b:hover{color:var(--fg-dim)}
+.seg__b[aria-checked="true"]{background:var(--bg-elevated);color:var(--accent)}
+
+/* One sentence, for whichever path is selected, plus the line clipboard_only
+   fills at the moment the capsule leaves: the transcript went somewhere, and
+   the window is not it. */
+.d1__what{min-height:1.35em;font-size:var(--t-label);line-height:1.5;color:var(--fg-dim)}
+.d1__clip:not(:empty){color:var(--accent)}
+.d1__clip:not(:empty)::before{content:" ";white-space:pre}
+
+.d1__rules{display:grid;gap:.5rem}
+.slab__note--wide{max-width:46rem;margin-top:0}
+/* Verbatim delivers the raw. The fillers stay, so they stop being marked as
+   something on its way out and become ordinary text. */
+.field .kept .raw,
+.field .kept .fill{color:var(--fg);background:transparent}
+
+.rules{display:grid;gap:2px;grid-template-columns:1fr}
+@media(min-width:720px){.rules{grid-template-columns:1fr 1fr}}
+@media(min-width:1000px){.rules{grid-template-columns:1fr 1fr 1fr}}
+.rule{
+  display:grid;gap:.1rem;padding:.4rem .55rem;border-radius:var(--r-small);
+  opacity:0;transform:translateY(4px);transition:opacity .3s ease,transform .3s var(--ease);
+}
+.rule.is-on{opacity:1;transform:none;background:var(--bg-elevated)}
+.rule .n{font-family:var(--f-mono);font-size:var(--t-micro);color:var(--accent);word-break:break-word}
+.rule .v{font-size:var(--t-label);line-height:1.45;color:var(--fg-dim)}
+
+/* Auto is the router, so its panel shows the decision rather than an eighth
+   way of writing. */
+.route{
+  display:flex;align-items:baseline;gap:.7rem;padding:.5rem 0;
+  border-bottom:1px solid var(--border);
+  font-size:var(--t-note);line-height:1.5;color:var(--fg-dim);
+  opacity:0;transform:translateY(4px);transition:opacity .3s ease,transform .3s var(--ease);
+}
+.route.is-on{opacity:1;transform:none}
+.route__q{min-width:0}
+.route__q::before,.route__q::after{content:'"';color:var(--fg-muted)}
+.route::after{
+  content:attr(data-dest);margin-left:auto;flex:0 0 auto;
+  font-family:var(--f-mono);font-size:var(--t-micro);color:var(--accent);
+}
+
+/* ---- 2: context --------------------------------------------------------- */
+/* THE COLUMNS STOP STRETCHING TO EACH OTHER. They used to: the right column
+   grew to the window's height and its three parts spread out to fill it, which
+   was invisible while a frame held the pair together and became three drifting
+   paragraphs the moment the frame went. They are read top-down now, each as
+   tall as what it says. */
+.d2{display:grid;align-items:start;gap:.8rem 1.5rem;grid-template-columns:1fr}
+@media(min-width:900px){.d2{grid-template-columns:1.05fr 1fr}}
+.d2__l,.d2__r{display:flex;flex-direction:column}
+.d2__cap{margin-top:.85rem;font-size:var(--t-micro);line-height:1.55;color:var(--fg-muted);max-width:26rem}
+
+.disk{font-family:var(--f-mono);font-size:var(--t-label);line-height:1.85}
+.disk__row{opacity:0;transform:translateY(3px);transition:opacity .28s ease,transform .28s var(--ease)}
+.disk__row.is-on{opacity:1;transform:none}
+.disk .p{color:var(--fg-muted);word-break:break-all}
+.disk .f{color:var(--fg-dim)}
+.disk .f::before{content:"  ";white-space:pre}
+.disk .new{color:var(--accent)}
+
+/* Write: an empty object you talk into. No card and no form, because every
+   row of chrome between the button and the first word is a reason not to
+   have pressed the button. */
+.wr{display:flex;flex-direction:column;gap:.55rem}
+.wr__title{
+  font-size:var(--t-title);font-stretch:var(--w-title);letter-spacing:var(--ls-title);
+  font-weight:var(--wt-title);color:var(--fg);line-height:1.3;min-height:1.6em;
+}
+.wr__body{display:flex;flex-direction:column;gap:.35rem;min-height:5.6rem}
+.wr__body p{
+  font-size:var(--t-note);line-height:1.55;color:var(--fg-dim);
+  opacity:0;transform:translateY(3px);transition:opacity .3s ease,transform .3s var(--ease);
+}
+.wr__body p.is-on{opacity:1;transform:none}
+.wr__foot{
+  display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;
+  margin-top:.3rem;padding-top:.7rem;border-top:1px solid var(--border);
+  font-size:var(--t-micro);color:var(--fg-muted);
+}
+.wr__key{display:inline-flex;align-items:center;gap:.4rem}
+.wr__key svg{width:13px;height:13px}
+.kbd{display:inline-flex;gap:2px}
+.kbd kbd{
+  font-family:var(--f-mono);font-size:10px;line-height:1;padding:3px 5px;
+  border:1px solid var(--border);border-radius:var(--r-small);
+  background:var(--bg-elevated);color:var(--fg-dim);
+}
+.wr__sel{display:inline-flex;gap:.35rem;margin-left:auto}
+.sel{
+  padding:2px 8px;border:1px solid var(--border);border-radius:var(--r-control);
+  background:var(--bg-elevated);color:var(--fg-dim);font-size:var(--t-micro);white-space:nowrap;
+}
+
+/* Record: the meeting window. It IS the note, live, with the same three tabs
+   it keeps afterwards, and the recording is one line of state rather than the
+   subject. 330 by 560 in the product; on a page it takes the column. */
+.hud{
+  position:relative;display:flex;flex-direction:column;max-width:26rem;overflow:hidden;
+  border:1px solid var(--border);border-radius:var(--r-window);
+  background:var(--bg-base);box-shadow:var(--elev-window);
+}
+.hud__deco{
+  height:26px;display:flex;align-items:center;justify-content:center;
+  border-bottom:1px solid var(--border);background:var(--bg-sidebar);
+  font-size:10px;letter-spacing:.05em;color:var(--fg-muted);
+}
+.hud__head{padding:.7rem .8rem .55rem;border-bottom:1px solid var(--border)}
+.hud__head h4{margin:0;font-size:var(--t-lead);font-weight:600;letter-spacing:var(--ls-lead);color:var(--fg)}
+.hud__date{display:block;margin-top:2px;font-size:var(--t-micro);color:var(--fg-muted)}
+.hud__date i{font-style:normal;opacity:.7}
+.hud__tabs{
+  display:flex;gap:2px;width:max-content;margin:.6rem 0 .55rem;padding:2px;
+  background:var(--bg-inset);border-radius:var(--r-control);
+}
+.hud__tabs button{
+  padding:3px 9px;border:none;border-radius:var(--r-small);background:transparent;
+  font-size:var(--t-micro);color:var(--fg-muted);cursor:default;
+}
+.hud__tabs button[aria-selected="true"]{background:var(--bg-elevated);color:var(--fg)}
+.hud__state{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .4rem;min-width:0;font-size:10px;color:var(--fg-muted)}
+/* the product separates these with a middle dot. This page carries none, so
+   the separator is drawn rather than typed. */
+.hud__sep{width:1px;height:8px;flex:none;background:var(--border-strong)}
+.hud__src{white-space:nowrap}
+.hud__state .mx{margin-left:auto}
+.hud__scroll{padding:.75rem .8rem;min-height:11.5rem}
+.hud__bar{display:flex;justify-content:flex-end;padding:.55rem .8rem;border-top:1px solid var(--border);background:var(--bg-sidebar)}
+.hud__bar .btn{height:28px;font-size:var(--t-micro)}
+/* the grip means the geometry belongs to the user, which is what separates
+   this window from the overlay */
+.hud__grip{
+  position:absolute;right:3px;bottom:3px;width:9px;height:9px;
+  border-right:1.5px solid var(--border-strong);border-bottom:1.5px solid var(--border-strong);
+}
+.ts{display:flex;flex-direction:column;gap:.55rem}
+.ts__l{
+  display:grid;grid-template-columns:auto auto 1fr;gap:.45rem;align-items:baseline;
+  opacity:0;transform:translateY(3px);transition:opacity .3s ease,transform .3s var(--ease);
+}
+.ts__l.is-on{opacity:1;transform:none}
+.ts__m{font-size:10px;color:var(--fg-muted)}
+.ts__s{font-size:10px;color:var(--accent)}
+.ts__l[data-tone="b"] .ts__s{color:var(--success)}
+.ts__t{font-size:var(--t-label);line-height:1.5;color:var(--fg-dim);min-width:0}
+.sum{display:flex;flex-direction:column;gap:.8rem}
+.sum__g{opacity:0;transform:translateY(4px);transition:opacity .35s ease,transform .35s var(--ease)}
+.sum__g.is-on{opacity:1;transform:none}
+.sum__g h5{
+  margin:0 0 .35rem;font-family:var(--f-mono);font-weight:400;font-size:10px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--fg-muted);
+}
+.sum__g ul{display:flex;flex-direction:column;gap:.3rem}
+.sum__g li{position:relative;padding-left:.8rem;font-size:var(--t-label);line-height:1.5;color:var(--fg-dim)}
+.sum__g li::before{content:"";position:absolute;left:0;top:.6em;width:3px;height:3px;border-radius:50%;background:var(--fg-muted)}
+.sum__g li b{color:var(--fg);font-weight:600}
+
+/* Import: a file you have, or a link you can reach. Two equal intakes. */
+.imp{display:flex;flex-direction:column;gap:.65rem}
+.imp__dz{
+  display:flex;align-items:center;gap:.7rem;padding:.85rem;
+  border:1px dashed var(--border-strong);border-radius:var(--r-card);background:var(--bg-inset);
+}
+.imp__dz svg{width:18px;height:18px;color:var(--fg-muted)}
+.imp__dzt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.imp__dzt b{font-size:var(--t-note);font-weight:550;color:var(--fg)}
+.imp__dzt span{font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted)}
+.imp__or{display:flex;align-items:center;gap:.7rem;font-size:var(--t-micro);color:var(--fg-muted)}
+.imp__or::before,.imp__or::after{content:"";flex:1;height:1px;background:var(--border)}
+.imp__lab{display:flex;align-items:center;gap:.4rem;font-size:var(--t-micro);color:var(--fg-dim)}
+.imp__lab svg{width:13px;height:13px}
+.imp__row{display:flex;gap:.4rem;align-items:stretch}
+.imp__field{
+  flex:1;min-width:0;height:32px;display:flex;align-items:center;padding:0 9px;overflow:hidden;
+  border:1px solid var(--border);border-radius:var(--r-control);background:var(--bg-inset);
+  font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-dim);white-space:nowrap;
+}
+.imp__hint{font-size:var(--t-micro);line-height:1.55;color:var(--fg-muted)}
+.imp__steps{display:flex;flex-direction:column;gap:2px;margin-top:.15rem}
+.imp__s{
+  display:flex;align-items:center;gap:.55rem;padding:.32rem .5rem;border-radius:var(--r-small);
+  font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-dim);
+  opacity:0;transform:translateX(-4px);
+  transition:opacity .3s ease,transform .3s var(--ease),background .3s ease;
+}
+.imp__s.is-on{opacity:1;transform:none;background:var(--bg-elevated)}
+.imp__sd{
+  width:5px;height:5px;border-radius:50%;flex:none;background:var(--accent);
+  box-shadow:0 0 6px color-mix(in srgb,var(--accent) 55%,transparent);
+}
+.imp__s.is-done .imp__sd{background:var(--success);box-shadow:none}
+
+/* ---- 3: agent ----------------------------------------------------------- */
+.d3{display:grid;align-items:start;gap:.8rem 1.5rem;grid-template-columns:1fr}
+@media(min-width:1000px){.d3{grid-template-columns:1.45fr .8fr}}
+.d3__r{display:flex;flex-direction:column}
+/* A rail, a thread and an answer strip: this is an application frame, and now
+   that the stage does not draw one around it, it draws its own. It was a card
+   inside a window before, which is why it read as a picture of the desk rather
+   than as the desk. */
+.desk{
+  display:grid;grid-template-columns:1fr;overflow:hidden;
+  border:1px solid var(--border);border-radius:var(--r-window);
+  background:var(--bg-surface);box-shadow:var(--elev-window);
+}
+@media(min-width:620px){.desk{grid-template-columns:minmax(150px,12.5rem) 1fr}}
+.desk__rail{display:flex;flex-direction:column;gap:.5rem;padding:.8rem .7rem;background:var(--bg-sidebar)}
+/* the targets are indented under the identity they belong to. A rail that
+   draws three peers is arguing against the decision it implements. */
+.desk__head{display:grid;grid-template-columns:auto 1fr;gap:0 .5rem;align-items:center}
+.desk__head b{font-size:var(--t-note);font-weight:600;color:var(--fg)}
+.desk__sub{grid-column:2;font-size:10px;line-height:1.35;color:var(--fg-muted)}
+.orb{
+  grid-row:1 / 3;width:18px;height:18px;border-radius:50%;
+  background:radial-gradient(circle at 38% 34%,
+    color-mix(in srgb,var(--accent) 90%,white),
+    var(--accent) 58%,
+    color-mix(in srgb,var(--accent) 72%,black));
+  box-shadow:0 0 10px color-mix(in srgb,var(--accent) 40%,transparent);
+}
+.desk__k{margin-top:.15rem;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-muted)}
+.desk__targets{display:flex;flex-direction:column;gap:2px;padding-left:.5rem;border-left:1px solid var(--border)}
+.tg{
+  display:grid;grid-template-columns:auto 1fr auto;gap:.15rem .45rem;align-items:center;
+  padding:.4rem .45rem;border-radius:var(--r-small);
+  opacity:0;transform:translateX(-4px);
+  transition:opacity .3s ease,transform .3s var(--ease),background .3s ease;
+}
+.tg.is-on{opacity:1;transform:none}
+.tg[data-on="1"]{background:var(--bg-elevated)}
+.tg[data-on="1"] .tg__t span,.tg[data-on="1"] .tg__s{color:var(--fg-dim)}
+.tg__t{display:flex;flex-direction:column;min-width:0}
+.tg__t b{font-size:var(--t-label);font-weight:550;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tg__t span{font-size:10px;color:var(--fg-muted)}
+/* a count bubble is physically a capsule, which is the whole of its licence */
+.tg__u:not(:empty){
+  min-width:15px;height:15px;padding:0 4px;border-radius:999px;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:600;
+}
+.tg__s{grid-column:2 / 4;font-size:10px;color:var(--fg-muted)}
+
+.desk__main{display:flex;flex-direction:column;min-width:0}
+.desk__mh{
+  display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;
+  padding:.6rem .8rem;border-bottom:1px solid var(--border);
+  font-size:var(--t-micro);color:var(--fg-muted);
+}
+.desk__mh b{color:var(--fg);font-weight:550}
+.thread{display:flex;flex-direction:column;gap:.5rem;padding:.8rem;min-height:9.5rem}
+.msg{
+  padding:.6rem .7rem;border:1px solid transparent;border-radius:var(--r-card);background:var(--bg-inset);
+  opacity:0;transform:translateY(5px);
+  transition:opacity .35s ease,transform .35s var(--ease),border-color .35s ease;
+}
+.msg.is-on{opacity:1;transform:none}
+.msg[data-from="desk"].is-on{border-color:color-mix(in srgb,var(--accent) 34%,transparent)}
+.msg p{display:flex;align-items:baseline;gap:.4rem;font-size:var(--t-note);line-height:1.45;color:var(--fg)}
+.msg[data-from="you"]{margin-left:1.6rem;background:var(--bg-elevated)}
+.msg[data-from="you"] .msg__w{color:var(--fg-dim)}
+.msg[data-from="you"] p::before{
+  content:"you said";flex:none;font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted);
+}
+.msg[data-from="done"] p{font-size:var(--t-label);color:var(--fg-dim)}
+.msg[data-from="done"] svg{width:13px;height:13px;flex:none;color:var(--success)}
+.msg__opts{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.55rem}
+.msg__opt{
+  padding:.25rem .6rem;border:1px solid var(--border);border-radius:var(--r-control);
+  font-size:var(--t-label);color:var(--fg-dim);transition:all .3s ease;
+}
+.msg__opt.is-picked{
+  border-color:color-mix(in srgb,var(--accent) 72%,black);color:var(--on-accent);font-weight:600;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 94%,white) 0%,var(--accent) 52%,color-mix(in srgb,var(--accent) 95%,black) 100%);
+  box-shadow:inset 0 1px 0 color-mix(in srgb,white 34%,transparent);
+}
+.msg__w{display:block;margin-top:.45rem;font-size:10px;color:var(--fg-muted)}
+.answer{
+  display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;
+  border-top:1px solid var(--border);background:var(--bg-sidebar);
+  font-size:var(--t-micro);color:var(--fg-muted);
+  opacity:0;transition:opacity .3s ease;
+}
+.answer.is-on{opacity:1}
+.answer svg{width:14px;height:14px;color:var(--accent)}
+.answer[data-done="1"] svg{color:var(--success)}
+.answer[data-done="1"] .answer__t{color:var(--fg-muted)}
+.answer__t{margin-left:auto;color:var(--accent);font-variant-numeric:tabular-nums}
+
+.term{font-family:var(--f-mono);font-size:var(--t-label);line-height:1.95;overflow-wrap:break-word}
+.term .l{opacity:0;transform:translateY(3px);transition:opacity .26s ease,transform .26s var(--ease)}
+.term .l.is-on{opacity:1;transform:none}
+.term .acc{color:var(--accent)}
+.term .dim{color:var(--fg-muted)}
+
+/* ---- the turn ---------------------------------------------------------- */
+.turn{padding:clamp(3rem,6vw,5rem) 0}
+.turn__lead{
+  max-width:46rem;font-family:var(--f-ui);font-weight:500;
+  font-size:clamp(1.2rem,.98rem + 1.15vw,1.7rem);
+  font-stretch:97%;line-height:1.36;letter-spacing:-.022em;
+}
+.turn .dim{color:var(--fg-muted)}
+
+/* ---- the wiring diagram ------------------------------------------------
+   Two states of one picture. What changes between them is not decoration:
+   it is how many connections the product itself has to own, and that count
+   is printed under the drawing so the reader does not have to count wires.
+
+   The travelling dots ride an unpainted full-length rail (`#w-r*`) while the
+   visible wire is drawn short of both ends, so a dot enters and leaves the
+   nodes cleanly instead of stopping on their edges. */
+.wire{
+  margin-top:clamp(1.75rem,3.5vw,2.75rem);
+  border:1px solid var(--border);border-radius:var(--r-card);
+  background:var(--bg-inset);box-shadow:var(--edge-light);
+  overflow:hidden;
+}
+.wire.lit{box-shadow:var(--edge-light),0 34px 96px -40px rgba(255,156,43,.42)}
+.wire__head{
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.1rem;border-bottom:1px solid var(--border);
+}
+.wire__state{display:flex;flex-direction:column;gap:.1rem;min-width:0}
+.wire__k{font-size:var(--t-micro);color:var(--fg-muted)}
+.wire__t{
+  font-size:var(--t-lead);font-weight:var(--wt-title);
+  font-stretch:var(--w-lead);letter-spacing:var(--ls-lead);color:var(--fg);
+}
+.wire__sw{
+  display:inline-flex;align-items:center;gap:.6rem;margin-left:auto;
+  padding:0;border:none;background:none;cursor:pointer;
+}
+.wire__sw-l{font-size:var(--t-micro);color:var(--fg-muted);white-space:nowrap}
+.wire__sw-track{
+  position:relative;width:40px;height:22px;border-radius:999px;
+  background:var(--bg-surface);border:1px solid var(--border-strong);
+  transition:background var(--dur-fast) ease,border-color var(--dur-fast) ease;
+}
+.wire__sw-knob{
+  position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+  background:var(--fg-muted);transition:transform .28s var(--ease),background var(--dur-fast) ease;
+}
+.wire__sw[aria-checked="true"] .wire__sw-track{background:rgba(255,156,43,.22);border-color:rgba(255,156,43,.5)}
+.wire__sw[aria-checked="true"] .wire__sw-knob{transform:translateX(18px);background:var(--accent)}
+.wire__sw:hover .wire__sw-knob{background:var(--fg-dim)}
+.wire__sw[aria-checked="true"]:hover .wire__sw-knob{background:var(--accent)}
+
+.wire__stage{padding:1.1rem 1.1rem 1.35rem}
+.wire__stage svg{width:100%;height:auto;max-width:34rem;margin-inline:auto;display:block}
+@media(min-width:900px){
+  .wire__stage{
+    display:grid;grid-template-columns:minmax(0,1.42fr) minmax(0,.58fr);
+    align-items:center;column-gap:clamp(1.5rem,3vw,2.75rem);
+    padding:1.35rem 1.35rem 1.5rem;
+  }
+  .wire__stage svg{grid-row:1 / 3;max-width:none;margin:0}
+  .wire__cap{margin-top:0;align-self:end}
+  .wire__count{align-self:start}
+}
+
+/* ---- the wires ---------------------------------------------------------
+   The switch used to cross-fade two pictures, which is a slideshow: both
+   states were always there and one of them was turned down. The wires draw
+   and undraw themselves now, so the switch performs the claim rather than
+   illustrating it. Every path carries pathLength="1", which is what makes one
+   dashoffset rule work across eleven paths of eleven different lengths. */
+.w-wire{
+  fill:none;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;
+  transition:stroke-dashoffset .62s var(--ease),stroke-opacity .3s var(--ease);
+}
+.w-wire--own{stroke:var(--accent);stroke-width:1.4;stroke-opacity:.72}
+.w-wire--theirs{stroke:var(--fg-muted);stroke-width:1;stroke-opacity:.34}
+.w-dot{fill:var(--accent);opacity:.85}
+/* The ring a node takes as something reaches it. No fill: a filled pulse over
+   a node reads as the node changing, and the node is not what changed. */
+.w-halo{fill:none;stroke:var(--accent);stroke-width:1.5;pointer-events:none}
+
+.w-nodes circle{fill:var(--bg-surface);stroke:var(--border-strong);stroke-width:1}
+.w-ico{
+  fill:none;stroke:var(--fg-muted);stroke-width:1.15;
+  stroke-linecap:round;stroke-linejoin:round;
+  transition:stroke .45s var(--ease);
+}
+.w-ico rect,.w-ico circle{fill:none}
+.w-nodes text,.w-folder text{
+  font-family:var(--f-mono);font-size:10px;fill:var(--fg-muted);text-anchor:middle;
+}
+.w-folder-l{text-anchor:start !important}
+.w-folder rect,.w-folder path{fill:var(--bg-surface);stroke:var(--accent);stroke-opacity:.55;stroke-width:1.1}
+.w-folder-tab{fill:var(--bg-surface)}
+.w-hub circle{fill:var(--bg-elevated);stroke:var(--accent);stroke-opacity:.7;stroke-width:1.2}
+.w-ico--hub{stroke:var(--accent);stroke-opacity:.85;stroke-width:1.3}
+.w-hub-t{font-family:var(--f-mono);font-size:10px;fill:var(--fg-dim);text-anchor:middle}
+
+/* ---- state, driven by one attribute on the wrapper ---------------------
+   Reading the transition in the direction that matters, connector layer to
+   ours: the five wires the product owns retract into the hub one after
+   another, the folder drops in where they used to meet, one wire comes back
+   up into it, and only then do the borrowed wires reach down for it. The
+   order is the argument, so the delays are not decoration. */
+[data-wire] .w-folder{
+  opacity:0;transform:translateY(6px) scale(.94);transform-origin:260px 178px;
+  transition:opacity .34s var(--ease),transform .42s var(--ease);
+}
+[data-wire] [data-wire-dots-b]{opacity:0;transition:opacity .3s var(--ease)}
+[data-wire] [data-wire-dots-a]{opacity:1;transition:opacity .3s var(--ease)}
+
+/* connector state: the five it owns are drawn, everything else is not */
+[data-wire] .w-own .w-wire{stroke-dashoffset:0}
+[data-wire] .w-own .w-wire:nth-child(1){transition-delay:.30s}
+[data-wire] .w-own .w-wire:nth-child(2){transition-delay:.36s}
+[data-wire] .w-own .w-wire:nth-child(3){transition-delay:.42s}
+[data-wire] .w-own .w-wire:nth-child(4){transition-delay:.48s}
+[data-wire] .w-own .w-wire:nth-child(5){transition-delay:.54s}
+
+/* ours: the five retract first, then the folder, then the one, then theirs */
+[data-wire][data-state="ws"] .w-own .w-wire{stroke-dashoffset:1;transition-delay:0s}
+[data-wire][data-state="ws"] .w-own .w-wire:nth-child(2){transition-delay:.05s}
+[data-wire][data-state="ws"] .w-own .w-wire:nth-child(3){transition-delay:.1s}
+[data-wire][data-state="ws"] .w-own .w-wire:nth-child(4){transition-delay:.15s}
+[data-wire][data-state="ws"] .w-own .w-wire:nth-child(5){transition-delay:.2s}
+
+[data-wire][data-state="ws"] .w-folder{opacity:1;transform:none;transition-delay:.44s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--own{stroke-dashoffset:0;transition-delay:.62s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs{stroke-dashoffset:0}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs:nth-child(1){transition-delay:.92s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs:nth-child(2){transition-delay:1s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs:nth-child(3){transition-delay:1.08s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs:nth-child(4){transition-delay:1.16s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs:nth-child(5){transition-delay:1.24s}
+/* a borrowed wire is drawn solid while it lands and goes dashed once it has,
+   because the dash is a statement about ownership, not about arrival */
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs{stroke-dasharray:.014 .018}
+
+[data-wire][data-state="ws"] [data-wire-dots-a]{opacity:0}
+[data-wire][data-state="ws"] [data-wire-dots-b]{opacity:1;transition-delay:.8s}
+/* the destination a dictation is actually addressed to lights up with it */
+[data-wire][data-state="ws"] .w-nodes .w-node:nth-child(4) .w-ico{stroke:var(--accent)}
+
+.wire__cap{
+  margin-top:.4rem;max-width:42rem;
+  font-size:var(--t-note);line-height:1.55;color:var(--fg-dim);
+}
+.wire__count{margin-top:.5rem;font-size:var(--t-micro);color:var(--fg-muted)}
+.wire__count b{color:var(--accent);font-weight:400}
+
+@media(max-width:560px){
+  .wire__stage svg{max-height:none}
+  .w-nodes text,.w-folder text{font-size:12px}
+  .w-hub-t{font-size:12px}
+}
+
+
+/* ==========================================================================
+   THE NUMBERS - src/components/shell/HomeHero.tsx, the four tiles that read
+   left to right as one sentence, plus the activity calendar beside them.
+   ========================================================================== */
+.nums{display:grid;gap:1px;background:var(--border);margin:0;padding:0;list-style:none}
+@media(min-width:640px){.nums{grid-template-columns:1fr 1fr}}
+@media(min-width:1000px){.nums{grid-template-columns:repeat(4,1fr)}}
+/* ---- the five figures --------------------------------------------------
+   Four of them are numbers and the fifth is a rhythm, which is why it is a
+   field and not a tile: how often you spoke to it over half a year has a
+   shape, and the shape is the reading. They share one frame because they are
+   one sentence about one file, read off one disk.
+
+   The field sat in the close before this, drawn from the repository's own
+   commit history. That was a true picture of the wrong subject: the page
+   already says nothing is released, and what belongs beside Words per minute
+   and Time saved is what the app counted for you, not what we committed. */
+.own{
+  display:grid;gap:1px;background:var(--border);
+  border:1px solid var(--border);border-radius:var(--r-card);overflow:hidden;
+}
+.own.lit{box-shadow:0 34px 96px -40px rgba(255,156,43,.36)}
+/* `min-width:0` because this is a grid ITEM, and a grid item's automatic
+   minimum is its content. Once the field scrolls its own year on a phone, the
+   default would size the card to the 649px of cells inside it rather than
+   letting them scroll -- the card would grow past its own section and be
+   clipped by `.own`'s overflow, which looks like a broken card rather than a
+   scrollable field. */
+.own__field{background:var(--bg-surface);padding:1.15rem 1.2rem 1.25rem;min-width:0}
+.own__head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.own__t{
+  display:block;font-size:var(--t-body);font-weight:var(--wt-hero);
+  font-stretch:var(--w-hero);letter-spacing:var(--ls-hero);color:var(--fg);
+}
+.own__sub{display:block;margin-top:.15rem;font-size:var(--t-micro);color:var(--fg-muted)}
+.own__legend{display:flex;align-items:center;gap:.3rem;font-size:var(--t-micro);color:var(--fg-muted)}
+
+.own__grid{
+  margin-top:1rem;display:grid;
+  grid-template-columns:repeat(var(--cols,52),1fr);
+  grid-auto-rows:1fr;gap:clamp(2px,.34vw,4px);
+}
+.own__c{
+  display:block;aspect-ratio:1;border-radius:2px;
+  background:var(--bg-inset);
+  opacity:0;transition:opacity .45s ease;
+}
+.own__c[data-l="1"]{background:color-mix(in srgb,var(--accent) 17%,var(--bg-inset))}
+.own__c[data-l="2"]{background:color-mix(in srgb,var(--accent) 36%,var(--bg-inset))}
+.own__c[data-l="3"]{background:color-mix(in srgb,var(--accent) 62%,var(--bg-inset))}
+.own__c[data-l="4"]{background:color-mix(in srgb,var(--accent) 92%,#fff)}
+/* the field fills as one sweep, oldest week to newest */
+.own.is-in .own__c{opacity:1;transition-delay:calc(var(--i,0) * 9ms)}
+.own__legend .own__c{width:9px;height:9px;aspect-ratio:auto;opacity:1;transition:none}
+
+.own__c[data-tip]{cursor:default}
+
+/* THE FIELD ON A PHONE. Fifty-two columns of `1fr` inside 298px is a 4.3px
+   cell: measured, the whole year rendered 39px tall, which is a field that is
+   present, unreadable and impossible to put a finger on. The year is not
+   thinned to fit -- dropping half of it would make the surface lie about how
+   much it holds -- it is given its own scroll axis at a size that can be read
+   and touched, which is what a contribution graph does on a phone everywhere
+   else. The reading panel already clamps itself to the viewport, so a cell
+   dragged to the edge still reports somewhere legible. */
+@media(max-width:560px){
+  .own__grid{
+    grid-template-columns:repeat(var(--cols,52),11px);
+    grid-auto-rows:11px;gap:3px;
+    overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:.4rem;
+  }
+  .own__c{aspect-ratio:auto}
+  .own__legend .own__c{width:9px;height:9px}
+}
+/* The reading, and it is `fixed` for the same reason production portals it:
+   inside the field it is trapped in whatever stacking context the section
+   builds, and clipped by the first scroller between here and the window. */
+.own__tip{
+  /* `visibility` and not opacity alone: before the first hover the panel has no
+     position yet, so it sits at the origin with its own transform pulling it
+     off the left edge. Invisible and unreachable either way, but a box that
+     measures outside the viewport is a box that shows up in an overflow sweep
+     as a finding, and a sweep that reports a non-problem gets ignored. */
+  position:fixed;z-index:60;pointer-events:none;opacity:0;visibility:hidden;
+  transform:translate(-50%,-100%);
+  min-width:11rem;max-width:19rem;padding:.5rem .65rem;
+  border:1px solid var(--border-strong);border-radius:var(--r-control);
+  background:var(--bg-elevated);box-shadow:var(--elev-window);
+  font-size:var(--t-label);line-height:1.5;color:var(--fg-dim);
+  transition:opacity .12s ease-out;
+}
+.own__tip[data-on]{opacity:1;visibility:visible}
+.own__tip b{display:block;color:var(--fg);font-weight:550}
+.own__tip span{display:block}
+.own__tip span:first-of-type{color:var(--fg)}
+@media (hover:none){.own__tip{display:none}}
+.own__foot{margin-top:.85rem;font-size:var(--t-micro);line-height:1.5;color:var(--fg-muted)}
+
+@media(max-width:520px){
+  /* 52 square cells across a phone are under 6px each. The gap closes and
+     the corners go, so what survives is the density rather than the cell. */
+  .own__grid{gap:1.5px}
+  .own__c{border-radius:1.5px}
+}
+
+.tile{
+  background:var(--bg-surface);padding:1.2rem 1rem 1.35rem;
+  display:flex;flex-direction:column;align-items:center;gap:.4rem;text-align:center;
+}
+.tile b{
+  font-stretch:var(--w-hero);letter-spacing:var(--ls-hero);font-size:var(--t-hero);
+  font-weight:var(--wt-hero);font-variant-numeric:tabular-nums;line-height:1.05;color:var(--fg);
+}
+.tile b i{font-style:normal;font-size:.5em;color:var(--fg-muted);margin-left:.15em}
+.tile-label{font-stretch:var(--w-label);letter-spacing:var(--ls-label);font-size:var(--t-label);color:var(--fg-dim)}
+.tile-foot{font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted);line-height:1.4}
+
+/* ---- the turning point -------------------------------------------------
+   Three measurements read in the order they were taken, because the order is
+   the argument. A bar chart of two figures says speaking is faster, which is
+   the claim every tool in this category makes and the one a reader discounts
+   on sight. A timeline says something a reader cannot discount: it was the
+   other way round, and here is the year it stopped being the other way round.
+
+   Every bar is scaled against 161.2 wpm so the three steps share one ruler.
+   The 1999 row is the only place on this page where our own category loses,
+   and it stays because the row after it is worth nothing without it. */
+.tp{
+  list-style:none;margin:0;padding:0 0 0 clamp(1.1rem,2.4vw,1.75rem);
+  position:relative;
+}
+/* the rail: one line down the years, so the three steps read as one sequence
+   rather than three cards that happen to be stacked */
+.tp::before{
+  content:"";position:absolute;left:0;top:.55rem;bottom:.55rem;width:1px;
+  background:linear-gradient(180deg,transparent,var(--border) 12%,var(--border) 88%,transparent);
+}
+.tp__step{position:relative;padding-block:clamp(.9rem,1.8vw,1.35rem)}
+.tp__step+.tp__step{border-top:1px solid var(--border)}
+.tp__step::before{
+  content:"";position:absolute;left:calc(-1 * clamp(1.1rem,2.4vw,1.75rem) - 3px);
+  top:calc(clamp(.9rem,1.8vw,1.35rem) + .38rem);
+  width:7px;height:7px;border-radius:50%;
+  background:var(--bg-base);border:1px solid var(--fg-muted);
+}
+.tp__step:nth-child(2)::before{background:var(--accent);border-color:var(--accent)}
+
+.tp__head{display:flex;align-items:baseline;gap:.7rem;flex-wrap:wrap}
+.tp__year{font-size:var(--t-label);color:var(--fg-muted);letter-spacing:.06em}
+.tp__title{
+  font-size:var(--t-lead);font-weight:var(--wt-hero);font-stretch:var(--w-hero);
+  letter-spacing:var(--ls-hero);color:var(--fg);
+}
+
+.tp__pair{margin-top:.85rem;display:flex;flex-direction:column;gap:.55rem}
+/* The label column is fixed rather than auto: every bar has to start at the
+   same x or the three steps stop sharing a ruler, and the ruler is the whole
+   reason the section is a timeline. The width is the longest label. */
+.tp__m{display:grid;grid-template-columns:minmax(0,11.5rem) 1fr auto;align-items:center;gap:.75rem}
+.tp__k{font-size:var(--t-micro);color:var(--fg-muted);white-space:nowrap}
+.tp__track{height:8px;border-radius:999px;background:var(--bg-surface);overflow:hidden}
+.tp__track i{
+  display:block;height:100%;width:0;border-radius:999px;
+  background:var(--fg-muted);opacity:.5;
+  transition:width .95s cubic-bezier(.22,.61,.36,1);
+}
+.tp__m--win .tp__track i{background:var(--fg-dim);opacity:.85}
+.tp__m--hi .tp__track i{
+  background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 72%,#c9631a),var(--accent));
+  opacity:1;
+}
+.tp__n{
+  font-size:clamp(1.05rem,2.1vw,1.35rem);font-weight:var(--wt-hero);
+  font-stretch:var(--w-hero);letter-spacing:var(--ls-hero);
+  color:var(--fg-dim);line-height:1;font-variant-numeric:tabular-nums;
+  min-width:5.4rem;text-align:right;
+}
+.tp__m--win .tp__n{color:var(--fg)}
+.tp__m--hi .tp__n{color:var(--accent)}
+.tp__n i{font-style:normal;font-size:.5em;color:var(--fg-muted);margin-left:.2em}
+
+/* the bars fill in reading order: the year lands, then what it measured */
+.tp.is-in .tp__track i{width:calc(var(--f) * 100%)}
+.tp.is-in .tp__m:nth-child(2) .tp__track i{transition-delay:.13s}
+.tp.is-in .tp__step:nth-child(2) .tp__track i{transition-delay:.36s}
+.tp.is-in .tp__step:nth-child(2) .tp__m:nth-child(2) .tp__track i{transition-delay:.49s}
+.tp.is-in .tp__step:nth-child(3) .tp__track i{transition-delay:.72s}
+
+.tp__src{margin-top:.7rem;max-width:52rem;font-size:var(--t-micro);line-height:1.55;color:var(--fg-muted)}
+.tp__src i{font-style:italic}
+
+.tp__close{
+  margin-top:clamp(1.1rem,2.2vw,1.6rem);max-width:46rem;
+  font-size:var(--t-note);line-height:1.6;color:var(--fg-dim);
+}
+.tp__close b{color:var(--fg);font-weight:var(--wt-hero)}
+
+@media(max-width:620px){
+  .tp__m{grid-template-columns:1fr auto;grid-template-areas:"k n" "t t";row-gap:.4rem}
+  .tp__k{grid-area:k}
+  .tp__n{grid-area:n}
+  .tp__track{grid-area:t}
+}
+
+.nums__k{
+  margin:clamp(1.5rem,2.6vw,2.25rem) 0 .8rem;
+  font-size:var(--t-note);color:var(--fg-muted);
+}
+
+/* ---- what you get ------------------------------------------------------ */
+.gets{display:grid;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-card);overflow:hidden}
+@media(min-width:760px){.gets{grid-template-columns:1fr 1fr}}
+@media(min-width:1100px){.gets{grid-template-columns:repeat(3,1fr)}}
+.gets li{background:var(--bg-surface);padding:1.3rem 1.3rem 1.45rem;transition:background var(--dur-fast) ease}
+.gets li:hover{background:var(--bg-elevated)}
+.gets .k{font-family:var(--f-mono);font-size:var(--t-micro);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.gets h3{margin-top:.65rem;font-stretch:var(--w-title);letter-spacing:var(--ls-title);font-size:var(--t-title);font-weight:var(--wt-title);line-height:1.22}
+.gets p{margin-top:.5rem;font-size:var(--t-note);color:var(--fg-dim);line-height:1.55}
+
+/* ---- faq --------------------------------------------------------------- */
+.faq{border-top:1px solid var(--border);max-width:52rem}
+.faq details{border-bottom:1px solid var(--border)}
+.faq summary{
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  padding:.95rem 0;cursor:pointer;list-style:none;
+  font-size:var(--t-lead);font-stretch:var(--w-lead);letter-spacing:var(--ls-lead);font-weight:550;
+}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{
+  content:"";width:9px;height:9px;flex:0 0 auto;
+  border-right:1.5px solid var(--fg-muted);border-bottom:1.5px solid var(--fg-muted);
+  transform:rotate(45deg) translate(-2px,-2px);transition:transform .22s var(--ease);
+}
+.faq details[open] summary::after{transform:rotate(-135deg) translate(-2px,-2px)}
+.faq p{padding:0 0 1rem;max-width:44rem;color:var(--fg-dim);font-size:var(--t-body)}
+
+/* ---- close ------------------------------------------------------------- */
+.close{padding:clamp(3rem,6vw,5rem) 0 clamp(2rem,4vw,3rem);text-align:center}
+.close__in{max-width:40rem;margin-inline:auto}
+.close p{margin-top:1rem;color:var(--fg-dim);font-size:var(--t-lead)}
+.close .acts{margin-top:1.6rem;justify-content:center}
+
+/* ---- the signed line ---------------------------------------------------
+   NO QUOTATION MARKS, and that is not a style preference: the curly pair is
+   on the page's banned-punctuation list and the straight pair is a programmer
+   quoting a string. The caption under it is what marks this as somebody
+   speaking, which is the job the marks would have been doing.
+
+   It is set in the serif at reading size rather than in the display face at
+   heading size. A pull quote blown up to compete with the h2 above it turns a
+   sentence a person wrote into a slogan, and this section already has its
+   slogan. */
+.quote{margin:1.6rem auto 0;max-width:34rem}
+.close .quote p{
+  margin:0;font-family:var(--f-em);font-style:italic;font-weight:400;
+  font-size:clamp(1.02rem,.95rem + .35vw,1.2rem);line-height:1.5;
+  letter-spacing:-.005em;color:var(--fg);
+}
+/* THE SIGNATURE. No underline at rest: a signature with a rule under it is a
+   form field. It is a link, and what says so is that it is the only thing in
+   this block set at that size, in that face -- and the accent it takes on
+   hover and on focus, which is the treatment every other link on the page
+   uses. The global :focus-visible ring in globals.css applies unchanged. */
+.sig{margin-top:1.2rem;display:flex;flex-direction:column;align-items:center;gap:.1rem}
+.sig__k{
+  font-size:var(--t-micro);color:var(--fg-muted);letter-spacing:.07em;
+}
+.sig__n{
+  font-family:var(--f-em);font-style:italic;font-weight:400;
+  /* Big enough to be found, small enough not to be an announcement. It was
+     28px and that was the owner ringing his own bell; it was 11px before that
+     and nobody saw it. */
+  font-size:clamp(1.2rem,1.02rem + .55vw,1.45rem);line-height:1.15;
+  color:var(--fg-dim);letter-spacing:-.012em;
+  transition:color var(--dur-fast) var(--ease);
+}
+.sig__n:hover{color:var(--accent)}
+/* The two buttons are rooms you join. An address is not a room, so it is not
+   a third button: it is the quieter line under them, which is also what it
+   is in practice. */
+/* .close p is a section-level rule and beats a single-class component rule
+   on specificity, which is the exact trap KICKOFF records for .turn p and
+   .close p. Two classes, so this one wins on its own terms. */
+.close .close__mail{
+  margin-top:1.1rem;font-size:var(--t-note);color:var(--fg-muted);
+}
+/* The address is set in the mono face because it is a string you are about to
+   hold rather than a phrase you are reading. It keeps the underline the link
+   had: pressing it still does something, and dropping the affordance along
+   with the `href` would have made the one actionable thing in the sentence
+   look like the least actionable. */
+.close__addr{
+  padding:0;border:0;border-bottom:1px solid var(--border-strong);border-radius:0;
+  background:none;font-size:var(--t-note);color:var(--fg-dim);cursor:pointer;
+  transition:color var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease);
+}
+.close__addr:hover{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ---- the ascii band ----------------------------------------------------
+   The signal, sampled and printed. The machine has no curve, only glyphs.
+
+   The mark stands on it, at the page's own gutter, four fifths of the strip's
+   height. It takes no filter and no opacity. The mark is already built for a
+   dark ground: "SW forge" and "by SW labs" are white type, and the anvil is a
+   dark solid behind them that shows only where the band is lit -- so the strip
+   supplies the contrast the anvil needs and the type never depended on it.
+   Inverting would trade that for dark type on a light anvil, which is the one
+   arrangement this mark is not drawn for. */
+.closing{position:relative}
+/* It carries `.wrap` so the mark's left edge is the page's left edge by the
+   same rule every section uses, rather than by a second calculation that has
+   to be kept in step with the first. `left`/`right` plus the inherited
+   `margin-inline:auto` reproduce the centring an in-flow .wrap gets. */
+.closing__over{
+  position:absolute;z-index:1;left:0;right:0;top:0;height:100%;
+  display:flex;align-items:center;pointer-events:none;
+}
+.closing__mark{display:block;height:80%;pointer-events:auto}
+.closing__mark img{width:auto;height:100%;display:block}
+.band{overflow:hidden;border-top:1px solid var(--border);background:var(--bg-inset)}
+.band pre{
+  margin:0;padding:1.25rem 0;font-family:var(--f-mono);font-size:9px;line-height:.92;
+  letter-spacing:.06em;white-space:pre;overflow:hidden;text-align:center;
+  background:linear-gradient(90deg,
+    rgba(155,152,146,.30) 0%, rgba(155,152,146,.62) 26%,
+    var(--accent) 50%,
+    rgba(155,152,146,.62) 74%, rgba(155,152,146,.30) 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+
+/* ==========================================================================
+   THE LEGAL PAGES - a reading column, and the page's own type at its own sizes
+
+   Three routes share this, and it is the only prose on the site: everywhere
+   else the words are a heading, a lede, a caption or a label, all of them
+   sized to be scanned. A privacy notice is read, and read in a different
+   posture -- somebody is checking a sentence against a statute, or looking for
+   the one paragraph that answers them.
+
+   SO THE BODY IS THE LEDE'S SIZE AND NOT THE PAGE'S. `--t-body` is 14px, which
+   is right for an interface and small for eight hundred words; `--t-lead` is
+   16 and is what `.lede` and every section's sub-line already run at. The
+   column is `--read`, the same 36rem measure the section heads use, so a legal
+   page and a section head break their lines on the same rule.
+
+   THE HEADINGS COME DOWN, NOT UP. The global `h2` is a clamp that peaks at
+   2.15rem, drawn for a section that has to announce itself across a scroll.
+   Fourteen of those stacked in one column is a table of contents pretending to
+   be a document. These take `--t-title`, the app's own 20px step, with the
+   optical-size axis and the tracking that step already carries.
+
+   LINKS ARE UNDERLINED HERE AND NOWHERE ELSE ON THE SITE. In a nav or a
+   button, position and shape say "this is a link". In a paragraph nothing does
+   but the colour, and the accent against `--fg-dim` does not clear the 3:1
+   contrast a non-text indicator would have to. The underline is a border on
+   the text baseline rather than `text-decoration`, so it sits clear of the
+   descenders instead of cutting through them.
+   ========================================================================== */
+.legal{max-width:var(--read);color:var(--fg-dim)}
+.legal h2{
+  margin-top:2.6rem;color:var(--fg);font-weight:600;
+  font-size:var(--t-title);font-stretch:var(--w-title);letter-spacing:var(--ls-title);
+  line-height:1.25;
+}
+/* The first heading sits under the page's own lede, which has already set the
+   distance. A second one on top of it reads as a gap somebody forgot to fill. */
+.legal > h2:first-child{margin-top:0}
+.legal p{margin-top:.9rem;font-size:var(--t-lead);line-height:1.7}
+.legal ul{margin-top:.9rem;padding-left:1.15rem;list-style:disc}
+.legal li{margin-top:.35rem;font-size:var(--t-lead);line-height:1.7}
+.legal li::marker{color:var(--fg-muted)}
+/* AN ADDRESS IS DATA, SO IT IS SET LIKE THE PAGE'S OTHER DATA. Mono, the same
+   face the fact strip and the footer row use, and upright: the browser default
+   for `address` is italic, which on a postal address reads as a quotation.
+   It keeps the foreground rather than the dimmed prose colour, because it is
+   the one block on these pages somebody is going to copy. */
+.legal address{
+  margin-top:1rem;font-style:normal;color:var(--fg);
+  font-family:var(--f-mono);font-size:var(--t-body);line-height:1.85;
+}
+.legal a{
+  color:var(--accent);
+  border-bottom:1px solid rgba(255,156,43,.42);
+  transition:border-color var(--dur-fast) var(--ease);
+}
+.legal a:hover{border-bottom-color:var(--accent)}
+/* The document's last line, and it is a hairline apart from the document
+   rather than another paragraph of it. Selected as `p.legal__stamp` because
+   `.legal p` above is one specificity step higher than a bare class and would
+   otherwise put this back at reading size. */
+.legal p.legal__stamp{
+  margin-top:2.75rem;padding-top:1.1rem;border-top:1px solid var(--border);
+  font-size:var(--t-micro);color:var(--fg-muted);
+}
+
+/* THE WAY BACK FROM A SUBPAGE. Quiet on purpose: it is an exit from a page
+   somebody is reading, not an action on it, so it sits at the mono micro size
+   in the muted colour and earns contrast on hover. The arrow moves and the box
+   does not -- the transform is on the glyph, so nothing around it reflows. */
+.back{
+  display:inline-flex;align-items:center;gap:.45rem;margin-bottom:1.6rem;
+  font-family:var(--f-mono);font-size:var(--t-micro);letter-spacing:.04em;
+  text-transform:uppercase;color:var(--fg-muted);transition:color .2s ease;
+}
+.back svg{width:14px;height:14px;transition:transform .2s var(--ease)}
+.back:hover{color:var(--fg)}
+.back:hover svg{transform:translateX(-3px)}
+
+/* ---- footer ------------------------------------------------------------
+   Three project facts and nothing else. It used to be one mono row of four
+   items ending in a 13px anvil, which is not a logo -- at 13px this mark is a
+   smudge with two lines of type inside it, and the "SW forge" set next to it
+   was the caption a legible mark would not have needed. The mark is on the
+   band above now, at a size it can be read at; this row keeps the right, which
+   is the side it left free. */
+.foot{border-top:1px solid var(--border);padding:1.1rem 0 2rem}
+/* ONE ROW, TWO ENDS. It wraps to two lines only when it has to, and when it
+   does the legal set drops under the project set rather than interleaving with
+   it. The legal half is set quieter because it is the half a reader goes
+   looking for rather than one they are meant to notice. */
+.foot__in{
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;
+  gap:.5rem 1.5rem;
+}
+.foot__meta,.foot__legal{
+  display:flex;align-items:center;gap:1.1rem;flex-wrap:wrap;
+  font-size:var(--t-micro);color:var(--fg-muted);
+}
+.foot__lic,.foot__l{display:inline-flex;align-items:center;gap:.45rem}
+.foot__legal{gap:.9rem;opacity:.72}
+.foot__meta a,.foot__legal a{transition:color var(--dur-fast) var(--ease)}
+.foot__meta a:hover,.foot__legal a:hover{color:var(--fg-dim)}
+/* The mark takes the link's colour, so a hover moves the whole object rather
+   than lighting the word and leaving the mark behind on the old value. */
+.foot__l .mark{width:14px;height:14px;fill:currentColor;flex:none;opacity:.85}
+.foot__l:hover .mark{opacity:1}
+
+/* ---- the footer on a phone ---------------------------------------------
+   THE PROBLEM WAS WRAPPING, NOT WIDTH. One `flex-wrap` row of five items at
+   390px put four on the first line and dropped LinkedIn alone onto a second,
+   which reads as a separate group -- a row that has been cut rather than a row
+   that has been laid out. Adding a mark to each of the four made it worse: the
+   items got wider and the break moved, so where the row split became a
+   function of the label lengths.
+
+   So on a phone it is not one wrapping row. The licence is its own line,
+   because it is a fact rather than a destination and it is the only item in
+   the group that is not a link. The four links are one grid of two columns,
+   which fits every label at this size and cannot re-break itself when a label
+   changes. The legal row keeps wrapping, because four short words that break
+   after the third are still one group. */
+@media(max-width:560px){
+  .foot{padding:1rem 0 1.6rem}
+  .foot__in{gap:1.1rem;align-items:flex-start}
+  .foot__meta{display:grid;grid-template-columns:1fr 1fr;gap:.85rem 1rem;width:100%}
+  .foot__lic{grid-column:1 / -1}
+  .foot__legal{width:100%;gap:.9rem 1.1rem}
+}
+
+/* ---- the copy notice ----------------------------------------------------
+   Empty and inert until something is copied, so it takes `visibility` as well
+   as opacity: a transparent bar across the bottom of the page would still be
+   in the way of a click on whatever is under it.
+
+   No coloured edge bar and no tone, for the reason `UndoNotice` gives in the
+   app: a confirmation of a thing the reader just asked for is not a warning.
+   The ground and the icon tile are the differentiation. */
+.toast{
+  position:fixed;z-index:60;left:50%;bottom:calc(1.25rem + env(safe-area-inset-bottom));
+  display:flex;align-items:center;gap:.65rem;
+  max-width:calc(100vw - 2rem);padding:.55rem .95rem .55rem .55rem;
+  border:1px solid var(--border);border-radius:var(--r-window);
+  background:var(--bg-surface);box-shadow:var(--elev-pop);
+  font-size:var(--t-note);color:var(--fg-dim);
+  opacity:0;visibility:hidden;transform:translate(-50%,10px);
+  transition:opacity .22s ease,transform .22s var(--ease),visibility 0s linear .22s;
+}
+.toast[data-on]{
+  opacity:1;visibility:visible;transform:translate(-50%,0);
+  transition:opacity .22s ease,transform .22s var(--ease),visibility 0s;
+}
+.toast__tile{
+  display:grid;place-items:center;width:26px;height:26px;flex:none;
+  border-radius:var(--r-control);background:var(--bg-elevated);color:var(--accent);
+}
+.toast__tile svg{width:15px;height:15px}
+.toast__text{min-width:0;font-family:var(--f-mono);font-size:var(--t-label)}
+
+/* ---- scroll choreography ----------------------------------------------- */
+.rise{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s var(--ease)}
+.rise.is-in{opacity:1;transform:none}
+.rise[data-d="1"]{transition-delay:.07s}
+.rise[data-d="2"]{transition-delay:.14s}
+.rise[data-d="3"]{transition-delay:.21s}
+/* The restored-history escape hatch, set on the root for the single frame it
+   takes ../layouts/Base to mark what the reader already scrolled past. Those
+   blocks have to be present, not arriving, and `transition:none` is what
+   turns the same class change from an animation into a fact. */
+.is-settling .rise{transition:none}
+
+/* ---- narrow ------------------------------------------------------------ */
+@media(max-width:680px){
+  /* Four items do not fit one row. The two ghost links come off the bar and
+     reappear in the panel, which is what the burger is for; the action stays,
+     because it is the one thing this header is here to offer. */
+  .top__nav .btn--ghost{display:none}
+  .burger{display:inline-flex}
+  :root{--top-in-h:48px}
+  .top__in{padding-right:.35rem}
+  .brand img{width:22px;height:23px}
+  .brand .wm{width:108px;height:19px}
+}
+@media(max-width:560px){
+  /* the preview capsule carries text plus three actions plus a timer; on a
+     phone the transcript is the part that yields */
+  .pill__text{max-width:112px}
+  .pill{gap:0}
+}
+
+/* ---- reduced motion ---------------------------------------------------- */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms !important;animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;scroll-behavior:auto !important;
+  }
+  .rise{opacity:1;transform:none}
+  .caret{animation:none}
+  .tp__track i,.own__c,.w-wire,.w-folder{transition-delay:0s !important}
+  .own__c{opacity:1}
+  /* The marquee is two identical halves because the roll translates by exactly
+     -50%. With no roll the second half is fifteen duplicate items behind the
+     first, so it goes. The sketch did this by not building the copy at all;
+     doing it here means a reader who turns the setting on after load gets the
+     static row rather than the row they loaded with. */
+  .focus__row li[aria-hidden="true"]{display:none}
+}
+
+
+/* ---- engines: what runs each job ----------------------------------------
+   A table, because it is one. The claim is that eight rows do not have to
+   agree with each other, and no arrangement of cards makes that as legible as
+   eight rows and three columns do.
+
+   It scrolls inside its own box on a narrow screen. The page body must never
+   scroll sideways, and a table that forces it to is worse than one the reader
+   has to push. */
+/* The one screen-reader-only class on the page. The table needs a caption and
+   the caption would be a second heading on screen, saying what the section
+   head already says. */
+.vh{
+  position:absolute;width:1px;height:1px;margin:-1px;padding:0;
+  overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;
+}
+/* ---- the lane picker ---------------------------------------------------
+   Four radios, four labels and four panels. `:checked ~ .lanes` selects the
+   panel, which is why the inputs come first in the DOM: a sibling combinator
+   only walks forward.
+
+   `nth-of-type` on both sides, and the two lists are the same list in the same
+   order because they are built from one array in the component. That coupling
+   is the cost of doing this without script and it is worth stating: reordering
+   `LANE_CARDS` reorders both, and nothing else here has to know.
+
+   The eight-by-three grid this descends from is described in
+   ../lib/catalogue.ts. What changed is not the values, it is who asked for
+   them: a wall nobody opened, against a column somebody did. */
+.pick{margin-top:.25rem}
+/* Hidden, never `display:none`. A `display:none` radio leaves the tab order,
+   which would take the keyboard away from the only control in the section. */
+.pick__r{
+  position:absolute;width:1px;height:1px;margin:-1px;padding:0;
+  overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;
+}
+.pick__tabs{
+  display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.75rem;
+}
+.pick__t{
+  display:inline-flex;align-items:baseline;gap:.5rem;cursor:pointer;
+  padding:.42rem .8rem;border:1px solid var(--border);border-radius:var(--r-control);
+  background:var(--bg-surface);color:var(--fg-dim);
+  transition:background-color var(--dur-fast) var(--ease),
+             border-color var(--dur-fast) var(--ease),color var(--dur-fast) var(--ease);
+}
+.pick__t b{
+  font-size:var(--t-label);font-weight:550;font-stretch:var(--w-label);
+  letter-spacing:var(--ls-label);
+}
+.pick__t span{font-size:var(--t-micro);color:var(--fg-muted);white-space:nowrap}
+.pick__t:hover{background:var(--bg-elevated);color:var(--fg)}
+
+/* The selected tab, and the focused one. Focus is drawn on the LABEL because
+   the input it belongs to is a pixel in the corner of the section -- an
+   outline there is an outline nobody can see. */
+.pick__r:nth-of-type(1):checked ~ .pick__tabs .pick__t:nth-of-type(1),
+.pick__r:nth-of-type(2):checked ~ .pick__tabs .pick__t:nth-of-type(2),
+.pick__r:nth-of-type(3):checked ~ .pick__tabs .pick__t:nth-of-type(3),
+.pick__r:nth-of-type(4):checked ~ .pick__tabs .pick__t:nth-of-type(4){
+  background:var(--bg-elevated);border-color:var(--border-strong);color:var(--fg);
+  box-shadow:var(--edge-light-strong);
+}
+.pick__r:nth-of-type(1):checked ~ .pick__tabs .pick__t:nth-of-type(1) span,
+.pick__r:nth-of-type(2):checked ~ .pick__tabs .pick__t:nth-of-type(2) span,
+.pick__r:nth-of-type(3):checked ~ .pick__tabs .pick__t:nth-of-type(3) span,
+.pick__r:nth-of-type(4):checked ~ .pick__tabs .pick__t:nth-of-type(4) span{
+  color:var(--accent);
+}
+.pick__r:nth-of-type(1):focus-visible ~ .pick__tabs .pick__t:nth-of-type(1),
+.pick__r:nth-of-type(2):focus-visible ~ .pick__tabs .pick__t:nth-of-type(2),
+.pick__r:nth-of-type(3):focus-visible ~ .pick__tabs .pick__t:nth-of-type(3),
+.pick__r:nth-of-type(4):focus-visible ~ .pick__tabs .pick__t:nth-of-type(4){
+  outline:none;
+  box-shadow:0 0 0 1.5px var(--accent),0 0 0 5px rgba(255,156,43,.22);
+}
+
+/* ---- the panel ---------------------------------------------------------
+   THE BOX IS AS TALL AS THE LANE THAT IS OPEN, and the first attempt was the
+   other way round. Stacking all four in one grid cell keeps the height fixed
+   so that nothing below moves when a tab is pressed -- and it pays for that
+   with a four-hundred-pixel hole under Your server, which has three lines of
+   content against Cloud's eight rows. Measured, that is not a stable layout,
+   it is one lane's emptiness printed at the size of another lane's content.
+
+   A tab panel that resizes to its contents is what a tab panel does. The
+   panels below it are a heading and a card, both of which the reader is
+   looking at when they press a tab and neither of which is mid-sentence. */
+.lanes{
+  border:1px solid var(--border);border-radius:var(--r-window);
+  background:var(--bg-surface);box-shadow:var(--edge-light);overflow:hidden;
+}
+.lane{display:none;flex-direction:column}
+.pick__r:nth-of-type(1):checked ~ .lanes .lane:nth-of-type(1),
+.pick__r:nth-of-type(2):checked ~ .lanes .lane:nth-of-type(2),
+.pick__r:nth-of-type(3):checked ~ .lanes .lane:nth-of-type(3),
+.pick__r:nth-of-type(4):checked ~ .lanes .lane:nth-of-type(4){
+  display:flex;
+}
+
+.lane__top{
+  display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;
+  gap:.4rem 1.2rem;padding:1rem 1.1rem;border-bottom:1px solid var(--border);
+  background:var(--bg-inset);
+}
+.lane__what{font-size:var(--t-label);line-height:1.5;color:var(--fg-dim);max-width:38rem}
+.lane__cred{font-size:var(--t-micro);line-height:1.5;color:var(--fg-muted)}
+.lane__cred b{color:var(--fg-dim);font-weight:500}
+
+/* ---- the eight rows ----------------------------------------------------
+   Job, then what it runs. Two columns on a wide screen and a stack under
+   620px, because a model id and a size are not a shape that survives a phone
+   column beside a job name.
+
+   `min-width:0` on the id: a mono string with no spaces in it will otherwise
+   push the grid wider than the section and take the page's horizontal scroll
+   with it. */
+.jobs{display:grid;gap:1px;background:var(--border)}
+/* THE JOB COLUMN IS CAPPED RATHER THAN PROPORTIONAL. At `1fr` it grew with
+   the section and pushed the model half a screen away from the job it belongs
+   to, which is two columns the eye has to travel between instead of one row it
+   reads. The cap is the longest job name plus its sentence; past that the row
+   stops widening and the model stays beside its job. */
+.job{
+  display:grid;grid-template-columns:minmax(0,15rem) minmax(0,1fr);
+  gap:.3rem 1.5rem;align-items:baseline;
+  padding:.62rem 1.1rem;background:var(--bg-surface);
+}
+.job__n b{
+  display:block;font-size:var(--t-note);font-weight:550;color:var(--fg);
+}
+.job__w{display:block;margin-top:.05rem;font-size:var(--t-micro);color:var(--fg-muted)}
+.job__m{display:flex;align-items:center;gap:.45rem;min-width:0}
+/* ---- one vendor mark ---------------------------------------------------
+   THE SPRITE IS INVISIBLE AND STILL RENDERED. `display:none` on the defining
+   `<svg>` removes its symbols from the rendering tree in some engines, and
+   every `<use>` on the page goes blank with it. Zero size plus `position:
+   absolute` takes it out of layout without taking it out of rendering.
+
+   TWO KINDS OF MARK, ONE RULE. A mark the package ships in colour draws its
+   own; the four vendors whose brands are monochrome have no coloured file and
+   take the foreground instead. `data-c` is set by ../components/Mark.astro off
+   the package, so which is which is read rather than listed here. */
+.sprite{position:absolute;width:0;height:0;overflow:hidden}
+.mk{width:14px;height:14px;flex:0 0 auto;color:var(--fg-dim);fill:currentColor}
+.mk[data-c]{fill:none;color:inherit}
+/* A VENDOR THE MARK SET DOES NOT CARRY. A dim dot holds the column so the
+   labels stay on one baseline; the derivation is in Mark.astro. */
+.mk--none{display:flex;align-items:center;justify-content:center}
+.mk--none::before{
+  content:"";width:5px;height:5px;border-radius:999px;background:var(--fg-muted);
+}
+.job__m .mk{width:15px;height:15px}
+.job__id{
+  font-size:var(--t-micro);color:var(--fg-dim);min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+/* THE SIZE IS THE ONE FIGURE ON THIS SURFACE SOMEBODY WEIGHS. It is on the
+   Local rows and nowhere else, because a cloud model costs a request and a
+   local one costs disk before it costs anything else. Set apart from the id
+   rather than after it, so a reader scanning the column for numbers finds
+   them in a column. */
+.job__size{
+  margin-left:auto;flex:0 0 auto;font-size:var(--t-micro);
+  color:var(--accent);white-space:nowrap;
+}
+/* A ROW THAT DOES NOT RUN. On the grid this replaced it read `none` in the
+   quietest type on the page. Here the row is dimmed as a whole, which is the
+   shape of the lane rather than a footnote about it. */
+.job[data-none]{background:var(--bg-inset)}
+.job[data-none] .job__n b{color:var(--fg-muted);font-weight:500}
+.job__none{font-size:var(--t-micro);color:var(--fg-muted)}
+@media(max-width:620px){
+  .job{grid-template-columns:1fr;gap:.25rem}
+  .job__size{margin-left:0}
+}
+
+/* ---- the lane with no rows --------------------------------------------- */
+/* TWO FIELDS, AT THE WIDTH OF WHAT GOES IN THEM. Drawn full-bleed they read as
+   two empty bars across the panel, which is a shape that says the lane is
+   missing something. A base URL and a model id are short, so the boxes are
+   short, and they wrap rather than stretch. */
+.lane__typed{padding:1.1rem;display:grid;gap:.75rem;justify-items:start}
+.lane__field{
+  display:flex;flex-wrap:wrap;gap:.4rem;
+  font-size:var(--t-micro);color:var(--fg-muted);
+}
+.lane__field span{
+  padding:.34rem .55rem;border:1px dashed var(--border-strong);
+  border-radius:var(--r-small);background:var(--bg-inset);
+  overflow:hidden;text-overflow:ellipsis;
+}
+.lane__note{font-size:var(--t-note);line-height:1.55;color:var(--fg-muted);max-width:34rem}
+
+/* THE EIGHT JOBS, NAMED ONCE, ON THE ONE LANE THAT CANNOT ANSWER PER JOB.
+   Every other lane answers the job axis a row at a time. This one serves all
+   eight on a server whose model list is not ours to print, so the axis itself
+   is the answer: here are the eight, all of them, on whatever you are running.
+   The separator is drawn rather than typed -- the middle dot is banned in the
+   copy and the 3px dot under the hero's fact strip is what stands in for it. */
+.lane__eight{
+  display:flex;flex-wrap:wrap;align-items:baseline;gap:.35rem .8rem;
+  font-size:var(--t-micro);color:var(--fg-dim);
+}
+.lane__eight b{
+  font-family:var(--f-mono);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--fg-muted);font-weight:500;
+}
+.lane__eight i{font-style:normal;display:inline-flex;align-items:center}
+.lane__eight i+i::before{
+  content:"";width:3px;height:3px;border-radius:50%;
+  background:var(--fg-muted);opacity:.5;margin-right:.8rem;
+}
+
+.lane__marks{
+  margin-top:auto;display:flex;flex-wrap:wrap;gap:.3rem .85rem;
+  padding:.7rem 1.1rem;border-top:1px solid var(--border);background:var(--bg-inset);
+}
+.lane__marks > span{
+  display:inline-flex;align-items:center;gap:.3rem;
+  font-size:var(--t-micro);color:var(--fg-muted);white-space:nowrap;
+}
+.lane__marks .mk{width:14px;height:14px}
+
+/* ---- one profile -------------------------------------------------------
+   The section's claim performed rather than asserted. Four rows, three lanes,
+   and every model read out of the catalogue's own defaults.
+
+   A grid rather than a table, and the columns collapse to a stack under 760px
+   instead of scrolling sideways: four rows of four short fields is a shape a
+   phone can hold, which the 38rem-wide table it replaced never was. */
+.prof{
+  margin-top:1.25rem;
+  border:1px solid var(--border);border-radius:var(--r-window);
+  background:var(--bg-surface);box-shadow:var(--edge-light);
+  padding:1.05rem 1.1rem 1.15rem;
+}
+.prof.lit{box-shadow:var(--edge-light),0 30px 84px -44px rgba(255,156,43,.30)}
+.prof__head{margin-bottom:.9rem}
+.prof__t{display:block;font-size:var(--t-note);font-weight:550;color:var(--fg)}
+.prof__sub{display:block;margin-top:.15rem;font-size:var(--t-micro);color:var(--fg-muted)}
+.prof__rows{list-style:none;margin:0;padding:0;display:grid;gap:1px;background:var(--border)}
+.prof__r{
+  display:grid;gap:.35rem 1rem;padding:.7rem .1rem;background:var(--bg-surface);
+  grid-template-columns:1fr;align-items:baseline;
+}
+@media(min-width:760px){
+  .prof__r{
+    grid-template-columns:minmax(0,13rem) 6.5rem minmax(0,16rem) minmax(0,1fr);
+    align-items:center;padding:.6rem .1rem;
+  }
+}
+.prof__job b{display:block;font-size:var(--t-note);font-weight:550;color:var(--fg)}
+.prof__jw{display:block;margin-top:.05rem;font-size:var(--t-micro);color:var(--fg-muted)}
+/* The lane is the column the four rows are read down, so it is the one that
+   carries the accent: three different values in four rows IS the claim. */
+.prof__lane{
+  justify-self:start;padding:.16rem .45rem;
+  border:1px solid color-mix(in srgb,var(--accent) 32%,transparent);
+  border-radius:var(--r-small);background:color-mix(in srgb,var(--accent) 8%,transparent);
+  font-size:var(--t-micro);color:var(--accent);white-space:nowrap;
+}
+.prof__v{display:inline-flex;align-items:center;gap:.4rem;min-width:0}
+.prof__v .mk{width:15px;height:15px}
+.prof__m{font-size:var(--t-micro);color:var(--fg-dim);overflow:hidden;text-overflow:ellipsis}
+.prof__why{font-size:var(--t-micro);line-height:1.5;color:var(--fg-muted)}
+
+/* ---- the two cards under the picker ------------------------------------
+   Language and offline. Both are properties of the ENGINE rather than of any
+   one lane, which is why they are not columns in the picker: a reader asking
+   "does it speak German" is not asking it about Cloud.
+
+   Two equal columns above 860px and a stack under it. They are the same width
+   because they are the same kind of claim; making one wider would say one of
+   the two questions matters less, and the two questions are the two that
+   decide a download. */
+/* TWO CARDS, AND THEY ARE TWO OBJECTS. This was one bordered box split by a
+   1px seam, which is the drawing for one thing with two halves -- a comparison,
+   or a before and after. These are two independent answers to two independent
+   questions, and a reader who has to work out whether the seam means "versus"
+   has been given a puzzle instead of a layout. Each card now carries its own
+   border, its own radius and its own shadow, and the gap between them is the
+   gap the rest of the page puts between sibling cards. */
+.eng__two{
+  margin-top:1.25rem;display:grid;gap:clamp(.7rem,1.4vw,1rem);align-items:start;
+}
+@media(min-width:860px){.eng__two{grid-template-columns:1fr 1fr;align-items:stretch}}
+/* Content sits at the top of both. `justify-content` was doing nothing useful
+   and `margin-top:auto` on the last block in each was doing something actively
+   bad: the shorter card grew a hole in its middle to keep its footer level
+   with the taller one's, which levels a line nobody is comparing across a gap
+   everybody sees. */
+.eng__two .card{
+  background:var(--bg-surface);padding:1.15rem 1.2rem 1.25rem;
+  border:1px solid var(--border);border-radius:var(--r-window);
+  box-shadow:var(--edge-light);
+  display:flex;flex-direction:column;align-items:stretch;gap:.7rem;
+}
+.eng__two h3{
+  font-size:var(--t-lead);font-stretch:var(--w-lead);letter-spacing:var(--ls-lead);
+  font-weight:600;color:var(--fg);line-height:1.25;
+}
+.lang__p,.off__p{font-size:var(--t-label);line-height:1.55;color:var(--fg-dim)}
+.off__p .mono{font-size:.94em;color:var(--fg)}
+
+/* THE TWO FIGURES, AND THEY ARE NOT THE SAME MEASUREMENT.
+
+   A definition list rather than two cards, because these are not two
+   independent statistics -- they are one capability described from both ends,
+   what the recogniser reaches and what the app can name back, and a row is
+   what says that. A third row reading `0 guessed` sat here for a while; ADR
+   0254 records why it was pulled. */
+.lang__f,.off__f{
+  display:grid;gap:1px;background:var(--border);
+  border:1px solid var(--border);border-radius:var(--r-card);overflow:hidden;
+}
+.lang__f > div,.off__f > div{
+  display:grid;grid-template-columns:3.6rem minmax(0,1fr);
+  gap:.75rem;align-items:baseline;
+  padding:.56rem .7rem;background:var(--bg-inset);
+}
+.lang__f dt,.off__f dt{
+  font-size:var(--t-lead);font-weight:500;color:var(--accent);
+  font-variant-numeric:tabular-nums;text-align:right;
+}
+.lang__f dd,.off__f dd{margin:0;font-size:var(--t-micro);line-height:1.5;color:var(--fg-dim)}
+/* ---- the language chips ------------------------------------------------
+   A wrapped row rather than a grid: seventeen names of wildly different widths
+   -- "it" against "Português" against "한국어" -- in equal columns is mostly
+   empty cells, and the emptiness is what a grid would draw. Wrapped, the row
+   is dense and the shape it makes is the point.
+
+   The flags are round, which is the one place on this page a circle is
+   correct: the radius ladder in globals.css keeps capsules for objects that
+   physically are capsules, and a flag cropped to a disc is a token rather than
+   a rectangle with text in it.
+
+   `lang` on every name, so a screen reader switches voice for it instead of
+   reading 日本語 in English. That is not a nicety on this particular row: the
+   row exists to say the product hears other languages, and a row that cannot
+   be heard in them would be making its own point badly. */
+.lang__c{display:flex;flex-wrap:wrap;gap:.35rem}
+.lang__c li{
+  display:inline-flex;align-items:center;gap:.4rem;
+  padding:.24rem .5rem .24rem .3rem;
+  border:1px solid var(--border);border-radius:var(--r-round);
+  background:var(--bg-inset);
+  font-size:var(--t-micro);color:var(--fg-dim);white-space:nowrap;
+}
+.fl{width:15px;height:15px;flex:0 0 auto;border-radius:50%;display:block}
+/* The count is not a language, so it is not shaped like one: no flag, no
+   circle, and it closes the row rather than joining it. */
+.lang__more{
+  border-style:dashed;border-color:var(--border-strong) !important;
+  background:transparent !important;padding-left:.5rem !important;
+  color:var(--fg-muted);
+}
+
+.off__l{display:grid;gap:1px;background:var(--border);
+  border:1px solid var(--border);border-radius:var(--r-card);overflow:hidden;
+}
+.off__l li{
+  display:grid;grid-template-columns:6.2rem minmax(0,1fr);gap:.75rem;
+  align-items:baseline;padding:.56rem .7rem;background:var(--bg-inset);
+}
+.off__l b{
+  font-size:var(--t-note);font-weight:550;color:var(--fg);
+  font-stretch:var(--w-note);letter-spacing:var(--ls-note);
+}
+.off__l span{font-size:var(--t-micro);line-height:1.5;color:var(--fg-muted)}
+
+/* THE DISK RANGE. Same object as the language figures on the other card, so
+   it is drawn by the same rule -- two cards answering two questions with the
+   same kind of evidence should not invent two treatments for it. Its column is
+   wider because "148 MB" is wider than "99+", and it pushes to the bottom of
+   its card so the card closes on the figure rather than on a list. */
+.off__f{margin-top:auto}
+.off__f > div{grid-template-columns:5.2rem minmax(0,1fr)}
+@media(max-width:420px){
+  .off__l li,.lang__f > div,.off__f > div{grid-template-columns:1fr;gap:.1rem}
+  .lang__f dt,.off__f dt{text-align:left}
+}
+
+.eng__foot{margin-top:1rem;font-size:var(--t-micro);line-height:1.6;color:var(--fg-muted)}
+.eng__foot b{color:var(--fg-dim);font-weight:500}
+
+/* ==========================================================================
+   IN-APP BROWSERS - the bar that is not in this document
+
+   Set by the detection script in layouts/Base.astro, which carries why user
+   agent sniffing is the only instrument available for this. Everything below
+   is spacing. Nothing below raises a z-index, because the bar these rules
+   avoid is painted by the host application over the WebView and is not in this
+   page's stacking context: there is nothing here to stack above it.
+
+   `--iab-chrome` IS A FLOOR, NOT A MEASUREMENT. 64px is the working figure for
+   the Instagram and Facebook bottom chrome on iOS and Android. It has NOT been
+   verified on a device for this site -- the check that would settle it is the
+   one in the skill: a real iPhone through a bio link and a real Android
+   through a story link, neither of which a headless engine can stand in for.
+   Until that happens this number is an estimate that is stated as one.
+
+   THE PAGE ITSELF TAKES THE FLOOR TOO. Anything scrollable can be scrolled out
+   from under the bar, with one exception: the last screenful. The document
+   stops scrolling at its own end, so whatever sits there -- here the footer's
+   legal row and the signature band above it -- lives under the bar for good.
+   The padding gives the document that much more to end with.
+   ========================================================================== */
+html.iab{--iab-chrome:64px}
+
+html.iab body{padding-bottom:var(--iab-chrome)}
+
+/* The panel is `fixed; inset:0`, and the action it exists to offer is at the
+   bottom of it. Two separate hazards meet there, so both are answered:
+
+   The bar, by the floor above -- the panel scrolls, but its own end is as
+   unreachable as the document's.
+
+   AND THE VIEWPORT THE PANEL IS SIZED AGAINST. `inset:0` resolves against the
+   initial containing block, and on iOS that is reported as the LARGE viewport,
+   so a panel pinned to all four insets can extend under the browser's own bar
+   before any in-app chrome is involved. `100svh` states the small viewport
+   explicitly and wins over `bottom` when both are set. This one is defensive:
+   it is reasoned from how iOS resolves fixed positioning, and it has not been
+   confirmed against a device here. It costs nothing where the assumption is
+   wrong, because `100svh` and `inset:0` resolve to the same box there. */
+.menu{height:100svh}
+html.iab .menu{
+  padding-bottom:calc(1.1rem + env(safe-area-inset-bottom) + var(--iab-chrome));
+}
+
+html.iab .toast{
+  bottom:calc(1.25rem + env(safe-area-inset-bottom) + var(--iab-chrome));
+}

@@ -1,0 +1,194 @@
+---
+/* THE NUMBERS
+
+   Three measurements, none of them ours, read in the order they were taken.
+   The point is not that speaking is fast: it is that speaking was slower until
+   the correction problem was solved, which is the problem this product is
+   built around. Every figure below was read out of the paper it belongs to,
+   not off a site quoting it. All bars are scaled against 161.2 wpm, the
+   fastest reading here.
+
+   Zero JS in the markup. The bars carry --f as an inline fraction and animate
+   off .is-in; the only thing a script adds is the count-up on the figures, and
+   the server already prints every one of them at its final value. */
+import { HEAT_CELLS, HEAT_LEGEND, OWN, WEEKS } from '../lib/heat';
+
+/* THE FOUR TILES CARRY WHAT PRODUCTION'S FOUR TILES CARRY.
+
+   A figure and a label are not a reading. `Home.tsx` prints a foot under every
+   one of these and the feet are load-bearing rather than decorative: `median,
+   N dictations` is what stops a rate from being a mean over a denominator that
+   silently skipped half the records, and the two-line foot under Time saved is
+   ADR 0182, which says outright that the baseline is not context about that
+   reading, it IS the reading -- the same four weeks are 43 minutes at 40 wpm
+   and 15 at 60.
+
+   This page printed four figures with four descriptive phrases under them and
+   none of the three things that make a figure mean something: no median, no
+   span, no baseline. `9h 40m` saved over an unstated period against an
+   unstated comparison is the shape of a marketing number, which is the one
+   shape this section exists to avoid.
+
+   Every value below is read out of ../lib/heat, where three of the four are
+   computed over the same array the field above them draws. */
+---
+<section class="sec plane" id="numbers">
+  <div class="wrap">
+    <div class="sec__head rise">
+      <h2>It counts what it did <em>for you</em>.</h2>
+      <p>That speaking beats typing is not our finding, and for most of the time computers
+        could listen at all it was not even true. The three measurements below are other
+        people's.</p>
+    </div>
+
+    <ol class="tp rise" data-d="1">
+      <li class="tp__step">
+        <div class="tp__head">
+          <span class="tp__year mono">1999</span>
+          <b class="tp__title">Speaking lost.</b>
+        </div>
+        <div class="tp__pair">
+          <div class="tp__m" style="--f:.084">
+            <span class="tp__k mono">spoken</span>
+            <span class="tp__track"><i></i></span>
+            <b class="tp__n" data-n="13.6" data-dec="1">13.6<i>wpm</i></b>
+          </div>
+          <div class="tp__m tp__m--win" style="--f:.202">
+            <span class="tp__k mono">typed</span>
+            <span class="tp__track"><i></i></span>
+            <b class="tp__n" data-n="32.5" data-dec="1">32.5<i>wpm</i></b>
+          </div>
+        </div>
+        <p class="tp__src mono">Transcription by voice against keyboard and mouse, 24 users,
+          three commercial recognisers. Karat, Halverson, Horn and Karat, <i>Patterns of Entry
+          and Correction in Large Vocabulary Continuous Speech Recognition Systems</i>, CHI
+          1999. Figures as reported in Ruan et al. 2016.</p>
+      </li>
+
+      <li class="tp__step">
+        <div class="tp__head">
+          <span class="tp__year mono">2016</span>
+          <b class="tp__title">It turned over.</b>
+        </div>
+        <div class="tp__pair">
+          <div class="tp__m tp__m--win tp__m--hi" style="--f:1">
+            <span class="tp__k mono">spoken</span>
+            <span class="tp__track"><i></i></span>
+            <b class="tp__n" data-n="161.2" data-dec="1">161.2<i>wpm</i></b>
+          </div>
+          <div class="tp__m" style="--f:.332">
+            <span class="tp__k mono">typed</span>
+            <span class="tp__track"><i></i></span>
+            <b class="tp__n" data-n="53.5" data-dec="1">53.5<i>wpm</i></b>
+          </div>
+        </div>
+        <p class="tp__src mono">English short messages, 32 participants, with 20.4 percent
+          fewer errors than the keyboard. Measured on a phone. Ruan, Wobbrock, Liou, Ng and
+          Landay, <i>Comparing Speech and Keyboard Text Entry for Short Messages in Two
+          Languages on Touchscreen Phones</i>, 2016.</p>
+      </li>
+
+      <li class="tp__step">
+        <div class="tp__head">
+          <span class="tp__year mono">2018</span>
+          <b class="tp__title">The desk, checked.</b>
+        </div>
+        <div class="tp__pair">
+          <div class="tp__m" style="--f:.320">
+            <span class="tp__k mono">typed, physical keyboard</span>
+            <span class="tp__track"><i></i></span>
+            <b class="tp__n" data-n="51.6" data-dec="1">51.6<i>wpm</i></b>
+          </div>
+        </div>
+        <p class="tp__src mono">Mean 51.56, SD 20.2, across 168,000 participants. Dhakal,
+          Feit, Kristensson and Oulasvirta, <i>Observations on Typing from 136 Million
+          Keystrokes</i>, CHI 2018.</p>
+      </li>
+    </ol>
+
+    <p class="tp__close rise" data-d="1">The 2016 study ran on a phone, and that is the
+      objection worth answering rather than hiding: its touchscreen keyboard came out at
+      53.5 wpm, and a physical keyboard measured across 168,000 people comes out at 51.6.
+      The typing side barely moves. What moved is the other side, and what held it back in
+      1999 was <b>correction, not speed</b>. That is the half the modes do.</p>
+
+    <p class="nums__k rise" data-d="1">These five are yours, and every one of them is read
+      off your own disk.</p>
+
+    {/* The field is a figure, not a texture, so it sits with the other four
+        rather than closing the page. What it counts is dictations per day,
+        which is the one of the five that only makes sense as a shape. */}
+    <div class="own lit rise" data-d="1">
+      <div class="own__field">
+        <div class="own__head">
+          <div>
+            <b class="own__t">Days you dictated</b>
+            <span class="own__sub">every day you spoke to it, and how much</span>
+          </div>
+          <span class="own__legend mono" aria-hidden="true">less{
+            HEAT_LEGEND.map((l) => <i class="own__c" data-l={l}></i>)
+          }more</span>
+        </div>
+        {/* ONE PANEL, NOT 364. Every cell carries its own reading as text and
+            a single node draws it, because a tooltip element per cell is three
+            hundred and sixty-four subtrees in the served HTML for one that can
+            ever be visible. The panel is a child of the field rather than the
+            grid so it is not clipped by the grid's own box. */}
+        <div class="own__grid" style={`--cols:${WEEKS}`}
+             role="img"
+             aria-label="An activity field of one year. Columns are weeks, rows are weekdays, and brighter cells are days with more dictations.">
+          {HEAT_CELLS.map((c) => (
+            <i class="own__c" data-l={c.level} style={`--i:${c.week}`} data-tip={c.tip} tabindex="-1"></i>
+          ))}
+        </div>
+        <div class="own__tip" role="tooltip" data-own-tip="" aria-hidden="true"></div>
+        <p class="own__foot mono">One column is a week, one row is a weekday, Monday at the
+          top. Hover a day for what it holds: the dictations, the words, the two clocks, and the
+          meetings and uploads that landed on it. Read from the same history file the four figures
+          below are computed from.</p>
+      </div>
+
+      <ul class="nums">
+        {/* A SPEAKING rate since ADR 0177, and a median: the foot names what it
+            was computed over, because a rate whose denominator silently skipped
+            half the records is a plausible wrong number. */}
+        <li class="tile">
+          <b data-n={OWN.rate} data-delay="120">{OWN.rate}</b>
+          <span class="tile-label">Words per minute</span>
+          <span class="tile-foot">median, over {OWN.timed.toLocaleString('en-US')} dictations</span>
+        </li>
+        {/* The one figure derived from an assumption rather than a measurement,
+            so the foot carries the assumption. Rolling four weeks, not a
+            lifetime: a lifetime figure stops being something a reader can
+            hold. */}
+        <li class="tile">
+          <b><span data-n={OWN.savedHours} data-delay="200">{OWN.savedHours}</span><i>h</i>
+             <span data-n={OWN.savedMinutes} data-delay="200">{OWN.savedMinutes}</span><i>m</i></b>
+          <span class="tile-label">Time saved</span>
+          <span class="tile-foot">an estimate, over {OWN.savedSpan}<br />against {OWN.baseline} wpm typing</span>
+        </li>
+        {/* From you stopping to the text being ready (ADR 0181), in seconds
+            (ADR 0191), and a median over every run rather than a best case. */}
+        <li class="tile">
+          <b><span data-n={OWN.turnaround} data-dec="1" data-delay="280">{OWN.turnaround}</span><i>s</i></b>
+          <span class="tile-label">Turnaround</span>
+          <span class="tile-foot">median wait, over every run</span>
+        </li>
+        {/* Measured on the delivered text (ADR 0180), which works on every lane
+            and offline. The runs too short to name a language are in no bucket
+            at all, and the foot says so rather than telling a bilingual reader
+            they speak one language (ADR 0186). */}
+        <li class="tile">
+          <b data-n={OWN.languages} data-delay="360">{OWN.languages}</b>
+          <span class="tile-label">Languages</span>
+          <span class="tile-foot">mostly {OWN.topLanguage}, {OWN.topShare} percent<br />
+            measured on {OWN.measured.toLocaleString('en-US')} of {OWN.dictations.toLocaleString('en-US')}</span>
+        </li>
+      </ul>
+    </div>
+
+    <p class="slab__note rise" data-d="2" style="max-width:44rem">A constructed example,
+      not an average of anybody. What is real is that the app measures these five things,
+      out of a file you can open.</p>
+  </div>
+</section>

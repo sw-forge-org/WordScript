@@ -1,0 +1,137 @@
+---
+/* THE HEADER, AND THE PANEL IT OPENS ON A PHONE
+
+   ── WHY THERE IS A MENU AT ALL ─────────────────────────────────────────────
+
+   Above 680px the header carries two ghost links and the action. Below it,
+   both ghost links were set to `display:none` -- four items do not fit one row
+   and the action is the one that had to survive. That is the correct triage
+   and it left the phone with no way to reach any section of a ten-thousand
+   pixel page except by scrolling the whole thing.
+
+   So the two links that were being hidden become five in a panel, which is
+   also the fix for a second thing: two entries were never the right list. The
+   page has six places worth arriving at directly and the header was naming the
+   first two because those were the two that fit.
+
+   ── THE PANEL IS A SIBLING OF THE HEADER, NOT A CHILD OF IT ────────────────
+
+   `.top__in` takes a `backdrop-filter` once the page is scrolled, and a filtered
+   element becomes the containing block for every `position:fixed` descendant.
+   A panel inside it would be fixed to the header rather than to the viewport --
+   a 48px-tall full-screen overlay. It is rendered here, beside the header, and
+   `.top` never contains it.
+
+   ── IT IS A SCRIPT AND NOT A CHECKBOX ──────────────────────────────────────
+
+   The lane picker in the engines section is four radios and no JavaScript,
+   because a radio group is what a one-of-four choice is. This is not that. A
+   checkbox toggle cannot close itself when a link inside it is followed, so
+   the reader lands on the section with the panel still covering it; it cannot
+   lock the scroll behind it, so the page slides under the overlay; and it
+   answers no key. All three are what the script below Base.astro's chrome
+   block does, and none of them is optional on a surface that covers the page.
+
+   The button is a `<button>` with `aria-expanded` and `aria-controls`, and the
+   panel is `hidden` when closed, so nothing inside it is reachable by keyboard
+   or by a screen reader while it is shut. */
+import Arrow from './Arrow.astro';
+
+const DISCORD = 'https://discord.com/invite/BHfApphz8h';
+const SOURCE = 'https://github.com/sw-forge-org/WordScript';
+
+/* THE SIX, IN PAGE ORDER. A menu whose order does not match the order the
+   reader would meet these by scrolling is a second, competing structure.
+
+   THE HASHES ARE ROOT-RELATIVE, AND THAT IS NOT TIDINESS. This header is in
+   `Base.astro`, so it stands on every route -- and the site grew routes the
+   day the legal pages landed. A bare `#how` on /imprint is a link to a
+   fragment of /imprint, which does not exist: the reader presses it and
+   nothing happens at all. `/#how` navigates home and lands on the section from
+   anywhere, and on the index it is still the same in-page jump, because Lenis
+   resolves a same-document hash whatever the path in front of it. */
+const NAV = [
+  { href: '/#how', label: 'How it works' },
+  { href: '/#turn', label: 'The turn' },
+  { href: '/#numbers', label: 'Numbers' },
+  { href: '/#what', label: 'What you get' },
+  { href: '/#engines', label: 'Engines' },
+  { href: '/#faq', label: 'Questions' },
+];
+
+/* THE WORDMARK GOES HOME FROM A SUBPAGE AND TO THE TOP FROM THE INDEX.
+   One control, two meanings, and the reader's expectation is the same in both:
+   take me back to the start of the thing I am reading about. `#top` on
+   /imprint would scroll a legal page to a header the reader is already looking
+   at. */
+const home = Astro.url.pathname === '/';
+---
+<header class="top" id="top">
+  <div class="top__in">
+    <a class="brand" href={home ? '#top' : '/'}
+       aria-label={home ? 'WordScript, back to top' : 'WordScript, back to the start'}>
+      <img src="/assets/logos/wordscript-icon-128.png" width="121" height="128" alt="" />
+      <span class="wm" role="img" aria-label="WordScript"></span>
+    </a>
+    <nav class="top__nav">
+      <a class="btn btn--ghost" href="/#how">How it works</a>
+      <a class="btn btn--ghost" href="/#numbers">Numbers</a>
+      <a class="btn" href={DISCORD}>Join on Discord</a>
+      {/* To the RIGHT of the action, because the action is the thing this
+          header exists to offer and the menu is how you get past it. */}
+      <button class="burger" type="button" id="menu-open"
+              aria-controls="menu" aria-expanded="false" aria-label="Open menu"
+              data-menu-open>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </button>
+    </nav>
+  </div>
+</header>
+
+<div class="menu" id="menu" hidden tabindex="-1" data-menu>
+  {/* The panel repeats the brand rather than letting the header show through.
+      A translucent overlay over a page this dense is a page you can half-read,
+      and half-readable is worse than covered: the reader's eye keeps trying. */}
+  <div class="menu__top">
+    <span class="brand">
+      <img src="/assets/logos/wordscript-icon-128.png" width="121" height="128" alt="" />
+      <span class="wm" role="img" aria-label="WordScript"></span>
+    </span>
+    <button class="menu__x" type="button" aria-label="Close menu" data-menu-close>
+      <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"
+           stroke-linecap="round" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" /></svg>
+    </button>
+  </div>
+
+  {/* THE ROWS ARE NUMBERED AND THEY DO NOT CARRY AN ARROW.
+
+      A stack of big labels with a chevron on the right is what every phone
+      menu looks like, and this one looked like one in particular. The number
+      is this page's own way of listing: the demo's three tabs are `01 Cursor`,
+      `02 Context`, `03 Agent` in mono at micro size, muted until the one you
+      are on. Reused here it is not decoration -- it says the page is read in
+      order, which after ADR 0254 pinned the opening is the thing the structure
+      is actually claiming. The chevron said only "this is a link", which the
+      row already says by being one. */}
+  <nav class="menu__list" aria-label="Sections">
+    {NAV.map((n, i) => (
+      <a href={n.href} data-menu-link>
+        <span class="menu__n mono">{String(i + 1).padStart(2, '0')}</span>
+        <span class="menu__t">{n.label}</span>
+      </a>
+    ))}
+  </nav>
+
+  {/* THE PAGE'S OWN PAIR, NOT ONE SLAB. The hero and the closing section both
+      end on the same two actions, primary then ghost, and a panel that ended
+      on a single full-width accent block was inventing a third call to action
+      for a page that has one. */}
+  <div class="menu__foot">
+    <div class="acts">
+      <a class="btn btn--primary" href={DISCORD}>Join on Discord<Arrow /></a>
+      <a class="btn" href={SOURCE}>Read the source<Arrow /></a>
+    </div>
+    <a class="menu__mail mono" href="mailto:forge@sw-labs.de">forge@sw-labs.de</a>
+  </div>
+</div>

@@ -1,0 +1,47 @@
+Typefaces served by wordscript.dev
+==================================
+
+Archivo
+  Omnibus-Type. SIL Open Font License 1.1.
+  Full text: LICENSE-archivo.txt in this directory.
+
+IBM Plex Mono
+  IBM. SIL Open Font License 1.1.
+  Full text: LICENSE-ibm-plex-mono.txt in this directory.
+
+  Both of the above may be redistributed. Condition 2 of the OFL allows it
+  provided each copy carries the copyright notice and the licence, which is
+  what the two text files beside them are for, so these are committed.
+
+Zodiak (italic 400 only)
+  Indian Type Foundry, distributed through Fontshare.
+  ITF Free Font License (FFL) 2.0, 17 August 2026.
+  Font:    https://www.fontshare.com/fonts/zodiak
+  Licence: https://www.fontshare.com/licenses/itf-ffl
+
+  THERE IS NO LICENCE TEXT FOR THIS ONE IN THIS DIRECTORY, AND THAT IS NOT AN
+  OMISSION. An earlier version of this file said it was, on the assumption that
+  every font licence works the way the SIL Open Font License does. It does not.
+  The FFL requires no text to travel with the font and asks for no attribution
+  at all.
+
+  What it requires runs the other way round. Section 01 expressly permits
+  self-hosting the font on your own site through CSS @font-face, and calls that
+  the recommended way to use it. Section 02 forbids passing the font on to
+  anybody else, naming repositories, download services and publicly accessible
+  servers among the ways that is done. Serving the file to a reader is the
+  permitted case. Committing it to a public repository is the forbidden one.
+
+  So zodiak-400-italic.woff2 is served from here and is deliberately absent
+  from version control. A fresh clone fetches it once from the Fontshare link
+  above and drops it in this directory. scripts/launch-check.mjs fails the
+  deploy while it is missing, because the page preloads it, and fails the
+  deploy again if it is ever committed.
+
+  Read from fontshare.com on 2026-08-27, when the licence was ten days old. A
+  copy kept from an older download states different terms.
+
+  NOT VERIFIED: whether the file in this directory is the untouched webfont
+  from the Fontshare download. Section 02 forbids subsetting and format
+  conversion without written consent. Checking it means reading the font's name
+  and glyph tables, which needs a Brotli decoder this machine does not have.
