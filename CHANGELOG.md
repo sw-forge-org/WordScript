@@ -53,6 +53,675 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - wordscript.dev, the three legal pages and the fourth link that went away
+
+- **`/imprint`, `/privacy` and `/terms` exist and resolve.** The footer drew
+  four legal links at pages that did not exist, and `PRODUCT.md` recorded them
+  as the blocker on publishing. Three are written, against gate 4 of the
+  `web-launch-gate` skill and against the real third-party inventory rather
+  than a remembered one: Cloudflare serves and resolves the site, the four
+  faces are self-hosted, the four footer links are links and not embeds, and
+  `src/` sets nothing on the reader's device -- no `localStorage`, no
+  `sessionStorage`, no cookie, no `indexedDB`, checked rather than assumed. The
+  imprint cites the DDG, not the repealed TMG (ADR 0258).
+- **The privacy notice covers the application, not only the website.** A
+  dictation product whose privacy page discusses its marketing site answers the
+  question nobody asked. Every claim in that section was read off the runtime:
+  `src-tauri/src` carries no telemetry, no usage reporting and no crash
+  reporting; audio leaves the machine only on a cloud profile and then to the
+  reader's own vendor on their own key; the provider key lives in the operating
+  system's secret store; and the one request the app makes of its own accord is
+  named with the moment it runs, which is when the About section is first
+  opened, never at startup.
+- **`scripts/launch-check.mjs` gates `npm run deploy`.** It runs on `dist/`
+  after the build and before wrangler, because what ships is the rendered page
+  and a string assembled from two variables is invisible to a source scan. It
+  fails on an unfilled `[[PLACEHOLDER]]`, `lorem ipsum`, the placeholder
+  telephone number, a citation of the TMG or the TTDSG, a link to the EU ODR
+  platform shut down on 2025-07-20, the site's banned punctuation in any
+  emitted file, a footer route with no page, the still-null telephone number
+  and the OPEN marker in the fonts' NOTICE. The three gates it cannot see -- a
+  dashboard switch, a legal review, the manual accessibility pass -- are
+  printed rather than omitted, because a check that silently drops them reads
+  as full coverage.
+
+### Removed - wordscript.dev, the DPA link
+
+- **`/dpa` is gone from the footer and was never written.** An Article 28
+  agreement is a contract with somebody processing personal data on your
+  behalf. WordScript hands us nothing to process: it runs on the reader's
+  machine, there is no account and no server of ours, the key is theirs, and a
+  cloud lane goes from their machine to a vendor they chose on an account they
+  own. The page would have had to invent that relationship or spend a screen
+  explaining that it does not exist. The reasoning sits in `src/lib/legal.ts`
+  beside the list it draws, because a removed link is what somebody re-adds to
+  restore symmetry (ADR 0258).
+
+### Fixed - wordscript.dev, what a second route and a read-back exposed
+
+- **The header's section links pointed at nothing off the index.** Six bare
+  fragments in `Top.astro`: on `/imprint`, `#how` addresses a fragment of
+  `/imprint`, so pressing it did nothing at all. They are root-relative now,
+  which is still an in-page jump on the index because Lenis resolves a
+  same-document hash whatever path precedes it. The wordmark goes to the top on
+  the index and home from a subpage.
+- **Every page claimed to be a frequently asked questions page.** ADR 0257's
+  graph was written for a site with one route, so the page node was typed
+  `WebPage` and `FAQPage`, carried the six questions and took the site's own
+  title and description. The first legal page built under it asserted in
+  machine-readable form that it was an FAQ about a dictation app, under a name
+  that was not its own -- the exact failure that record set out to avoid, one
+  route later. The page node takes the head's own title and description, and
+  the FAQ typing belongs to the index alone, identified by its path rather than
+  by a flag every call site has to remember.
+- **The language decision was recorded as a legal duty that does not exist.**
+  ADR 0258's first draft and the imprint's own comment stated that a German
+  provider owes the mandatory details at least also in a language attributable
+  to it, which made the English-only imprint read as a tolerated violation.
+  Neither section 5 DDG nor Article 12 GDPR contains a language requirement and
+  no supreme court decision supplies one. Both now argue from what those
+  provisions do prescribe -- recognisability and intelligibility measured
+  against the group actually addressed -- and the record carries the residual
+  interpretation risk plus the four conditions that reopen it: German-language
+  content, prices in euro, German customer references, or a sales relationship
+  to the German market.
+- **The terms page named the wrong licence for one of its own typefaces.** It
+  said the typefaces served here are licensed under the SIL Open Font License
+  1.1. That is true of Archivo and IBM Plex Mono and false of Zodiak, which
+  comes from the Indian Type Foundry through Fontshare under that foundry's own
+  terms. Two of three sharing a licence is how the collapse happened. The page
+  names them separately and points at the notice served beside the font files.
+- **The deploy check caught the dead ODR link but not the sentence around it.**
+  Regulation (EU) 2024/3228 took the platform down on 2025-07-20 and repealed
+  the duty to link it, so the sentence now sends a consumer to a dead service.
+  Every German imprint template written before 2025 carries it, and it survives
+  in wording long after the URL is dropped, so the check greps the wording too.
+  A bare three-letter `ODR` is deliberately not among the patterns.
+- **Two claims in the pages rested on nothing citable and now carry the case.**
+  The second-contact-channel requirement is C-298/07 of 16 October 2008, which
+  also settles that the second channel need not be a telephone number; the
+  third-country paragraph names T-553/23 and the pending appeal C-703/25 P.
+
+### Fixed - wordscript.dev, the font obligation was the wrong way round
+
+- **The display italic must not be committed, and its licence text was never
+  owed.** `public/fonts/NOTICE.txt` and the deploy check both said the Zodiak
+  licence text had to be added to the directory "the same way the two above
+  are". That is the SIL Open Font License condition, applied to a licence
+  nobody had read. Read on 2026-08-27 from fontshare.com: the ITF Free Font
+  License 2.0 of 17 August 2026 requires no text to travel with the font and
+  asks for no attribution. Its section 01 expressly permits self-hosting
+  through `@font-face` and calls that the recommended way to use it; its
+  section 02 forbids passing the font on, naming repositories, download
+  services and publicly accessible servers. Serving the file is the permitted
+  case, committing it to a public repository is the forbidden one.
+- **So the file is served and never committed.**
+  `web/public/fonts/zodiak-400-italic.woff2` is gitignored, and it had never
+  been committed, so nothing had to be rewritten out of history. The NOTICE
+  carries the clauses and the reading. The gate lost the marker check and
+  gained the two that matter: the file has to be in the working tree, because
+  the page preloads it and a missing face is a 404 on every load, and it has to
+  be absent from the index. Both were proven to fire by removing the file and
+  by force-adding it.
+- **One thing stays unverified and is recorded as unverified.** Section 02 also
+  forbids subsetting and format conversion. Whether the file is the untouched
+  Fontshare webfont needs the font's name and glyph tables read, which needs a
+  Brotli decoder this machine does not have and that `pip` refuses to install
+  under PEP 668.
+- **The display italic was preloaded on five routes and drawn on one.** It is
+  reached by `em`, `.close .quote p` and `.sig__n`, which appear four times,
+  once and once on the index and not at all on the three legal pages or the
+  404. Four routes were each fetching 23 kB they never drew, which the browser
+  reports as an unused-preload warning of its own accord. The preload is now
+  emitted for the index alone.
+
+### Added - wordscript.dev, the way back from a subpage
+
+- **Every subpage carries a back link, and it returns to the position.** A
+  reader who took a footer link to the privacy notice was some distance into
+  the page they were reading; the header's wordmark goes home, but it goes to
+  the top of home. The link is `href="/"` in the markup, which is what a middle
+  click, a bookmark, a crawler and a reader without JavaScript get. Where the
+  index is genuinely the entry behind the current page, the press becomes a
+  `history.back()` and the browser restores the offset it already recorded. The
+  referrer decides which of the two happens, so the label is never a promise
+  the navigation does not keep.
+
+### Fixed - wordscript.dev, going back replayed a page the reader had read
+
+- **Five of twenty-eight blocks came back invisible.** Scroll position was
+  already restored correctly; the reveal was not. The reveal runs on one
+  IntersectionObserver, and an observer only ever fires for what intersects, so
+  everything above the restored viewport stayed at opacity 0 and animated in
+  again as the reader scrolled back up over text they had just read. Measured
+  on the built page: leaving the index at 3000px and pressing back returned to
+  3000px with five blocks unrevealed. Anything above the fold line is now
+  marked revealed on arrival with the transition suppressed for that frame, and
+  its counters take their printed value instead of running up. Bound to
+  `pageshow`, which is the event a bfcache restore fires when no script re-runs
+  at all. Re-measured after the change: five unrevealed became zero.
+
+### Changed - documentation, no legal claim without its source
+
+- **A record that states what the law requires names the norm or the
+  judgment.** Where it cannot, it is marked unsettled and written as a reading
+  rather than as a rule. The trigger is the language claim above: stated flatly
+  and without a citation, it read as settled law, and the next record would
+  have been built on it. Filed in `docs/decisions/README.md` beside the rule
+  that ADRs are never rewritten retroactively.
+
+### Added - wordscript.dev, the half of the site a crawler reads
+
+- **The head states the page's identity.** Canonical built from the route
+  against `site`, so a shared link carrying a query string is not a second URL.
+  Full Open Graph including the card's real 1200x630, checked against the file.
+  `twitter:card` for the layout X picks off that tag alone. A square icon at 32
+  and 512 out of `src-tauri/icons`, because the lock-up in `assets/logos` is
+  121x128 and iOS refuses a non-square touch icon. The title was the single
+  word `WordScript`, which matches the one query nobody types before they have
+  heard of the product (ADR 0257).
+- **One JSON-LD graph, and what it omits is the point.** `Organization`,
+  `WebSite`, `SoftwareApplication`, and the page typed as both `WebPage` and
+  `FAQPage` so one URL keeps one `@id`. No `offers`, no `aggregateRating`, no
+  `softwareVersion`, no `downloadUrl`: there is no release, the page says so in
+  its first answer, and a schema that runs ahead of the visible page is a
+  liability rather than a rich result.
+- **`robots.txt`, `/llms.txt`, a sitemap and a 404 page.** `robots.txt` is
+  generated so the `Sitemap:` line is not a second copy of `site`; every
+  crawler is allowed, the AI ones included, because being quotable inside an
+  assistant is the surface that substitutes for search traffic this site does
+  not have. `/llms.txt` restates the page's claims in the shape an answer
+  engine can lift, including a status section that instructs against reporting
+  a version, a date or a price. `404.astro` is what `wrangler.jsonc` has been
+  pointing at since it was written: `not_found_handling: "404-page"` had no
+  `404.html` to find, so the four unwritten legal routes in the footer landed on
+  Cloudflare's unbranded default.
+- **The `workers.dev` preview host is closed in `wrangler.jsonc`, not
+  noindexed.** `workers_dev` defaults to true, which would put a second public,
+  indexable copy of the site under a URL nobody should be sent to. An
+  `X-Robots-Tag` on that host is wrong twice: `_headers` allows one `*` per
+  rule, so `https://*.workers.dev/*` cannot be written, and a header only asks
+  a crawler not to list a document still being served. `workers_dev: false` and
+  `preview_urls: false` instead -- the host does not exist. The custom-domain
+  route stays commented: with it off, `wrangler deploy` produces a Worker
+  reachable nowhere, which is the correct state for a site that has no imprint
+  yet, and uncommenting it is the launch rather than a config step.
+- **`public/_headers`, and one header deliberately absent.** `nosniff`,
+  `strict-origin-when-cross-origin`, `X-Frame-Options: DENY`, a
+  `Permissions-Policy` denying microphone, camera and geolocation, and
+  immutable caching for the hashed and font paths. No `Cache-Control` on the
+  HTML and specifically no `no-transform`, which is the header that silently
+  stops Cloudflare injecting the Web Analytics beacon.
+
+### Changed - wordscript.dev, three facts stop being typed twice
+
+- **The six FAQ pairs moved to `src/lib/faq.ts` and the product's facts to
+  `src/lib/site.ts`.** The FAQ section, the `FAQPage` schema and `/llms.txt`
+  are three readers of one array rather than three copies of six paragraphs;
+  the head, the graph and `/llms.txt` read one description rather than three.
+  The four outbound addresses are still `linkMarks.ts`'s, which already owned
+  them for the footer row.
+
+### Fixed - wordscript.dev, the phone stops losing the bottom of the opening plane
+
+- **The pinned plane is gated on width, and it was gated on height.** ADR 0254's
+  opening plane became `position: sticky` above `min-height: 640px`, which every
+  phone in portrait satisfies -- and a sticky box taller than the viewport pins
+  its top and hangs, so the overflow is unreachable rather than merely below the
+  fold. Measured at 390x664 across the whole scroll, at every position: the
+  focus band was **0 of 130px** visible and the fact strip **15 of 42px**. The
+  page's evidence for its own opening claim did not exist on a phone. The demand
+  is set by width, not height -- a single column stacks what two columns put side
+  by side -- so the gate is now `min-width: 1080px and min-height: 700px`, the
+  break where the two-column hero exists. Under 1080 the plane wants between 751
+  and 918 CSS pixels of viewport; above it, 626 is the worst case. 1024x768 was
+  overflowing by 60px and is fixed by the same line (ADR 0256).
+- **The header is counted in the plane's height.** `.pin` was `100svh` and sits
+  under a sticky header that takes its height in normal flow, so the plane ended
+  one header below the fold -- measured at every width from 360 to 1440, the
+  overhang was exactly 58px narrow and 62px wide. The height is now one variable
+  declared beside the bar that produces it and subtracted by the plane that
+  starts under it.
+- **The page answers the bar an in-app browser draws over it.** `svh` is right
+  for Safari's bottom bar and Chrome's address bar and was already in use; it
+  says nothing about Instagram, Facebook, TikTok, LINE or WeChat, whose chrome
+  the native app paints over the WebView. No `resize` fires, no
+  `env(safe-area-inset-*)` reports it, and `z-index` cannot reach it because it
+  is not in this document's stacking context. A pre-paint script sets
+  `html.iab`, and the rules that read it add space -- to the document's end, to
+  the menu panel's bottom, to the toast. **The 64px is a floor, not a
+  measurement**: it needs a real iPhone through a bio link and a real Android
+  through a story link, which no headless engine can stand in for.
+
+### Changed - wordscript.dev, the phone gets navigation and one figure stops predicting an install
+
+- **The offline card's disk figure states both ends.** It was one number, the
+  whole Local lane deduped, and it was a prediction: nothing on the site knows
+  which models somebody installs, and a reader who only dictates was being told
+  they owed seven gigabytes for a job that costs a hundred and fifty megabytes.
+  It now states the floor and the ceiling with the condition on each, which is
+  the section's own argument -- a profile decides each job separately, so there
+  is no single download. The ceiling stays deduped by model, because eight jobs
+  resolve to four files and adding up the visible rows reports about triple
+  (ADR 0255).
+- **The two cards under the picker are two cards.** They were one bordered box
+  with a 1px seam, which is the drawing for one thing with two halves. Each now
+  carries its own border, radius and shadow. Both figure blocks are drawn by one
+  rule, because a figure with the condition it holds under is the same object on
+  both cards.
+- **A phone gets a menu, on the page's own ground.** Below 680px the two header
+  links were hidden and the phone had no way to reach any part of a
+  ten-thousand-pixel page except by scrolling all of it. Six entries in page
+  order, in a panel that covers the page; the burger sits to the right of the
+  action. It closes when a link inside it is followed, locks the page behind it,
+  answers Escape, closes when a rotation crosses the breakpoint that hides its
+  button, and returns focus to that button -- none of which a checkbox toggle can
+  do, which is why this one is a script where the lane picker is four radios.
+- **The panel's first draft was a copy and was replaced.** Flat dark plane,
+  stacked labels with hairline dividers, a chevron per row, one full-width
+  accent slab at the foot: the default shape of a phone menu, and recognisably
+  one particular reference. It is drawn out of what the page already owns now --
+  the ruled sheet and warm lamp from the opening plane, with the light behind
+  the list rather than under it; a mono `01`-`06` where the chevron was, which is
+  what the demo's own tab row does; and the page's own pair of actions instead
+  of a third call to action invented for one screen.
+- **The panel scrolls, and fits a landscape phone without needing to.** The
+  breakpoint is a width, so at 640 by 360 the burger is on the bar and the six
+  rows plus header plus action came to 499px against 360 of viewport -- the
+  action was 139px below a fold that could not be scrolled to. Under 560px of
+  height the list yields; measured at 640 by 360, the action now ends at 355.
+- **The footer's four links carry marks, three of them the vendor's own.** The
+  whole row moved onto `bootstrap-icons` (MIT) to get LinkedIn's real mark:
+  `simple-icons` dropped it over the trademark, and drawing a substitute makes
+  the company's own page the only link in the group without its brand on it. SW
+  labs takes a globe, because a wordmark at 14px is a smudge and there is no
+  mark to license. Each keeps its own viewBox.
+- **The footer on a phone is a grid rather than a wrapping row.** Where a
+  wrapping row breaks is a function of the label lengths, so the marks moved the
+  break and left one link alone on a second line. The licence takes its own line
+  and the four links are two columns.
+- **The activity field is legible on a phone.** Fifty-two columns of `1fr` in
+  298px rendered the year at 4.3px per cell and 39px tall. It is a scroller at
+  11px per cell now; the year is not thinned, because a field of real records
+  that drops half of them is lying about how much it holds.
+- **Fixed: the turn's lede lost a space.** It read `their own product.WordScript
+  keeps it` on every viewport. Astro collapses the newline between a closing tag
+  and the next word to nothing rather than to a space.
+- **Fixed: `#turn` had no landing offset.** It was not a link target until the
+  phone menu made it one, so a tap put its first line under the header.
+
+### Changed - wordscript.dev, the page opens on a pinned plane and the lanes become a picker
+
+- **The hero and the focus band are one plane the argument scrolls over.**
+  `position: sticky` at `100svh` and an opaque second ground with its own top
+  radius, and nothing else: no ScrollTrigger, no transform, no scroll listener.
+  It works with script disabled and under `prefers-reduced-motion`, because
+  nothing animates -- one box stops while the box after it keeps going. Under
+  640px of viewport height it does not pin at all, which is the landscape phone
+  where a plane taller than the screen would hang instead of arriving
+  (ADR 0254).
+- **The opening ground is a ruled sheet with one warm light on it.** Ruled at
+  26px, which is the lede's own line box, and masked by the same radial light
+  that washes it, so the rules exist only where the light falls. Four grounds
+  were rendered and compared; the one that won on character was a cell grid
+  under a warm light, and against the ruled version the grid was not what won
+  it -- the light was. The rules surface again on every dark plane, and the
+  closing section became one.
+- **The four lane cards became a picker, and every row states what would run.**
+  Four radios and `:checked ~`, still no JavaScript on the section. One lane's
+  eight jobs at a time, each row carrying the job, the vendor's own mark, the
+  model id the catalogue defaults to, and -- on Local only -- what it weighs.
+  The section named four model ids out of thirty-five before this; the `none`
+  rows stop being the quietest text on a grid and become the shape of the lane
+  just opened.
+- **Vendor marks are drawn in the vendor's colours, as one sprite.** Eleven
+  `<symbol>` definitions with ids namespaced by slug, thirty-six `<use>` sites,
+  zero duplicate ids in the document. Four vendors keep `currentColor` because
+  they ship no coloured variant -- their marks are monochrome by design.
+  `src/lib/svgIds.ts` is new and throws rather than passing through a file
+  whose reference shapes it did not rewrite, which is what stops one flag's
+  mask from being applied to every other flag.
+- **Two cards answer the two questions that decide a dictation download.**
+  Language: what the recogniser transcribes and what the app can name back are
+  two different numbers, read from `shared/model_catalogue.json` and from the
+  declared length of `ISO_639_1` in `core/language_detect.rs`, with a row of
+  flags whose names are endonyms read from ICU at build time. Offline: what the
+  Local lane costs -- no key, no request, and the whole eight-job lane on disk
+  as one figure, deduped by model because eight jobs resolve to four files and
+  summing the rows would report nearly double.
+- **LinkedIn joins the footer.** There is no X link and there will not be one:
+  the account belongs to the maintainer rather than to SW labs, so a link would
+  point a reader looking for the company at a person.
+
+### Added - wordscript.dev, built
+
+- **The product site is a real build.** `web/` was a single hand-written HTML
+  page with its own stylesheet and one script, kept deliberately buildless so
+  the design could be settled before a build step existed. It is now Astro 7
+  with React islands, static output and Tailwind v4, with its own
+  `package.json` and lockfile and deliberately no root workspace, ready for
+  Cloudflare Workers static assets. [ADR 0251](docs/decisions/0251-the-marketing-sketch-is-a-design-contract-so-the-astro-port-is-checked-by-computed-style-rather-than-by-eye.md)
+  carries the derivation.
+- **The site's tokens are the app's tokens.** `web/src/styles/globals.css` has
+  the same shape as `src/styles/globals.css`: raw values on `:root`, utilities
+  through `@theme inline` under the same names, component grammar in
+  `@layer components`. `bg-bg-inset`, `text-fg-dim` and `rounded-control` mean
+  the same thing on both sides, so a component lifted out of the app resolves
+  rather than needing translation. The site adds exactly one token the app has
+  no counterpart for, `--font-em`, because the app never has to introduce
+  itself.
+- **Four islands hydrate, and nothing else does.** The live capsule, the
+  three-tab demo, the wiring diagram and the ASCII band. Every other section is
+  `.astro` and ships no JavaScript, including the focus band, the research
+  timeline and the 364-cell activity field.
+
+### Changed - the port, measured rather than eyeballed
+
+- **The port was accepted against a computed-style diff**, 78 selectors across
+  22 properties on both pages side by side at 1440x900. Of 1,716 comparisons,
+  64 differed, all in two classes with no visual effect: Tailwind preflight
+  setting `border-style: solid` at `border-width: 0` on 63 elements, and one
+  `box-shadow` where Lightning CSS resolved a `color-mix()` at build time into
+  the identical `rgba()`.
+- **The fifteen focus-band marks are read out of `simple-icons` at build
+  time** rather than pasted as path strings, so a brand refresh is an
+  `npm update`. The three whose brand colour is black are lifted to the page
+  foreground by a luminance threshold rather than by a hardcoded list of three
+  names, which would go stale the first time a brand goes monochrome.
+- **Our own JavaScript went down**, from 21.9 KB gzipped to 15.4, and the CSS
+  from 16.6 to 12.2. The HTML went up from 8.0 to 15.3, which is the markup
+  the script used to build. The React runtime adds 59.0 KB gzipped on top, and
+  the page transfers 101.9 KB against the sketch's 46.5.
+
+### Fixed - two defects the port surfaced
+
+- **The ASCII band no longer grows the page under the reader.** Its `<pre>`
+  was empty until its island hydrated, so the strip stood one line tall instead
+  of seven and the document gained 58 px as the reader scrolled to it. The
+  frame needs the viewport width to compute; the height it will occupy does
+  not, so the server prints seven blank rows and the band measures the same
+  97.8594 px before and after any script runs.
+- **Replaying the agent scene no longer opens on a finished answer strip.** The
+  sketch rebuilt the strip's contents on replay but left `is-on` and the done
+  marker from the previous run, so a fresh sequence started with the strip
+  already showing its completed state over its opening content. Both are
+  cleared before the scene is built.
+
+### Fixed - the page against the runtime, which the port diff could not see
+
+A computed-style diff compares the built page to the sketch, so anything the
+sketch already had wrong survives the port as a match. Read back against the
+runtime instead (ADR 0252):
+
+- **The demo played a sequence that occurs in no delivery mode.** Every mode
+  scene and the hero ran `recording, processing, preview, result`, which is
+  both of ADR 0011a's decision surfaces in one run. `auto_paste` now delivers
+  and shows result-actions (Copy / Edit / Dismiss); `clipboard_only` stops on a
+  real processing preview (Copy / Edit / Abort), commits, and the overlay
+  leaves with no result surface at all. Which one runs is a control on the
+  panel, so the two endings can be compared rather than described.
+- **The capsule's state model is the runtime's.** `OverlayPillState` is six
+  cases and `preview` is not one of them: a staged preview is a field on
+  `processing`. The site had invented a fourth state and lost `mode-picker`,
+  `error` and `edit-mode`; the first two are now built and used, the third has
+  no scene yet and is named as absent.
+- **Every mode carries the key that reaches it.** The shipped defaults from
+  `default_mode_*_hotkey`, plus the picker key and the capture, pause and abort
+  chords in the panel's header. The mode chip on the capsule is a button, as it
+  is in the app, and the language chip appears beside it in Translate.
+- **The activity field answers a hover.** The day, the count, the words and the
+  two clocks, in the shape `ActivityCalendar` uses. One reading per cell as a
+  single attribute and one panel that draws it, clamped to the viewport.
+
+### Added - what the page was asserting rather than showing
+
+- **The hero hands over.** It still plays once on first sight, then parks in
+  the `mode-picker` state: hold the pointer or the space bar and the capture
+  runs for as long as you hold it, the transcript arriving at hold speed. The
+  chip cycles the mode. A press too short to capture anything produces the
+  `error` state rather than an empty transcript with a result surface behind
+  it. The page binds space and names `Ctrl+Super` beside it, because a browser
+  cannot receive the real chord.
+- **A section for what runs each job**, read out of
+  `shared/model_catalogue.json` at build time: eight jobs against three lanes,
+  with the default model and its vendor in every cell that has one and a
+  visible gap in the three that do not. Seven vendors, thirty-five models, and
+  no model id spelled anywhere in `web/` (ADR 0115).
+- **The wiring diagram's dots arrive.** They used to slide every wire at once,
+  forever, at constant speed. Both states now share one 5.4s beat and differ in
+  how many arrivals fit inside it, five against one, which is the quantity the
+  count line under the drawing prints.
+
+### Changed - the demo panel, re-cut
+
+- **One column, not two.** The rules had a full-height column they filled for
+  one second at the end of a sequence, so the panel stood at the height of its
+  emptiest moment. The rules now wrap under the window into as many columns as
+  they need.
+- **The capsule floats over the window** instead of sitting beside it on the
+  page's ground, which is the only place it is ever seen and the only place it
+  explains itself without a caption.
+- **The panel's header stopped pretending to be a window title bar.** It said
+  "WordScript" above a panel that already contains a window; it now carries the
+  key legend and the live state readout.
+- **Payload:** 101.9 KB gzipped to 111.6. The HTML carries most of it, 15.3 to
+  21.4, about 6 KB of which is one reading per activity cell. Our own
+  JavaScript 15.4 to 18.1, CSS 12.2 to 13.1, React runtime unchanged at 59.0.
+
+### Changed - wordscript.dev, the second read against a running app
+
+A review of the built page produced six findings with one shape in common: the
+page was describing a claim it could have been making, and charging the reader
+for the description. [ADR 0253](docs/decisions/0253-the-page-performs-each-claim-once-instead-of-listing-it-and-the-hero-stops-asking-to-be-operated.md)
+carries the derivation.
+
+- **The hero plays instead of asking to be operated.** It was a hold-to-talk
+  instrument: park in `mode-picker`, hold the pointer or the space bar, get a
+  capture as long as the hold. Three structural problems, not polish. The
+  gesture is learned inside the product and a first-time reader has not learned
+  it; a hold too short to capture anything is answered with the `error` state,
+  which reads as a broken page rather than as a faithful error path; and the
+  hero is the one surface that has to work without being worked. It is now an
+  autoplay loop over the six concrete modes, starting and stopping on an
+  IntersectionObserver, with the mode chip still pressable and advancing the
+  loop. This **reverses ADR 0252 decision 3** and keeps the rule it came from:
+  the hero no longer invites a press it cannot answer well.
+- **The learned tab is the shipped learned tab.** The page grew a tab reading
+  `learned backfill`, split into a muted verb and an accent word. The app's tab
+  (`.ov-learned-tab`, built by `activeNudge` in `src/windows/OverlayWindow.tsx`)
+  is one accent dot beside the word alone, `word` or `word +N`, with
+  `Learned: a, b` in the `title` and the `aria-label`. The geometry is now
+  copied value for value and the hold is 3660 ms, which with the shutter's two
+  ramps is `LEARNED_NUDGE_DURATION_MS`. The capsule is the app's surface
+  reproduced, so a difference in it is a defect rather than a style.
+- **`Where your words go` lost its seven-button mode strip.** The product does
+  not offer that control: it changes modes on a per-mode key, on the picker
+  key, or by pressing the mode chip on the capsule. The page drew a control the
+  app does not have, beside a capsule carrying the one it does. The mode now
+  changes on the chip, and on one button under the window that names the
+  current mode and its key -- which exists because the chip is absent on
+  `result-actions` and under reduced motion, and a control reachable in only
+  some states is not reachable by keyboard at all. The section is 61 px
+  shorter, the two delivery cards are a two-button segment, and each of the
+  three leads is one sentence.
+- **The activity field reports what a day holds.** Meetings and uploads were
+  missing from the hover although the product records both. The site carries
+  them without the Developer Mode tag production uses, per ADR 0252 decision 1.
+- **The four figures are one arithmetic.** They were four independent literals
+  under a line claiming they were read off the field above them. Every one is
+  now computed from the same 364-day array the field draws, using the runtime's
+  own formulas: the rate is the divisor that turns each day's words into that
+  day's seconds, `Time saved` is `ledgerTimeSaved` over `SAVED_WINDOW_DAYS`
+  with the baseline in the foot (ADR 0182), and `Languages` names the share and
+  the denominator it was measured on (ADR 0186). **Turnaround was 1.9 s and is
+  now 0.9 s**, which is what ADR 0247 and ADR 0248 measured.
+- **The engine matrix is four lane cards and one worked profile.** Eight jobs
+  by three lanes was twenty-four mono model ids, complete and unreadable, with
+  its only actionable content (the four cells reading `none`) as its quietest
+  text. And it was missing a lane: the product has four and the grid drew the
+  three the catalogue has rows for, so a reader who runs their own box found
+  the product does not serve them. **`Your server` is now a card**, drawing the
+  two fields it takes instead of a vendor row. The profile below shows four
+  jobs on three lanes, every model on it the catalogue's own default for that
+  pair.
+- **Vendor marks come from `@lobehub/icons-static-svg`**, MIT, the same package
+  and version `src/components/shell/brandSymbols.ts` uses, read at build time.
+  Mono variants: the colour files carry gradients with internal `id`s and the
+  same mark repeats on the page, which inline is duplicate ids in one document.
+  The loader checks both properties against each file and throws rather than
+  trusting them. A vendor the set does not carry rides as its name beside a dim
+  dot -- dropping the glyph is a rendering decision, dropping the vendor would
+  be a claim about the product.
+
+### Fixed - wordscript.dev, two hydration warnings
+
+- **Both islands root on a `.rise` element** whose `is-in` is added
+  imperatively by the one reveal observer in `Base.astro`. Both are
+  `client:visible`, so the served DOM already carries a class that is not in
+  the JSX by the time React hydrates -- a mismatch React reports and then
+  leaves alone. The className is a literal that never re-renders, so the fix is
+  to say the difference is intended rather than to end up with two mechanisms
+  deciding one class. The built page now reports zero console errors.
+
+### Changed - wordscript.dev, re-measured after all six
+
+- **Overflow**: none at 360, 390, 430, 620, 768, 900, 1024, 1080, 1280, 1440.
+  `.own__tip` joins `.focus__rail` and `.band` on the exclusion list: it is a
+  fixed panel parked off-canvas while hidden, counted by a naive walk and
+  contributing nothing to the document's width.
+- **Contrast**: 283 elements checked in the settled state, 0 AA failures.
+- **Reduced motion**: 28/28 reveals shown, SMIL paused by hand (25 animations),
+  the hero capsule settled, all seven modes settled, all three intakes settled,
+  the diagram on `ws`.
+- **Banned punctuation**: 0 em-dashes, 0 en-dashes, 0 middle dots, 0 curly
+  quotes, in the sources and in the built HTML, CSS and JS. The only non-ASCII
+  in the build is the German in the Translate scene's fixture.
+- **Payload**: HTML 126.4 KB (27.9 gz), CSS 65.4 KB (13.4 gz), JS 233.8 KB
+  (76.4 gz) across ten chunks, of which React is 179.7 KB (55.7 gz).
+
+
+
+### Changed - wordscript.dev, the demo stops being a box and the footer closes on the mark
+
+- **The window is now the only edge in "Where your words go".** `.demo__stage`
+  was itself a window - window radius, window border, `--elev-window` - and
+  inside it stood the meeting window with its own native decoration and resize
+  grip, and the desk, which is a full application frame. A window drawn around
+  a window says the inner one is a picture of an app rather than an app, and at
+  full width the outer frame was the largest object in the section. The stage
+  keeps no ground, no border and no elevation; the legend that was its title
+  bar is a mono line on the page's own ground under a hairline; and the three
+  surfaces that are windows - the target window, `.hud`, `.desk` - take the
+  radius, edge and elevation the ladder reserves for one.
+- **The two-column panels stopped stretching to each other.** With the frame
+  gone, the right column of Context and Agent grew to the window's height and
+  spread its parts to fill it. Both grids align to the start now, so each
+  column is as tall as what it says.
+- **The address is copied, not handed to a mail client.** `mailto:` assumed a
+  desktop client bound to the scheme; where that assumption is wrong the reader
+  loses the one thing they came for. Pressing it writes the address to the
+  clipboard and a notice at the foot of the page says so, naming what was
+  copied. `navigator.clipboard` with an offscreen-field fallback for
+  non-secure contexts, and the notice reports a failure as a failure rather
+  than claiming a copy that did not happen. It carries no coloured edge bar and
+  no tone, for the reason `UndoNotice` gives in the app.
+- **The forge mark stands on the ASCII band, at a size it can be read at.** It
+  was a 13px anvil at the end of a mono row with "SW forge" set beside it as
+  the caption a legible mark would not have needed. It is four fifths of the
+  band's height now, at the page's own gutter, over the signal rather than in
+  a row under it. No filter and no opacity: the mark is drawn for a dark
+  ground, so the band supplies the contrast the anvil wants and the wordmark
+  never needed it. The footer keeps AGPL-3.0, GitHub and Discord, on the side
+  the mark left free; the address left it, because the section above is where
+  the page asks to be written to.
+- **Smooth scrolling, Lenis alone.** No GSAP: the page runs no ScrollTrigger,
+  its reveals are one IntersectionObserver and its counters are CSS delays, so
+  the second library would ship 70 KB to synchronise nothing. Lenis animates
+  the real scroll offset, so the reveal observer, the header's `is-stuck`
+  toggle and the activity field's panel need no knowledge of it. Under
+  `prefers-reduced-motion: reduce` nothing is constructed and no listener is
+  bound, checked again on change rather than only at load. Measured: the
+  `lenis` class is absent under `reduce` and present under `no-preference`.
+- **The anchor clearance is declared once.** Lenis subtracts the target's own
+  `scroll-margin-top`, so passing the header height a second time as an
+  `offset` applied it twice - `#how` landed 153px below the viewport top
+  instead of 76px. The option is now `anchors: true` and the one number lives
+  in `.sec { scroll-margin-top: 76px }`, where the no-JavaScript path reads it
+  too.
+- **Payload**: JS 83.9 KB gz across ten chunks, of which React is 57.2 KB gz.
+  Lenis lands in the Base script chunk, 6.7 KB gz for the page's whole
+  non-island script.
+### Changed - wordscript.dev, the copy stops annotating itself and the licence becomes a mark
+
+- **A small explanatory line under every object was the page's own AI tell.**
+  Six of them are gone. The worst was the hero note reading `Nothing is
+  released yet. This is the part where it gets built.`, which is the closing
+  section's H2 set at a tenth of the size, so the page opened by spending its
+  own ending. Also cut: the sub-line under `The dictation half, done properly`
+  that only restated it, the three-clause version of the focus band's "not
+  integrations", the second half of the engine section's foot (keys in the
+  secret store, which every lane card already says under `needs`), and the
+  numbers block's closing disclaimer, which is now one sentence. Each was
+  defensible alone and the accumulation was not: a page that annotates every
+  one of its objects does not trust any of them to land.
+- **The hero's caption is gone, and the capsule was standing on it.**
+  `.stage__cue` sat 1.9rem under the window while `.stage__float` hangs 20px
+  below its lower edge, so the line the reader was meant to read was the line
+  the product was drawn on top of. It also spelled the capture hotkey out as
+  prose, two sections above the block that teaches every key on keycaps. What
+  the chip's affordance rests on now is what the app itself carries: the
+  `title` and `aria-label` that say "tap to cycle" in `OverlayPill.tsx`. No ADR
+  decision is disturbed - ADR 0253 decision 3's "one button under the window"
+  is the demo section's mode control, not this caption.
+- **The licence is a mark, and it is copyleft rather than the GNU head.** The
+  hero's fact strip and the footer both name AGPL-3.0 and both draw it now.
+  The GNU head was the first choice and is the exact family mark, and it failed
+  a measurement: rendered at the strip's size and blown back up pixel for
+  pixel it is a grey smudge with no readable feature in it, because it is an
+  engraving of an animal's face. The copyleft ring and reversed C is two
+  strokes, reads at any size, and is nobody's trademark. The marks went to
+  16px against 11px type, with the focus band's 19px as the ceiling.
+- **The three desktops are three marks.** Apple and Tux are read out of
+  `simple-icons` at build time, like the focus band and the vendor row; Windows
+  is four panes drawn in `web/src/lib/osMarks.ts`, because the package dropped
+  that mark over the trademark and a third-party paste of the artwork would put
+  an unlicensed vendor asset in the build. The strip carries a visually hidden
+  `macOS, Windows and Linux` for a reader who gets no marks at all.
+- **`local or cloud` named two of the four lanes.** It is
+  `cloud, local, your server, enterprise` now. This is the same defect ADR 0252
+  found in the engine section - the reader it loses is the one who runs their
+  own box - surviving one screen higher than the fix reached.
+- **The fact strip left the island.** It is Astro markup in `Hero.astro` rather
+  than JSX in `HeroStage.tsx`, so three glyphs that never change are rendered
+  path data in the served HTML instead of vendor path data shipped as
+  JavaScript. `.stage__facts` is `.hero__facts`: it is a sibling of `.stage`
+  now, which is also what gives it 58px of clearance under the capsule where
+  the caption had 30.
+- **The close is a person rather than a paragraph.** Three sentences saying
+  there is no installer, no date, an open repository, a room and an address
+  were the page reading its own closing section aloud - the heading, the two
+  buttons and the address line are each of those facts as an object. What is
+  not anywhere else on a project with no release is who is behind it, so the
+  paragraph is a signed quotation. It is set in the serif at reading size and
+  carries no quotation marks: the curly pair is on the page's banned list and
+  the straight pair is a programmer quoting a string. The signature is
+  `felixontv`, the name, linked to the domain - a page signed with a URL is not
+  signed.
+- **The footer is one row with two ends.** Left is the project and the house it
+  is built in: AGPL-3.0 with its mark, GitHub, Discord, SW labs. Right is the
+  legal set - Imprint, Privacy, Terms, DPA - pointing at `/imprint`,
+  `/privacy`, `/terms` and `/dpa`, none of which exist. `PRODUCT.md` records
+  the imprint and the privacy notice as the open fact that blocks publishing,
+  and the site is not published; drawing the row now settles where it lives and
+  what the routes are called, so the day the pages land nothing has to be
+  rewired. Nothing on that half is reachable and nothing on it is a claim.
+- **Measured:** `astro check` 0 errors and 0 warnings, zero banned punctuation
+  in the built HTML and in every emitted chunk, no overflow from any changed
+  element at 360 and at 1440.
+
+
+
+
 ### Added — Developer Mode, and the drawings it is for
 
 - **The surfaces that are drawings are gone unless you ask for them.**

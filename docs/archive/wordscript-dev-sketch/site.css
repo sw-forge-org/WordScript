@@ -1,0 +1,1286 @@
+/* ==========================================================================
+   wordscript.dev
+
+   The palette, the radius ladder, the button material, the optical-size axis
+   and the type steps are the product's own, carried verbatim from
+   src/styles/globals.css and src/styles/shell.css. The site does not invent a
+   second design system; it renders the one the app already has.
+
+   Two deliberate divergences, both because a browser is not WebKitGTK:
+   - the header uses backdrop-filter, which ADR 0051 rules out in the app only
+     because the shipped engine ignores it;
+   - the page carries a display serif the app has no use for, since the app
+     never has to introduce itself.
+   ========================================================================== */
+
+/* ---- faces ------------------------------------------------------------- */
+/* Zodiak is declared in the italic only, because the italic is the only cut
+   the page can reach: the single em rule asks for italic 400 and nothing else
+   on the site asks for Zodiak at all. The roman and the bold sit unused in
+   fonts/ and are deliberately not declared here, so that the one face one job
+   rule is enforced by the stylesheet rather than by remembering it. */
+@font-face{font-family:'Zodiak';src:url('fonts/zodiak-400-italic.woff2') format('woff2');font-weight:400;font-style:italic;font-display:swap}
+@font-face{font-family:'Archivo';src:url('fonts/archivo-latin-variable.woff2') format('woff2');font-weight:100 900;font-style:normal;font-display:swap}
+@font-face{font-family:'Plex Mono';src:url('fonts/ibm-plex-mono-400.woff2') format('woff2');font-weight:400;font-style:normal;font-display:swap}
+@font-face{font-family:'Plex Mono';src:url('fonts/ibm-plex-mono-500.woff2') format('woff2');font-weight:500;font-style:normal;font-display:swap}
+
+:root{
+  /* ---- the ladder, dark scheme, verbatim ------------------------------- */
+  --bg-sidebar:#141416;
+  --bg-inset:#161617;
+  --bg-base:#1c1c1e;
+  --bg-surface:#2e2e31;
+  --bg-elevated:#3a3a3e;
+
+  --fg:#f2efe9;
+  --fg-dim:#c2bfb8;
+  --fg-muted:#9b9892;
+
+  --accent:#ff9c2b;
+  --on-accent:#1c1c1e;
+  --success:#81d6ae;
+  --danger:#ff7a6b;
+
+  --border:rgba(255,255,255,.10);
+  --border-strong:rgba(255,255,255,.16);
+  --edge-light:inset 0 1px 0 rgba(255,255,255,.055);
+  --edge-light-strong:inset 0 1px 0 rgba(255,255,255,.08);
+  --elev-raised:0 6px 18px rgba(0,0,0,.4),var(--edge-light);
+  --elev-pop:0 14px 32px -8px rgba(0,0,0,.58),0 1px 4px rgba(0,0,0,.4),var(--edge-light-strong);
+  --elev-window:0 24px 70px rgba(0,0,0,.55),var(--edge-light-strong);
+
+  /* ---- the radius ladder: assigned by what a thing IS ------------------- */
+  --r-window:10px;
+  --r-card:8px;
+  --r-control:6px;
+  --r-small:4px;
+
+  /* ---- type steps and the optical-size axis ---------------------------- */
+  --t-micro:11px; --t-label:12px; --t-note:13px; --t-body:14px;
+  --t-lead:16px;  --t-title:20px; --t-hero:28px;
+  --w-micro:104%; --ls-micro:.012em;  --wt-micro:520;
+  --w-label:102%; --ls-label:.006em;  --wt-label:500;
+  --w-note:101%;  --ls-note:.002em;   --wt-note:400;
+  --w-body:100%;  --ls-body:0;        --wt-body:400;
+  --w-lead:99%;   --ls-lead:-.006em;  --wt-lead:400;
+  --w-title:97%;  --ls-title:-.016em; --wt-title:600;
+  --w-hero:96%;   --ls-hero:-.026em;  --wt-hero:600;
+
+  --f-ui:'Archivo','SF Pro Display','Segoe UI Variable Display',sans-serif;
+  --f-mono:'Plex Mono','SF Mono',ui-monospace,monospace;
+  /* the one face the app does not own, and the page's only emphasis face */
+  --f-em:'Zodiak','Iowan Old Style',Georgia,serif;
+
+  --gut:clamp(1.15rem,4.5vw,4rem);
+  --wide:72rem;
+  --read:36rem;
+  --ease:cubic-bezier(.22,1,.36,1);
+  --dur-fast:140ms;
+}
+
+/* ---- reset ------------------------------------------------------------- */
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg-base);color:var(--fg);
+  font-family:var(--f-ui);font-size:var(--t-body);
+  font-stretch:var(--w-body);letter-spacing:var(--ls-body);line-height:1.6;
+  -webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;
+  overflow-x:hidden;
+}
+img{max-width:100%;height:auto;display:block}
+svg{flex:none}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit}
+h1,h2,h3{margin:0;font-weight:400}
+p{margin:0}
+ul{margin:0;padding:0;list-style:none}
+::selection{background:var(--accent);color:var(--on-accent)}
+:where(a,button,summary,[tabindex]):focus-visible{
+  outline:none;
+  box-shadow:0 0 0 1.5px var(--accent),0 0 0 5px rgba(255,156,43,.22);
+  border-radius:var(--r-small);
+}
+
+/* ---- the ground -------------------------------------------------------
+   Not a place to go. The question this answers is what the ground means, and
+   the answer is not freedom: freedom is what a blank canvas sells, and this
+   product's whole claim is that you do not come over here. What you say lands
+   in the window you already had focus in, and the file lands in a folder you
+   already had. So the ground is the desk the app already sits on.
+
+   The dot matrix that stood here read as graph paper, and graph paper is a
+   surface for drawing something new on. This is paper grain instead: felt
+   rather than seen, one layer, no second meaning. stitchTiles keeps the tile
+   seams from printing at this opacity. */
+body::after{
+  content:"";position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.055;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='128' height='128'><filter id='g'><feTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/></filter><rect width='128' height='128' filter='url(%23g)'/></svg>");
+  background-size:128px 128px;
+}
+main,header,footer{position:relative;z-index:2}
+
+/* ---- light and planes --------------------------------------------------
+   The grain above answers what the ground is made of. It does not answer why
+   one part of the page is not the same distance away as another, and without
+   that a long dark page is one flat sheet: correct, and inert.
+
+   Two devices, both cheap and both deliberate. Sections step down the ladder
+   from --bg-base to --bg-sidebar and back, with the step made by a gradient
+   rather than a rule, so the seam is felt where a border would be counted.
+   And the objects worth looking at get a light: warm, very flat, and placed
+   only where there is something to light. A glow on everything is the
+   category's look and says nothing; a glow on three things says where to
+   look.
+
+   A light belongs to an object, so it is drawn as that object's own shadow
+   rather than as a field behind it. Both surfaces that carry one clip their
+   overflow, and a shadow is the one form of light that survives that. Those
+   rules live beside the components they light, further down. */
+.plane{position:relative;isolation:isolate}
+.plane::before{
+  content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:linear-gradient(180deg,
+    transparent 0,var(--bg-sidebar) 9%,var(--bg-sidebar) 91%,transparent 100%);
+}
+
+.wrap{width:100%;max-width:var(--wide);margin-inline:auto;padding-inline:var(--gut)}
+.mono{font-family:var(--f-mono);font-weight:400;letter-spacing:.02em}
+.micro{font-stretch:var(--w-micro);letter-spacing:var(--ls-micro);font-size:var(--t-micro);font-weight:var(--wt-micro)}
+
+/* ==========================================================================
+   HEADER - a floating window, not a full-bleed rectangle
+   ========================================================================== */
+.top{position:sticky;top:0;z-index:60;padding:.6rem 0 0}
+.top__in{
+  max-width:calc(var(--wide) - var(--gut));margin-inline:auto;
+  margin-left:max(var(--gut),calc((100vw - var(--wide) + 2 * var(--gut)) / 2));
+  margin-right:max(var(--gut),calc((100vw - var(--wide) + 2 * var(--gut)) / 2));
+  height:52px;padding:0 .55rem 0 .85rem;
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  border:1px solid transparent;border-radius:var(--r-window);
+  transition:background-color .28s ease,border-color .28s ease,box-shadow .28s ease;
+}
+.top.is-stuck .top__in{
+  background:rgba(28,28,30,.72);
+  -webkit-backdrop-filter:blur(14px) saturate(1.4);
+          backdrop-filter:blur(14px) saturate(1.4);
+  border-color:var(--border);
+  box-shadow:var(--elev-raised);
+}
+.brand{display:inline-flex;align-items:center;gap:.6rem}
+.brand img{width:26px;height:27px}
+.brand .wm{
+  display:block;width:128px;height:22px;background:var(--fg);
+  -webkit-mask:url('../assets/wordscript_wordmark.png') no-repeat left center/contain;
+          mask:url('../assets/wordscript_wordmark.png') no-repeat left center/contain;
+}
+.top nav{display:flex;align-items:center;gap:.15rem}
+
+/* ==========================================================================
+   BUTTONS - src/styles/shell.css .ws-btn, at page scale
+   A rectangle with text in it is a rectangle (the radius ladder). The one
+   capsule on this page is the overlay pill, which is physically a capsule.
+   ========================================================================== */
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  height:32px;padding:0 11px;border-radius:var(--r-control);
+  font-stretch:var(--w-label);letter-spacing:var(--ls-label);
+  font-size:var(--t-label);font-weight:550;white-space:nowrap;
+  background:var(--bg-elevated);color:var(--fg);border:1px solid var(--border);
+  transition:background-color var(--dur-fast) var(--ease),opacity var(--dur-fast) var(--ease);
+}
+.btn svg{width:13px;height:13px}
+.btn:hover{background:color-mix(in srgb,var(--bg-elevated) 82%,white)}
+.btn:active{transform:translateY(.5px)}
+.btn--primary{
+  background:linear-gradient(180deg,
+    color-mix(in srgb,var(--accent) 94%,white) 0%,
+    var(--accent) 52%,
+    color-mix(in srgb,var(--accent) 95%,black) 100%);
+  color:var(--on-accent);
+  border-color:color-mix(in srgb,var(--accent) 72%,black);
+  box-shadow:inset 0 1px 0 color-mix(in srgb,white 34%,transparent),
+             0 1px 1.5px color-mix(in srgb,black 34%,transparent);
+  font-weight:600;
+}
+.btn--primary:hover{
+  background:linear-gradient(180deg,
+    color-mix(in srgb,var(--accent) 88%,white) 0%,
+    color-mix(in srgb,var(--accent) 96%,white) 52%,
+    var(--accent) 100%);
+}
+.btn--ghost{background:transparent;border-color:transparent;color:var(--fg-dim)}
+.btn--ghost:hover{background:var(--bg-elevated);color:var(--fg)}
+/* the page's own calls to action are the same button, one step larger */
+.acts{display:flex;flex-wrap:wrap;gap:.5rem}
+.acts .btn{height:38px;padding:0 15px;font-size:var(--t-body);font-stretch:var(--w-body)}
+.acts .btn svg{width:14px;height:14px;opacity:.65}
+
+/* ==========================================================================
+   THE LIVE OVERLAY PILL - src/styles/overlay-pill.css, rebuilt as live DOM
+   ========================================================================== */
+.ov{
+  --ov-surface:#1b1b1d;
+  --ov-border:rgba(255,255,255,.09);
+  --ov-highlight:inset 0 1px 0 rgba(255,255,255,.06);
+  --ov-accent:#e8912a;
+  --ov-text:#e9e9ec;
+  display:inline-flex;font-family:var(--f-ui);color:var(--ov-text);max-width:100%;
+}
+.pill{
+  display:inline-flex;align-items:center;gap:2px;
+  width:max-content;max-width:100%;height:40px;padding:0 6px;
+  background:var(--ov-surface);border:1px solid var(--ov-border);
+  border-radius:999px;                     /* exempt: it IS a capsule */
+  box-shadow:var(--ov-highlight),0 14px 34px rgba(0,0,0,.55),0 2px 8px rgba(0,0,0,.4);
+  user-select:none;position:relative;
+  transition:border-color .16s ease-out,box-shadow .16s ease-out;
+}
+.pill--recording{
+  border-color:rgba(232,145,42,.34);
+  box-shadow:var(--ov-highlight),inset 0 0 0 1px rgba(232,145,42,.16),0 14px 34px rgba(0,0,0,.55);
+}
+.pill--processing{border-color:rgba(232,145,42,.26)}
+.pill__mic{
+  flex:0 0 auto;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;
+  border:none;border-radius:50%;background:transparent;color:var(--ov-text);position:relative;padding:0;
+}
+.pill__mic::after{
+  content:"";position:absolute;inset:0;border-radius:inherit;
+  background:radial-gradient(circle at 48% 42%,rgba(255,255,255,.10),rgba(255,255,255,.03) 55%,transparent 80%);
+  box-shadow:var(--ov-highlight);
+}
+.pill__mic svg{position:relative;z-index:1;width:18px;height:18px}
+.pill--recording .pill__mic{color:var(--ov-accent)}
+.pill__bars{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;gap:2px;height:30px;padding:0 6px}
+.pill__bars .bar{
+  width:3px;height:5px;border-radius:999px;background:rgba(255,255,255,.92);
+  box-shadow:0 0 8px rgba(255,255,255,.10);flex-shrink:0;
+  transition:height 60ms linear,opacity .12s ease-out;
+}
+.pill--processing .pill__bars .bar{animation:ov-shimmer 1.4s ease-in-out infinite}
+.pill--processing .pill__bars .bar:nth-child(1){animation-delay:0s}
+.pill--processing .pill__bars .bar:nth-child(2){animation-delay:.07s}
+.pill--processing .pill__bars .bar:nth-child(3){animation-delay:.14s}
+.pill--processing .pill__bars .bar:nth-child(4){animation-delay:.21s}
+.pill--processing .pill__bars .bar:nth-child(5){animation-delay:.28s}
+.pill--processing .pill__bars .bar:nth-child(6){animation-delay:.35s}
+.pill--processing .pill__bars .bar:nth-child(7){animation-delay:.42s}
+.pill--processing .pill__bars .bar:nth-child(8){animation-delay:.49s}
+.pill--processing .pill__bars .bar:nth-child(9){animation-delay:.56s}
+.pill--processing .pill__bars .bar:nth-child(10){animation-delay:.63s}
+.pill--processing .pill__bars .bar:nth-child(11){animation-delay:.70s}
+@keyframes ov-shimmer{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes ov-spin{to{transform:rotate(360deg)}}
+.pill__divider{flex:0 0 auto;width:1px;height:20px;margin:0 2px;background:rgba(255,255,255,.10)}
+.pill__mode{flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px 0 10px;border:none;border-radius:999px;background:transparent}
+.pill__mode-dot{width:5px;height:5px;border-radius:50%;background:var(--ov-accent);box-shadow:0 0 6px rgba(232,145,42,.6)}
+.pill__mode-label{font-size:12px;font-weight:600;letter-spacing:.01em;line-height:1;white-space:nowrap}
+.pill__timer{flex:0 0 auto;font-size:13px;font-weight:600;line-height:1;letter-spacing:.01em;font-variant-numeric:tabular-nums;white-space:nowrap;padding:0 2px}
+.pill__text{flex:0 1 auto;min-width:0;max-width:230px;padding:0 8px 0 10px;font-size:12px;font-weight:500;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pill__text--pre{color:#9a9a9e}
+.pill__group{flex:0 0 auto;display:inline-flex;align-items:center;gap:2px;padding:0 2px}
+.pill__act{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:none;border-radius:999px;background:rgba(255,255,255,.07);color:var(--ov-text)}
+.pill__act svg{width:16px;height:16px}
+.pill__act--primary{background:var(--ov-accent);color:#17140f}
+.pill__spin{animation:ov-spin .7s linear infinite}
+.pill__learn{position:absolute;right:calc(100% - 14px);top:50%;transform:translateY(-50%);height:26px;width:0;overflow:hidden;transition:width .34s var(--ease)}
+.pill__learn.is-on{width:var(--w,180px)}
+.pill__learn-in{
+  position:absolute;right:0;top:0;height:26px;display:inline-flex;align-items:center;gap:6px;
+  padding:0 16px 0 10px;border-radius:999px 0 0 999px;white-space:nowrap;
+  background:#1b1b1d;border:1px solid rgba(232,145,42,.34);border-right:none;
+  font-size:11px;letter-spacing:.02em;color:#9a9a9e;
+}
+.pill__learn-in b{color:var(--ov-accent);font-weight:600}
+
+/* ==========================================================================
+   TYPE, AND THE EMPHASIS SYSTEM
+
+   ONE FACE SETS THE PAGE, ONE FACE EMPHASISES, AND THEY ARE NOT THE SAME ONE.
+   Archivo sets every heading, because it is the face the app itself is set in
+   and the page is a page about that app. Zodiak is held back entirely for
+   emphasis: an italic serif word inside an Archivo line is the only thing on
+   this site set in a second face, which is what makes it read as emphasis at
+   all. A serif heading with a serif emphasis inside it has nothing to change
+   into, so it emphasises by colour alone and the colour then has to shout.
+
+   AN EMPHASISED WORD IS NEVER SMALLER THAN THE WORD IT STANDS OUT FROM, and
+   never a second decision either. There is exactly one emphasis rule on the
+   page: Zodiak, italic, accent, x height matched to its host. No per word
+   variants. If a line needs two kinds of emphasis it needs rewriting instead.
+
+   THE SIZE. `font-size:1.04em` is a measurement, not a preference. The words
+   that get emphasised here are lowercase, so what reads as size is the x
+   height and not the cap height. Measured in this browser at the same em,
+   Archivo's x height sits at 0.530 and Zodiak italic's at 0.510; 0.530/0.510
+   is 1.039, and the 1.04 cancels exactly that. Matching on caps instead
+   (0.690 against 0.705) would have set the serif word two per cent small.
+
+   THE HEADING SIZES continue the app's own optical-size axis past --t-hero
+   rather than starting a new one: as the size climbs the face narrows and
+   the tracking tightens, on the same slope the seven steps already use.
+   ========================================================================== */
+h1{
+  font-family:var(--f-ui);font-weight:600;
+  font-size:clamp(2.05rem,1.15rem + 2.8vw,3rem);
+  font-stretch:95%;line-height:1.1;letter-spacing:-.032em;
+}
+h1 .b{display:block}
+h2{
+  font-family:var(--f-ui);font-weight:600;
+  font-size:clamp(1.55rem,1.02rem + 1.5vw,2.15rem);
+  font-stretch:96%;line-height:1.16;letter-spacing:-.028em;
+}
+
+em{
+  font-family:var(--f-em);font-style:italic;font-weight:400;
+  font-size:1.04em;color:var(--accent);
+}
+
+.lede{
+  margin-top:1.15rem;max-width:var(--read);
+  font-size:var(--t-lead);font-stretch:var(--w-lead);letter-spacing:var(--ls-lead);
+  color:var(--fg-dim);line-height:1.62;
+}
+.lede b{color:var(--fg);font-weight:550}
+
+/* ==========================================================================
+   HERO
+   ========================================================================== */
+.hero{position:relative;padding:clamp(2rem,4.5vw,3.5rem) 0 clamp(2rem,4vw,3.25rem)}
+.hero__in{position:relative;max-width:52rem}
+.hero .acts{margin-top:1.5rem}
+.hero__note{
+  margin-top:1rem;font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted);
+}
+
+.stage{margin-top:clamp(1.75rem,3.5vw,2.75rem);position:relative;max-width:60rem;padding-bottom:28px}
+.stage::before{
+  content:"";position:absolute;left:50%;bottom:-2rem;width:min(40rem,100%);height:15rem;
+  transform:translateX(-50%);pointer-events:none;
+  background:radial-gradient(ellipse 50% 50% at 50% 50%,rgba(255,156,43,.16),transparent 72%);
+}
+.stage__win{
+  position:relative;padding:.85rem 1.15rem 1.6rem;
+  border:1px solid var(--border);border-radius:var(--r-window);
+  background:var(--bg-inset);box-shadow:var(--elev-window);
+}
+.stage__float{position:absolute;left:50%;bottom:-20px;transform:translateX(-50%);z-index:4;max-width:calc(100% - 1.6rem)}
+.stage__chrome{display:flex;align-items:center;flex-wrap:wrap;gap:.35rem .5rem;margin-bottom:.8rem}
+.stage__chrome .dots{display:inline-flex;gap:5px}
+.stage__chrome .dots i{width:8px;height:8px;border-radius:50%;background:rgba(242,239,233,.14)}
+.stage__chrome .t{font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted);white-space:nowrap}
+.stage__hint{margin-left:auto;font-family:var(--f-mono);font-size:var(--t-micro);color:var(--accent);opacity:.85;white-space:nowrap}
+.stage__body{font-size:var(--t-lead);line-height:1.6;color:var(--fg);min-height:3.6rem}
+.stage__body .raw,.field .raw{color:var(--fg-dim)}
+.stage__body .fill,.field .fill{color:var(--danger);background:rgba(255,122,107,.10);border-radius:var(--r-small)}
+.stage__body .out,.field .out{color:var(--fg)}
+
+/* The desktop hero is two columns, and the right one is not an illustration:
+   it is the same live capsule, running the same sequence, beside the sentence
+   that claims it rather than under it. The window is narrower here than it was
+   when it spanned the section, so it is formatted for the column: no section
+   wide glow, a taller body so the delivered line has room to arrive, and the
+   pill floating at the bottom edge the way it floats over a real window. */
+@media(min-width:1080px){
+  .hero{padding-block:clamp(2.5rem,4vw,4rem)}
+  .hero .wrap{
+    display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.02fr);
+    gap:clamp(2.25rem,3.6vw,3.5rem);align-items:center;
+  }
+  .hero__in{max-width:none;min-width:0}
+  .hero__in .lede{max-width:none}
+  .stage{margin-top:0;max-width:none;min-width:0;padding-bottom:34px}
+  .stage::before{
+    left:50%;bottom:1rem;width:100%;height:11rem;
+    background:radial-gradient(ellipse 58% 50% at 50% 60%,rgba(255,156,43,.15),transparent 74%);
+  }
+  .stage__win{padding:.9rem 1.25rem 1.9rem}
+  /* the field keeps its full height whatever the sequence is showing, so the
+     window never grows or shrinks under the sentence beside it. Text starts at
+     the top and the rest stays empty, which is what a text field looks like. */
+  .stage__body{min-height:7.5rem}
+}
+/* The right column used to end in empty space below the window. Three facts
+   that are true today close the composition without claiming a release. */
+.stage__facts{
+  display:flex;flex-wrap:wrap;gap:.4rem 1.1rem;margin-top:1.9rem;
+  font-size:var(--t-micro);color:var(--fg-muted);
+}
+.stage__facts li{display:inline-flex;align-items:center;gap:.45rem}
+.stage__facts li+li::before{
+  content:"";width:3px;height:3px;border-radius:50%;
+  background:var(--fg-muted);opacity:.5;margin-right:.65rem;
+}
+
+.caret{display:inline-block;width:2px;height:1.05em;margin-left:1px;background:var(--accent);vertical-align:-.16em;animation:blink 1.05s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+
+/* ==========================================================================
+   SECTIONS
+   ========================================================================== */
+/* ---- the focus band ----------------------------------------------------
+   Fills what was 250px of nothing under the hero, and shows the claim the
+   hero makes. The brand marks are Simple Icons (CC0-1.0) at their official
+   hex; the three whose brand colour is black are lifted to the page's own
+   foreground, because black on this ground is not a colour. */
+.focus{padding:clamp(.5rem,1.5vw,1.25rem) 0 clamp(.5rem,1.2vw,1rem)}
+.focus__h{
+  font-size:var(--t-note);color:var(--fg-dim);
+  font-stretch:var(--w-note);letter-spacing:var(--ls-note);
+}
+.focus__rail{
+  position:relative;margin-top:1rem;overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);
+          mask-image:linear-gradient(90deg,transparent,#000 6%,#000 94%,transparent);
+}
+.focus__row{display:flex;align-items:center;gap:clamp(1.6rem,3.6vw,2.9rem);width:max-content}
+.focus__row.is-rolling{animation:focus-roll 46s linear infinite}
+.focus__rail:hover .focus__row.is-rolling{animation-play-state:paused}
+@keyframes focus-roll{to{transform:translateX(-50%)}}
+.focus__row li{
+  display:inline-flex;align-items:center;gap:.5rem;flex:none;
+  color:var(--c,var(--fg-muted));
+}
+.focus__row svg{width:19px;height:19px;fill:currentColor;opacity:.92}
+.focus__row span{
+  font-size:var(--t-micro);color:var(--fg-muted);white-space:nowrap;
+  font-stretch:var(--w-micro);letter-spacing:var(--ls-micro);
+}
+.focus__note{
+  margin-top:1.15rem;max-width:34rem;
+  font-size:var(--t-note);line-height:1.55;color:var(--fg-muted);
+}
+
+.sec{padding:clamp(2.75rem,5vw,4.5rem) 0;scroll-margin-top:76px}
+.sec__head{max-width:var(--read);margin-bottom:clamp(1.5rem,2.6vw,2.25rem)}
+.sec__head p{margin-top:.8rem;color:var(--fg-dim);font-size:var(--t-lead);font-stretch:var(--w-lead);letter-spacing:var(--ls-lead)}
+
+/* ---- cards ------------------------------------------------------------- */
+.card{
+  background:var(--bg-surface);border:1px solid transparent;border-radius:var(--r-card);
+  box-shadow:var(--edge-light);
+}
+.slab{background:var(--bg-surface);border-radius:var(--r-card);box-shadow:var(--edge-light);padding:.9rem 1rem 1rem}
+/* A slab that reports on the scene does not need to be a slab: the rules, the
+   disk listing and the run all sat on their own plane inside a window that was
+   already on its own plane inside a tray. They report from the window's floor
+   now, and only the surface being acted on keeps a raised ground. */
+.panel .d1 > .slab,.panel .d2__r > .slab,.panel .d3__r > .slab{
+  background:none;box-shadow:none;padding:.9rem 0 0;
+}
+.slab__k{
+  font-stretch:var(--w-micro);letter-spacing:.08em;font-size:var(--t-micro);
+  text-transform:uppercase;color:var(--fg-muted);margin-bottom:.7rem;
+}
+.slab__note{margin-top:1rem;font-size:var(--t-note);line-height:1.55;color:var(--fg-muted);max-width:24rem}
+
+/* ==========================================================================
+   THE DEMO
+   Two levels of control, and they are drawn as two levels. The three tabs are
+   the page's spine, so they carry a number, a name and a line; the strip
+   inside a panel is the app's own sub-tab row at the app's own scale, its
+   divider included.
+   ========================================================================== */
+/* The tabs used to sit inside a bordered tray, which put a box in front of a
+   box in front of a box: tray, window, and the slabs inside the window. Three
+   frames for one idea. They stand on the ground now and the window is the only
+   thing on this section with an edge. */
+.demo__tabs{
+  display:grid;gap:.55rem;margin-bottom:clamp(1rem,2vw,1.5rem);
+  padding:0;background:none;border:0;
+}
+@media(min-width:720px){.demo__tabs{grid-template-columns:repeat(3,1fr)}}
+.demo__tab{
+  display:grid;grid-template-columns:auto 1fr;gap:0 .6rem;
+  text-align:left;padding:.75rem .9rem .8rem;
+  border:1px solid var(--border);border-radius:var(--r-card);
+  background:color-mix(in srgb,var(--bg-inset) 62%,transparent);
+  cursor:pointer;
+  transition:background var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease);
+}
+.demo__tab-n{grid-row:1 / 3;align-self:center;font-size:var(--t-micro);color:var(--fg-muted)}
+.demo__tab-t{
+  font-size:var(--t-lead);font-stretch:var(--w-lead);letter-spacing:var(--ls-lead);
+  font-weight:600;color:var(--fg-dim);line-height:1.25;
+  transition:color var(--dur-fast) var(--ease);
+}
+.demo__tab-s{font-size:var(--t-label);color:var(--fg-muted);line-height:1.35}
+.demo__tab:hover .demo__tab-t{color:var(--fg)}
+.demo__tab[aria-selected="true"]{
+  background:var(--bg-surface);border-color:var(--border-strong);box-shadow:var(--edge-light);
+}
+.demo__tab[aria-selected="true"] .demo__tab-t{color:var(--fg)}
+.demo__tab[aria-selected="true"] .demo__tab-n{color:var(--accent)}
+/* --fg-muted is a card plane colour: 4.71:1 on --bg-card but 3.94:1 once the
+   ground lifts to --bg-elevated, which is under AA. Every place on this page
+   where a row carrying muted text changes ground, the text steps up with it. */
+.demo__tab[aria-selected="true"] .demo__tab-s{color:var(--fg-dim)}
+
+/* the second level: src/styles/shell.css .ws-subtabs, at its own scale */
+.strip{
+  display:flex;flex-wrap:wrap;gap:4px;align-self:flex-start;
+  width:max-content;max-width:100%;padding:2px;margin-bottom:1rem;
+  background:var(--bg-inset);border:1px solid var(--border);border-radius:var(--r-control);
+}
+.strip__b{
+  padding:5px 13px;border:none;border-radius:var(--r-small);background:transparent;
+  font-stretch:var(--w-label);letter-spacing:var(--ls-label);font-size:var(--t-label);
+  font-weight:500;color:var(--fg-dim);cursor:pointer;
+  transition:color var(--dur-fast) var(--ease),background-color var(--dur-fast) var(--ease);
+}
+.strip__b:hover{color:var(--fg)}
+.strip__b[aria-selected="true"]{background:var(--bg-elevated);color:var(--fg);font-weight:550}
+/* the app's own divider, for an entry that is not the same kind of thing as
+   the ones before it. Auto is the decision about which of the six runs. */
+.strip__rule{align-self:stretch;width:1px;margin:4px 5px;background:var(--border-strong)}
+
+.demo{position:relative}
+/* one light under the window, the same move the hero makes. It is what stops
+   a dark panel on a dark ground from reading as a hole. */
+.demo::before{
+  content:"";position:absolute;z-index:0;pointer-events:none;
+  left:6%;right:6%;top:22%;bottom:-4%;
+  background:radial-gradient(ellipse 55% 46% at 50% 55%,rgba(255,156,43,.10),transparent 72%);
+}
+.demo > *{position:relative;z-index:1}
+.demo__stage{
+  border:1px solid var(--border);border-radius:var(--r-window);
+  background:var(--bg-inset);overflow:hidden;box-shadow:var(--elev-window);
+}
+.demo__bar{
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  padding:.55rem 1rem;border-bottom:1px solid var(--border);background:var(--bg-base);
+  font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted);
+}
+.demo__bar .step{min-width:0;color:var(--accent);text-align:right}
+.panel{display:none;padding:1.15rem}
+.panel[data-on="1"]{display:block}
+.panel__lead{max-width:46rem;font-size:var(--t-body);color:var(--fg-dim);margin-bottom:1rem}
+.panel__lead b{color:var(--fg);font-weight:550}
+.demo__foot{
+  display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;
+  margin-top:.85rem;padding:0;
+  font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted);
+}
+.demo__foot .btn{height:26px;padding:0 9px;font-size:var(--t-micro)}
+
+/* ---- shared instruments ------------------------------------------------
+   A status dot, and the quantised level meter the meeting window and the
+   desk's answer strip both draw. A hardware level indicator has had this
+   shape for fifty years precisely because it survives being small, and a
+   still one on a surface that claims to be listening is a fake state. */
+.dot{width:6px;height:6px;border-radius:50%;background:var(--fg-muted);flex:none}
+.dot--rec{background:var(--danger);box-shadow:0 0 7px color-mix(in srgb,var(--danger) 55%,transparent)}
+.dot--ok{background:var(--success)}
+.dot--acc{background:var(--accent);box-shadow:0 0 7px color-mix(in srgb,var(--accent) 55%,transparent)}
+
+.mx{display:inline-flex;align-items:flex-end;gap:1px;flex:none}
+.mx__c{display:flex;flex-direction:column-reverse;gap:1px}
+.mx__c i{width:2px;height:2px;border-radius:1px;background:var(--fg-dim);opacity:.14;transition:opacity 90ms linear}
+.mx__c[data-l="1"] i:nth-child(-n+1),
+.mx__c[data-l="2"] i:nth-child(-n+2),
+.mx__c[data-l="3"] i:nth-child(-n+3),
+.mx__c[data-l="4"] i:nth-child(-n+4),
+.mx__c[data-l="5"] i:nth-child(-n+5),
+.mx__c[data-l="6"] i:nth-child(-n+6),
+.mx__c[data-l="7"] i:nth-child(-n+7){opacity:1}
+
+/* ---- 1: cursor ---------------------------------------------------------- */
+.d1{display:grid;gap:.8rem;grid-template-columns:1fr}
+@media(min-width:900px){.d1{grid-template-columns:1.3fr 1fr}}
+.d1__l{display:flex;flex-direction:column}
+.d1__l > .slab{flex:1}
+.d1__cap{margin-top:.85rem;min-height:44px;display:flex;align-items:center}
+.field{font-size:var(--t-body);line-height:1.6;min-height:5rem}
+/* Verbatim delivers the raw. The fillers stay, so they stop being marked as
+   something on its way out and become ordinary text. */
+.field .kept .raw,
+.field .kept .fill{color:var(--fg);background:transparent}
+
+.rules{display:flex;flex-direction:column;gap:2px}
+.rule{
+  display:grid;gap:.1rem;padding:.4rem .55rem;border-radius:var(--r-small);
+  opacity:0;transform:translateY(4px);transition:opacity .3s ease,transform .3s var(--ease);
+}
+.rule.is-on{opacity:1;transform:none;background:var(--bg-elevated)}
+.rule .n{font-family:var(--f-mono);font-size:var(--t-micro);color:var(--accent);word-break:break-word}
+.rule .v{font-size:var(--t-label);line-height:1.45;color:var(--fg-dim)}
+
+/* Auto is the router, so its panel shows the decision rather than an eighth
+   way of writing. */
+.route{
+  display:flex;align-items:baseline;gap:.7rem;padding:.5rem 0;
+  border-bottom:1px solid var(--border);
+  font-size:var(--t-note);line-height:1.5;color:var(--fg-dim);
+  opacity:0;transform:translateY(4px);transition:opacity .3s ease,transform .3s var(--ease);
+}
+.route.is-on{opacity:1;transform:none}
+.route__q{min-width:0}
+.route__q::before,.route__q::after{content:'"';color:var(--fg-muted)}
+.route::after{
+  content:attr(data-dest);margin-left:auto;flex:0 0 auto;
+  font-family:var(--f-mono);font-size:var(--t-micro);color:var(--accent);
+}
+
+/* ---- 2: context --------------------------------------------------------- */
+.d2{display:grid;gap:.8rem;grid-template-columns:1fr}
+@media(min-width:900px){.d2{grid-template-columns:1.05fr 1fr}}
+.d2__l,.d2__r{display:flex;flex-direction:column}
+.d2__l > .slab,.d2__r > .slab{flex:1}
+.d2__cap{margin-top:.85rem;font-size:var(--t-micro);line-height:1.55;color:var(--fg-muted);max-width:26rem}
+
+.disk{font-family:var(--f-mono);font-size:var(--t-label);line-height:1.85}
+.disk__row{opacity:0;transform:translateY(3px);transition:opacity .28s ease,transform .28s var(--ease)}
+.disk__row.is-on{opacity:1;transform:none}
+.disk .p{color:var(--fg-muted);word-break:break-all}
+.disk .f{color:var(--fg-dim)}
+.disk .f::before{content:"  ";white-space:pre}
+.disk .new{color:var(--accent)}
+
+/* Write: an empty object you talk into. No card and no form, because every
+   row of chrome between the button and the first word is a reason not to
+   have pressed the button. */
+.wr{display:flex;flex-direction:column;gap:.55rem}
+.wr__title{
+  font-size:var(--t-title);font-stretch:var(--w-title);letter-spacing:var(--ls-title);
+  font-weight:var(--wt-title);color:var(--fg);line-height:1.3;min-height:1.6em;
+}
+.wr__body{display:flex;flex-direction:column;gap:.35rem;min-height:5.6rem}
+.wr__body p{
+  font-size:var(--t-note);line-height:1.55;color:var(--fg-dim);
+  opacity:0;transform:translateY(3px);transition:opacity .3s ease,transform .3s var(--ease);
+}
+.wr__body p.is-on{opacity:1;transform:none}
+.wr__foot{
+  display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;
+  margin-top:.3rem;padding-top:.7rem;border-top:1px solid var(--border);
+  font-size:var(--t-micro);color:var(--fg-muted);
+}
+.wr__key{display:inline-flex;align-items:center;gap:.4rem}
+.wr__key svg{width:13px;height:13px}
+.kbd{display:inline-flex;gap:2px}
+.kbd kbd{
+  font-family:var(--f-mono);font-size:10px;line-height:1;padding:3px 5px;
+  border:1px solid var(--border);border-radius:var(--r-small);
+  background:var(--bg-elevated);color:var(--fg-dim);
+}
+.wr__sel{display:inline-flex;gap:.35rem;margin-left:auto}
+.sel{
+  padding:2px 8px;border:1px solid var(--border);border-radius:var(--r-control);
+  background:var(--bg-elevated);color:var(--fg-dim);font-size:var(--t-micro);white-space:nowrap;
+}
+
+/* Record: the meeting window. It IS the note, live, with the same three tabs
+   it keeps afterwards, and the recording is one line of state rather than the
+   subject. 330 by 560 in the product; on a page it takes the column. */
+.hud{
+  position:relative;display:flex;flex-direction:column;max-width:26rem;overflow:hidden;
+  border:1px solid var(--border);border-radius:var(--r-window);
+  background:var(--bg-base);box-shadow:var(--elev-raised);
+}
+.hud__deco{
+  height:26px;display:flex;align-items:center;justify-content:center;
+  border-bottom:1px solid var(--border);background:var(--bg-sidebar);
+  font-size:10px;letter-spacing:.05em;color:var(--fg-muted);
+}
+.hud__head{padding:.7rem .8rem .55rem;border-bottom:1px solid var(--border)}
+.hud__head h4{margin:0;font-size:var(--t-lead);font-weight:600;letter-spacing:var(--ls-lead);color:var(--fg)}
+.hud__date{display:block;margin-top:2px;font-size:var(--t-micro);color:var(--fg-muted)}
+.hud__date i{font-style:normal;opacity:.7}
+.hud__tabs{
+  display:flex;gap:2px;width:max-content;margin:.6rem 0 .55rem;padding:2px;
+  background:var(--bg-inset);border-radius:var(--r-control);
+}
+.hud__tabs button{
+  padding:3px 9px;border:none;border-radius:var(--r-small);background:transparent;
+  font-size:var(--t-micro);color:var(--fg-muted);cursor:default;
+}
+.hud__tabs button[aria-selected="true"]{background:var(--bg-elevated);color:var(--fg)}
+.hud__state{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .4rem;min-width:0;font-size:10px;color:var(--fg-muted)}
+/* the product separates these with a middle dot. This page carries none, so
+   the separator is drawn rather than typed. */
+.hud__sep{width:1px;height:8px;flex:none;background:var(--border-strong)}
+.hud__src{white-space:nowrap}
+.hud__state .mx{margin-left:auto}
+.hud__scroll{padding:.75rem .8rem;min-height:11.5rem}
+.hud__bar{display:flex;justify-content:flex-end;padding:.55rem .8rem;border-top:1px solid var(--border);background:var(--bg-sidebar)}
+.hud__bar .btn{height:28px;font-size:var(--t-micro)}
+/* the grip means the geometry belongs to the user, which is what separates
+   this window from the overlay */
+.hud__grip{
+  position:absolute;right:3px;bottom:3px;width:9px;height:9px;
+  border-right:1.5px solid var(--border-strong);border-bottom:1.5px solid var(--border-strong);
+}
+.ts{display:flex;flex-direction:column;gap:.55rem}
+.ts__l{
+  display:grid;grid-template-columns:auto auto 1fr;gap:.45rem;align-items:baseline;
+  opacity:0;transform:translateY(3px);transition:opacity .3s ease,transform .3s var(--ease);
+}
+.ts__l.is-on{opacity:1;transform:none}
+.ts__m{font-size:10px;color:var(--fg-muted)}
+.ts__s{font-size:10px;color:var(--accent)}
+.ts__l[data-tone="b"] .ts__s{color:var(--success)}
+.ts__t{font-size:var(--t-label);line-height:1.5;color:var(--fg-dim);min-width:0}
+.sum{display:flex;flex-direction:column;gap:.8rem}
+.sum__g{opacity:0;transform:translateY(4px);transition:opacity .35s ease,transform .35s var(--ease)}
+.sum__g.is-on{opacity:1;transform:none}
+.sum__g h5{
+  margin:0 0 .35rem;font-family:var(--f-mono);font-weight:400;font-size:10px;
+  letter-spacing:.08em;text-transform:uppercase;color:var(--fg-muted);
+}
+.sum__g ul{display:flex;flex-direction:column;gap:.3rem}
+.sum__g li{position:relative;padding-left:.8rem;font-size:var(--t-label);line-height:1.5;color:var(--fg-dim)}
+.sum__g li::before{content:"";position:absolute;left:0;top:.6em;width:3px;height:3px;border-radius:50%;background:var(--fg-muted)}
+.sum__g li b{color:var(--fg);font-weight:600}
+
+/* Import: a file you have, or a link you can reach. Two equal intakes. */
+.imp{display:flex;flex-direction:column;gap:.65rem}
+.imp__dz{
+  display:flex;align-items:center;gap:.7rem;padding:.85rem;
+  border:1px dashed var(--border-strong);border-radius:var(--r-card);background:var(--bg-inset);
+}
+.imp__dz svg{width:18px;height:18px;color:var(--fg-muted)}
+.imp__dzt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.imp__dzt b{font-size:var(--t-note);font-weight:550;color:var(--fg)}
+.imp__dzt span{font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted)}
+.imp__or{display:flex;align-items:center;gap:.7rem;font-size:var(--t-micro);color:var(--fg-muted)}
+.imp__or::before,.imp__or::after{content:"";flex:1;height:1px;background:var(--border)}
+.imp__lab{display:flex;align-items:center;gap:.4rem;font-size:var(--t-micro);color:var(--fg-dim)}
+.imp__lab svg{width:13px;height:13px}
+.imp__row{display:flex;gap:.4rem;align-items:stretch}
+.imp__field{
+  flex:1;min-width:0;height:32px;display:flex;align-items:center;padding:0 9px;overflow:hidden;
+  border:1px solid var(--border);border-radius:var(--r-control);background:var(--bg-inset);
+  font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-dim);white-space:nowrap;
+}
+.imp__hint{font-size:var(--t-micro);line-height:1.55;color:var(--fg-muted)}
+.imp__steps{display:flex;flex-direction:column;gap:2px;margin-top:.15rem}
+.imp__s{
+  display:flex;align-items:center;gap:.55rem;padding:.32rem .5rem;border-radius:var(--r-small);
+  font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-dim);
+  opacity:0;transform:translateX(-4px);
+  transition:opacity .3s ease,transform .3s var(--ease),background .3s ease;
+}
+.imp__s.is-on{opacity:1;transform:none;background:var(--bg-elevated)}
+.imp__sd{
+  width:5px;height:5px;border-radius:50%;flex:none;background:var(--accent);
+  box-shadow:0 0 6px color-mix(in srgb,var(--accent) 55%,transparent);
+}
+.imp__s.is-done .imp__sd{background:var(--success);box-shadow:none}
+
+/* ---- 3: agent ----------------------------------------------------------- */
+.d3{display:grid;gap:.8rem;grid-template-columns:1fr}
+@media(min-width:1000px){.d3{grid-template-columns:1.45fr .8fr}}
+.d3__r{display:flex;flex-direction:column}
+.desk{
+  display:grid;grid-template-columns:1fr;overflow:hidden;
+  border:1px solid transparent;border-radius:var(--r-card);
+  background:var(--bg-surface);box-shadow:var(--edge-light);
+}
+@media(min-width:620px){.desk{grid-template-columns:minmax(150px,12.5rem) 1fr}}
+.desk__rail{display:flex;flex-direction:column;gap:.5rem;padding:.8rem .7rem;background:var(--bg-sidebar)}
+/* the targets are indented under the identity they belong to. A rail that
+   draws three peers is arguing against the decision it implements. */
+.desk__head{display:grid;grid-template-columns:auto 1fr;gap:0 .5rem;align-items:center}
+.desk__head b{font-size:var(--t-note);font-weight:600;color:var(--fg)}
+.desk__sub{grid-column:2;font-size:10px;line-height:1.35;color:var(--fg-muted)}
+.orb{
+  grid-row:1 / 3;width:18px;height:18px;border-radius:50%;
+  background:radial-gradient(circle at 38% 34%,
+    color-mix(in srgb,var(--accent) 90%,white),
+    var(--accent) 58%,
+    color-mix(in srgb,var(--accent) 72%,black));
+  box-shadow:0 0 10px color-mix(in srgb,var(--accent) 40%,transparent);
+}
+.desk__k{margin-top:.15rem;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-muted)}
+.desk__targets{display:flex;flex-direction:column;gap:2px;padding-left:.5rem;border-left:1px solid var(--border)}
+.tg{
+  display:grid;grid-template-columns:auto 1fr auto;gap:.15rem .45rem;align-items:center;
+  padding:.4rem .45rem;border-radius:var(--r-small);
+  opacity:0;transform:translateX(-4px);
+  transition:opacity .3s ease,transform .3s var(--ease),background .3s ease;
+}
+.tg.is-on{opacity:1;transform:none}
+.tg[data-on="1"]{background:var(--bg-elevated)}
+.tg[data-on="1"] .tg__t span,.tg[data-on="1"] .tg__s{color:var(--fg-dim)}
+.tg__t{display:flex;flex-direction:column;min-width:0}
+.tg__t b{font-size:var(--t-label);font-weight:550;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tg__t span{font-size:10px;color:var(--fg-muted)}
+/* a count bubble is physically a capsule, which is the whole of its licence */
+.tg__u:not(:empty){
+  min-width:15px;height:15px;padding:0 4px;border-radius:999px;
+  display:inline-flex;align-items:center;justify-content:center;
+  background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:600;
+}
+.tg__s{grid-column:2 / 4;font-size:10px;color:var(--fg-muted)}
+
+.desk__main{display:flex;flex-direction:column;min-width:0}
+.desk__mh{
+  display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap;
+  padding:.6rem .8rem;border-bottom:1px solid var(--border);
+  font-size:var(--t-micro);color:var(--fg-muted);
+}
+.desk__mh b{color:var(--fg);font-weight:550}
+.thread{display:flex;flex-direction:column;gap:.5rem;padding:.8rem;min-height:9.5rem}
+.msg{
+  padding:.6rem .7rem;border:1px solid transparent;border-radius:var(--r-card);background:var(--bg-inset);
+  opacity:0;transform:translateY(5px);
+  transition:opacity .35s ease,transform .35s var(--ease),border-color .35s ease;
+}
+.msg.is-on{opacity:1;transform:none}
+.msg[data-from="desk"].is-on{border-color:color-mix(in srgb,var(--accent) 34%,transparent)}
+.msg p{display:flex;align-items:baseline;gap:.4rem;font-size:var(--t-note);line-height:1.45;color:var(--fg)}
+.msg[data-from="you"]{margin-left:1.6rem;background:var(--bg-elevated)}
+.msg[data-from="you"] .msg__w{color:var(--fg-dim)}
+.msg[data-from="you"] p::before{
+  content:"you said";flex:none;font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted);
+}
+.msg[data-from="done"] p{font-size:var(--t-label);color:var(--fg-dim)}
+.msg[data-from="done"] svg{width:13px;height:13px;flex:none;color:var(--success)}
+.msg__opts{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.55rem}
+.msg__opt{
+  padding:.25rem .6rem;border:1px solid var(--border);border-radius:var(--r-control);
+  font-size:var(--t-label);color:var(--fg-dim);transition:all .3s ease;
+}
+.msg__opt.is-picked{
+  border-color:color-mix(in srgb,var(--accent) 72%,black);color:var(--on-accent);font-weight:600;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 94%,white) 0%,var(--accent) 52%,color-mix(in srgb,var(--accent) 95%,black) 100%);
+  box-shadow:inset 0 1px 0 color-mix(in srgb,white 34%,transparent);
+}
+.msg__w{display:block;margin-top:.45rem;font-size:10px;color:var(--fg-muted)}
+.answer{
+  display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;
+  border-top:1px solid var(--border);background:var(--bg-sidebar);
+  font-size:var(--t-micro);color:var(--fg-muted);
+  opacity:0;transition:opacity .3s ease;
+}
+.answer.is-on{opacity:1}
+.answer svg{width:14px;height:14px;color:var(--accent)}
+.answer[data-done="1"] svg{color:var(--success)}
+.answer[data-done="1"] .answer__t{color:var(--fg-muted)}
+.answer__t{margin-left:auto;color:var(--accent);font-variant-numeric:tabular-nums}
+
+.term{font-family:var(--f-mono);font-size:var(--t-label);line-height:1.95;overflow-wrap:break-word}
+.term .l{opacity:0;transform:translateY(3px);transition:opacity .26s ease,transform .26s var(--ease)}
+.term .l.is-on{opacity:1;transform:none}
+.term .acc{color:var(--accent)}
+.term .dim{color:var(--fg-muted)}
+
+/* ---- the turn ---------------------------------------------------------- */
+.turn{padding:clamp(3rem,6vw,5rem) 0}
+.turn__lead{
+  max-width:46rem;font-family:var(--f-ui);font-weight:500;
+  font-size:clamp(1.2rem,.98rem + 1.15vw,1.7rem);
+  font-stretch:97%;line-height:1.36;letter-spacing:-.022em;
+}
+.turn .dim{color:var(--fg-muted)}
+
+/* ---- the wiring diagram ------------------------------------------------
+   Two states of one picture. What changes between them is not decoration:
+   it is how many connections the product itself has to own, and that count
+   is printed under the drawing so the reader does not have to count wires.
+
+   The travelling dots ride an unpainted full-length rail (`#w-r*`) while the
+   visible wire is drawn short of both ends, so a dot enters and leaves the
+   nodes cleanly instead of stopping on their edges. */
+.wire{
+  margin-top:clamp(1.75rem,3.5vw,2.75rem);
+  border:1px solid var(--border);border-radius:var(--r-card);
+  background:var(--bg-inset);box-shadow:var(--edge-light);
+  overflow:hidden;
+}
+.wire.lit{box-shadow:var(--edge-light),0 34px 96px -40px rgba(255,156,43,.42)}
+.wire__head{
+  display:flex;align-items:center;gap:1rem;flex-wrap:wrap;
+  padding:.85rem 1.1rem;border-bottom:1px solid var(--border);
+}
+.wire__state{display:flex;flex-direction:column;gap:.1rem;min-width:0}
+.wire__k{font-size:var(--t-micro);color:var(--fg-muted)}
+.wire__t{
+  font-size:var(--t-lead);font-weight:var(--wt-title);
+  font-stretch:var(--w-lead);letter-spacing:var(--ls-lead);color:var(--fg);
+}
+.wire__sw{
+  display:inline-flex;align-items:center;gap:.6rem;margin-left:auto;
+  padding:0;border:none;background:none;cursor:pointer;
+}
+.wire__sw-l{font-size:var(--t-micro);color:var(--fg-muted);white-space:nowrap}
+.wire__sw-track{
+  position:relative;width:40px;height:22px;border-radius:999px;
+  background:var(--bg-surface);border:1px solid var(--border-strong);
+  transition:background var(--dur-fast) ease,border-color var(--dur-fast) ease;
+}
+.wire__sw-knob{
+  position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;
+  background:var(--fg-muted);transition:transform .28s var(--ease),background var(--dur-fast) ease;
+}
+.wire__sw[aria-checked="true"] .wire__sw-track{background:rgba(255,156,43,.22);border-color:rgba(255,156,43,.5)}
+.wire__sw[aria-checked="true"] .wire__sw-knob{transform:translateX(18px);background:var(--accent)}
+.wire__sw:hover .wire__sw-knob{background:var(--fg-dim)}
+.wire__sw[aria-checked="true"]:hover .wire__sw-knob{background:var(--accent)}
+
+.wire__stage{padding:1.1rem 1.1rem 1.35rem}
+.wire__stage svg{width:100%;height:auto;max-width:34rem;margin-inline:auto;display:block}
+@media(min-width:900px){
+  .wire__stage{
+    display:grid;grid-template-columns:minmax(0,1.42fr) minmax(0,.58fr);
+    align-items:center;column-gap:clamp(1.5rem,3vw,2.75rem);
+    padding:1.35rem 1.35rem 1.5rem;
+  }
+  .wire__stage svg{grid-row:1 / 3;max-width:none;margin:0}
+  .wire__cap{margin-top:0;align-self:end}
+  .wire__count{align-self:start}
+}
+
+/* ---- the wires ---------------------------------------------------------
+   The switch used to cross-fade two pictures, which is a slideshow: both
+   states were always there and one of them was turned down. The wires draw
+   and undraw themselves now, so the switch performs the claim rather than
+   illustrating it. Every path carries pathLength="1", which is what makes one
+   dashoffset rule work across eleven paths of eleven different lengths. */
+.w-wire{
+  fill:none;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1;
+  transition:stroke-dashoffset .62s var(--ease),stroke-opacity .3s var(--ease);
+}
+.w-wire--own{stroke:var(--accent);stroke-width:1.4;stroke-opacity:.72}
+.w-wire--theirs{stroke:var(--fg-muted);stroke-width:1;stroke-opacity:.34}
+.w-dot{fill:var(--accent);opacity:.85}
+
+.w-nodes circle{fill:var(--bg-surface);stroke:var(--border-strong);stroke-width:1}
+.w-ico{
+  fill:none;stroke:var(--fg-muted);stroke-width:1.15;
+  stroke-linecap:round;stroke-linejoin:round;
+  transition:stroke .45s var(--ease);
+}
+.w-ico rect,.w-ico circle{fill:none}
+.w-nodes text,.w-folder text{
+  font-family:var(--f-mono);font-size:10px;fill:var(--fg-muted);text-anchor:middle;
+}
+.w-folder-l{text-anchor:start !important}
+.w-folder rect,.w-folder path{fill:var(--bg-surface);stroke:var(--accent);stroke-opacity:.55;stroke-width:1.1}
+.w-folder-tab{fill:var(--bg-surface)}
+.w-hub circle{fill:var(--bg-elevated);stroke:var(--accent);stroke-opacity:.7;stroke-width:1.2}
+.w-ico--hub{stroke:var(--accent);stroke-opacity:.85;stroke-width:1.3}
+.w-hub-t{font-family:var(--f-mono);font-size:10px;fill:var(--fg-dim);text-anchor:middle}
+
+/* ---- state, driven by one attribute on the wrapper ---------------------
+   Reading the transition in the direction that matters, connector layer to
+   ours: the five wires the product owns retract into the hub one after
+   another, the folder drops in where they used to meet, one wire comes back
+   up into it, and only then do the borrowed wires reach down for it. The
+   order is the argument, so the delays are not decoration. */
+[data-wire] .w-folder{
+  opacity:0;transform:translateY(6px) scale(.94);transform-origin:260px 178px;
+  transition:opacity .34s var(--ease),transform .42s var(--ease);
+}
+[data-wire] [data-wire-dots-b]{opacity:0;transition:opacity .3s var(--ease)}
+[data-wire] [data-wire-dots-a]{opacity:1;transition:opacity .3s var(--ease)}
+
+/* connector state: the five it owns are drawn, everything else is not */
+[data-wire] .w-own .w-wire{stroke-dashoffset:0}
+[data-wire] .w-own .w-wire:nth-child(1){transition-delay:.30s}
+[data-wire] .w-own .w-wire:nth-child(2){transition-delay:.36s}
+[data-wire] .w-own .w-wire:nth-child(3){transition-delay:.42s}
+[data-wire] .w-own .w-wire:nth-child(4){transition-delay:.48s}
+[data-wire] .w-own .w-wire:nth-child(5){transition-delay:.54s}
+
+/* ours: the five retract first, then the folder, then the one, then theirs */
+[data-wire][data-state="ws"] .w-own .w-wire{stroke-dashoffset:1;transition-delay:0s}
+[data-wire][data-state="ws"] .w-own .w-wire:nth-child(2){transition-delay:.05s}
+[data-wire][data-state="ws"] .w-own .w-wire:nth-child(3){transition-delay:.1s}
+[data-wire][data-state="ws"] .w-own .w-wire:nth-child(4){transition-delay:.15s}
+[data-wire][data-state="ws"] .w-own .w-wire:nth-child(5){transition-delay:.2s}
+
+[data-wire][data-state="ws"] .w-folder{opacity:1;transform:none;transition-delay:.44s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--own{stroke-dashoffset:0;transition-delay:.62s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs{stroke-dashoffset:0}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs:nth-child(1){transition-delay:.92s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs:nth-child(2){transition-delay:1s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs:nth-child(3){transition-delay:1.08s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs:nth-child(4){transition-delay:1.16s}
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs:nth-child(5){transition-delay:1.24s}
+/* a borrowed wire is drawn solid while it lands and goes dashed once it has,
+   because the dash is a statement about ownership, not about arrival */
+[data-wire][data-state="ws"] .w-borrowed .w-wire--theirs{stroke-dasharray:.014 .018}
+
+[data-wire][data-state="ws"] [data-wire-dots-a]{opacity:0}
+[data-wire][data-state="ws"] [data-wire-dots-b]{opacity:1;transition-delay:.8s}
+/* the destination a dictation is actually addressed to lights up with it */
+[data-wire][data-state="ws"] .w-nodes .w-node:nth-child(4) .w-ico{stroke:var(--accent)}
+
+.wire__cap{
+  margin-top:.4rem;max-width:42rem;
+  font-size:var(--t-note);line-height:1.55;color:var(--fg-dim);
+}
+.wire__count{margin-top:.5rem;font-size:var(--t-micro);color:var(--fg-muted)}
+.wire__count b{color:var(--accent);font-weight:400}
+
+@media(max-width:560px){
+  .wire__stage svg{max-height:none}
+  .w-nodes text,.w-folder text{font-size:12px}
+  .w-hub-t{font-size:12px}
+}
+
+
+/* ==========================================================================
+   THE NUMBERS - src/components/shell/HomeHero.tsx, the four tiles that read
+   left to right as one sentence, plus the activity calendar beside them.
+   ========================================================================== */
+.nums{display:grid;gap:1px;background:var(--border);margin:0;padding:0;list-style:none}
+@media(min-width:640px){.nums{grid-template-columns:1fr 1fr}}
+@media(min-width:1000px){.nums{grid-template-columns:repeat(4,1fr)}}
+/* ---- the five figures --------------------------------------------------
+   Four of them are numbers and the fifth is a rhythm, which is why it is a
+   field and not a tile: how often you spoke to it over half a year has a
+   shape, and the shape is the reading. They share one frame because they are
+   one sentence about one file, read off one disk.
+
+   The field sat in the close before this, drawn from the repository's own
+   commit history. That was a true picture of the wrong subject: the page
+   already says nothing is released, and what belongs beside Words per minute
+   and Time saved is what the app counted for you, not what we committed. */
+.own{
+  display:grid;gap:1px;background:var(--border);
+  border:1px solid var(--border);border-radius:var(--r-card);overflow:hidden;
+}
+.own.lit{box-shadow:0 34px 96px -40px rgba(255,156,43,.36)}
+.own__field{background:var(--bg-surface);padding:1.15rem 1.2rem 1.25rem}
+.own__head{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.own__t{
+  display:block;font-size:var(--t-body);font-weight:var(--wt-hero);
+  font-stretch:var(--w-hero);letter-spacing:var(--ls-hero);color:var(--fg);
+}
+.own__sub{display:block;margin-top:.15rem;font-size:var(--t-micro);color:var(--fg-muted)}
+.own__legend{display:flex;align-items:center;gap:.3rem;font-size:var(--t-micro);color:var(--fg-muted)}
+
+.own__grid{
+  margin-top:1rem;display:grid;
+  grid-template-columns:repeat(var(--cols,52),1fr);
+  grid-auto-rows:1fr;gap:clamp(2px,.34vw,4px);
+}
+.own__c{
+  display:block;aspect-ratio:1;border-radius:2px;
+  background:var(--bg-inset);
+  opacity:0;transition:opacity .45s ease;
+}
+.own__c[data-l="1"]{background:color-mix(in srgb,var(--accent) 17%,var(--bg-inset))}
+.own__c[data-l="2"]{background:color-mix(in srgb,var(--accent) 36%,var(--bg-inset))}
+.own__c[data-l="3"]{background:color-mix(in srgb,var(--accent) 62%,var(--bg-inset))}
+.own__c[data-l="4"]{background:color-mix(in srgb,var(--accent) 92%,#fff)}
+/* the field fills as one sweep, oldest week to newest */
+.own.is-in .own__c{opacity:1;transition-delay:calc(var(--i,0) * 9ms)}
+.own__legend .own__c{width:9px;height:9px;aspect-ratio:auto;opacity:1;transition:none}
+
+.own__foot{margin-top:.85rem;font-size:var(--t-micro);line-height:1.5;color:var(--fg-muted)}
+
+@media(max-width:520px){
+  /* 52 square cells across a phone are under 6px each. The gap closes and
+     the corners go, so what survives is the density rather than the cell. */
+  .own__grid{gap:1.5px}
+  .own__c{border-radius:1.5px}
+}
+
+.tile{
+  background:var(--bg-surface);padding:1.2rem 1rem 1.35rem;
+  display:flex;flex-direction:column;align-items:center;gap:.4rem;text-align:center;
+}
+.tile b{
+  font-stretch:var(--w-hero);letter-spacing:var(--ls-hero);font-size:var(--t-hero);
+  font-weight:var(--wt-hero);font-variant-numeric:tabular-nums;line-height:1.05;color:var(--fg);
+}
+.tile b i{font-style:normal;font-size:.5em;color:var(--fg-muted);margin-left:.15em}
+.tile-label{font-stretch:var(--w-label);letter-spacing:var(--ls-label);font-size:var(--t-label);color:var(--fg-dim)}
+.tile-foot{font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted);line-height:1.4}
+
+/* ---- the turning point -------------------------------------------------
+   Three measurements read in the order they were taken, because the order is
+   the argument. A bar chart of two figures says speaking is faster, which is
+   the claim every tool in this category makes and the one a reader discounts
+   on sight. A timeline says something a reader cannot discount: it was the
+   other way round, and here is the year it stopped being the other way round.
+
+   Every bar is scaled against 161.2 wpm so the three steps share one ruler.
+   The 1999 row is the only place on this page where our own category loses,
+   and it stays because the row after it is worth nothing without it. */
+.tp{
+  list-style:none;margin:0;padding:0 0 0 clamp(1.1rem,2.4vw,1.75rem);
+  position:relative;
+}
+/* the rail: one line down the years, so the three steps read as one sequence
+   rather than three cards that happen to be stacked */
+.tp::before{
+  content:"";position:absolute;left:0;top:.55rem;bottom:.55rem;width:1px;
+  background:linear-gradient(180deg,transparent,var(--border) 12%,var(--border) 88%,transparent);
+}
+.tp__step{position:relative;padding-block:clamp(.9rem,1.8vw,1.35rem)}
+.tp__step+.tp__step{border-top:1px solid var(--border)}
+.tp__step::before{
+  content:"";position:absolute;left:calc(-1 * clamp(1.1rem,2.4vw,1.75rem) - 3px);
+  top:calc(clamp(.9rem,1.8vw,1.35rem) + .38rem);
+  width:7px;height:7px;border-radius:50%;
+  background:var(--bg-base);border:1px solid var(--fg-muted);
+}
+.tp__step:nth-child(2)::before{background:var(--accent);border-color:var(--accent)}
+
+.tp__head{display:flex;align-items:baseline;gap:.7rem;flex-wrap:wrap}
+.tp__year{font-size:var(--t-label);color:var(--fg-muted);letter-spacing:.06em}
+.tp__title{
+  font-size:var(--t-lead);font-weight:var(--wt-hero);font-stretch:var(--w-hero);
+  letter-spacing:var(--ls-hero);color:var(--fg);
+}
+
+.tp__pair{margin-top:.85rem;display:flex;flex-direction:column;gap:.55rem}
+/* The label column is fixed rather than auto: every bar has to start at the
+   same x or the three steps stop sharing a ruler, and the ruler is the whole
+   reason the section is a timeline. The width is the longest label. */
+.tp__m{display:grid;grid-template-columns:minmax(0,11.5rem) 1fr auto;align-items:center;gap:.75rem}
+.tp__k{font-size:var(--t-micro);color:var(--fg-muted);white-space:nowrap}
+.tp__track{height:8px;border-radius:999px;background:var(--bg-surface);overflow:hidden}
+.tp__track i{
+  display:block;height:100%;width:0;border-radius:999px;
+  background:var(--fg-muted);opacity:.5;
+  transition:width .95s cubic-bezier(.22,.61,.36,1);
+}
+.tp__m--win .tp__track i{background:var(--fg-dim);opacity:.85}
+.tp__m--hi .tp__track i{
+  background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 72%,#c9631a),var(--accent));
+  opacity:1;
+}
+.tp__n{
+  font-size:clamp(1.05rem,2.1vw,1.35rem);font-weight:var(--wt-hero);
+  font-stretch:var(--w-hero);letter-spacing:var(--ls-hero);
+  color:var(--fg-dim);line-height:1;font-variant-numeric:tabular-nums;
+  min-width:5.4rem;text-align:right;
+}
+.tp__m--win .tp__n{color:var(--fg)}
+.tp__m--hi .tp__n{color:var(--accent)}
+.tp__n i{font-style:normal;font-size:.5em;color:var(--fg-muted);margin-left:.2em}
+
+/* the bars fill in reading order: the year lands, then what it measured */
+.tp.is-in .tp__track i{width:calc(var(--f) * 100%)}
+.tp.is-in .tp__m:nth-child(2) .tp__track i{transition-delay:.13s}
+.tp.is-in .tp__step:nth-child(2) .tp__track i{transition-delay:.36s}
+.tp.is-in .tp__step:nth-child(2) .tp__m:nth-child(2) .tp__track i{transition-delay:.49s}
+.tp.is-in .tp__step:nth-child(3) .tp__track i{transition-delay:.72s}
+
+.tp__src{margin-top:.7rem;max-width:52rem;font-size:var(--t-micro);line-height:1.55;color:var(--fg-muted)}
+.tp__src i{font-style:italic}
+
+.tp__close{
+  margin-top:clamp(1.1rem,2.2vw,1.6rem);max-width:46rem;
+  font-size:var(--t-note);line-height:1.6;color:var(--fg-dim);
+}
+.tp__close b{color:var(--fg);font-weight:var(--wt-hero)}
+
+@media(max-width:620px){
+  .tp__m{grid-template-columns:1fr auto;grid-template-areas:"k n" "t t";row-gap:.4rem}
+  .tp__k{grid-area:k}
+  .tp__n{grid-area:n}
+  .tp__track{grid-area:t}
+}
+
+.nums__k{
+  margin:clamp(1.5rem,2.6vw,2.25rem) 0 .8rem;
+  font-size:var(--t-note);color:var(--fg-muted);
+}
+
+/* ---- what you get ------------------------------------------------------ */
+.gets{display:grid;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-card);overflow:hidden}
+@media(min-width:760px){.gets{grid-template-columns:1fr 1fr}}
+@media(min-width:1100px){.gets{grid-template-columns:repeat(3,1fr)}}
+.gets li{background:var(--bg-surface);padding:1.3rem 1.3rem 1.45rem;transition:background var(--dur-fast) ease}
+.gets li:hover{background:var(--bg-elevated)}
+.gets .k{font-family:var(--f-mono);font-size:var(--t-micro);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.gets h3{margin-top:.65rem;font-stretch:var(--w-title);letter-spacing:var(--ls-title);font-size:var(--t-title);font-weight:var(--wt-title);line-height:1.22}
+.gets p{margin-top:.5rem;font-size:var(--t-note);color:var(--fg-dim);line-height:1.55}
+
+/* ---- faq --------------------------------------------------------------- */
+.faq{border-top:1px solid var(--border);max-width:52rem}
+.faq details{border-bottom:1px solid var(--border)}
+.faq summary{
+  display:flex;align-items:center;justify-content:space-between;gap:1rem;
+  padding:.95rem 0;cursor:pointer;list-style:none;
+  font-size:var(--t-lead);font-stretch:var(--w-lead);letter-spacing:var(--ls-lead);font-weight:550;
+}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::after{
+  content:"";width:9px;height:9px;flex:0 0 auto;
+  border-right:1.5px solid var(--fg-muted);border-bottom:1.5px solid var(--fg-muted);
+  transform:rotate(45deg) translate(-2px,-2px);transition:transform .22s var(--ease);
+}
+.faq details[open] summary::after{transform:rotate(-135deg) translate(-2px,-2px)}
+.faq p{padding:0 0 1rem;max-width:44rem;color:var(--fg-dim);font-size:var(--t-body)}
+
+/* ---- close ------------------------------------------------------------- */
+.close{padding:clamp(3rem,6vw,5rem) 0 clamp(2rem,4vw,3rem);text-align:center}
+.close__in{max-width:40rem;margin-inline:auto}
+.close p{margin-top:1rem;color:var(--fg-dim);font-size:var(--t-lead)}
+.close .acts{margin-top:1.6rem;justify-content:center}
+/* The two buttons are rooms you join. An address is not a room, so it is not
+   a third button: it is the quieter line under them, which is also what it
+   is in practice. */
+/* .close p is a section-level rule and beats a single-class component rule
+   on specificity, which is the exact trap KICKOFF records for .turn p and
+   .close p. Two classes, so this one wins on its own terms. */
+.close .close__mail{
+  margin-top:1.1rem;font-size:var(--t-note);color:var(--fg-muted);
+}
+.close__mail a{color:var(--fg-dim);text-decoration:none;border-bottom:1px solid var(--border-strong)}
+.close__mail a:hover{color:var(--accent);border-bottom-color:var(--accent)}
+
+/* ---- the ascii band ----------------------------------------------------
+   The signal, sampled and printed. The machine has no curve, only glyphs. */
+.band{overflow:hidden;border-top:1px solid var(--border);background:var(--bg-inset)}
+.band pre{
+  margin:0;padding:1.25rem 0;font-family:var(--f-mono);font-size:9px;line-height:.92;
+  letter-spacing:.06em;white-space:pre;overflow:hidden;text-align:center;
+  background:linear-gradient(90deg,
+    rgba(155,152,146,.30) 0%, rgba(155,152,146,.62) 26%,
+    var(--accent) 50%,
+    rgba(155,152,146,.62) 74%, rgba(155,152,146,.30) 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+
+/* ---- footer ------------------------------------------------------------ */
+.foot{border-top:1px solid var(--border);padding:1.1rem 0 2rem}
+.foot__in{display:flex;align-items:center;gap:1.1rem;flex-wrap:wrap;font-family:var(--f-mono);font-size:var(--t-micro);color:var(--fg-muted)}
+.foot__in a:hover{color:var(--fg-dim)}
+.foot .forge{display:inline-flex;align-items:center;gap:.4rem;margin-left:auto}
+.foot .forge img{width:13px;height:13px;opacity:.6}
+
+/* ---- scroll choreography ----------------------------------------------- */
+.rise{opacity:0;transform:translateY(14px);transition:opacity .6s ease,transform .6s var(--ease)}
+.rise.is-in{opacity:1;transform:none}
+.rise[data-d="1"]{transition-delay:.07s}
+.rise[data-d="2"]{transition-delay:.14s}
+.rise[data-d="3"]{transition-delay:.21s}
+
+/* ---- narrow ------------------------------------------------------------ */
+@media(max-width:680px){
+  /* four items do not fit one row; the key action is the one that survives */
+  .top nav .btn--ghost{display:none}
+  .top__in{height:48px;padding-right:.4rem}
+  .brand img{width:22px;height:23px}
+  .brand .wm{width:108px;height:19px}
+}
+@media(max-width:560px){
+  /* the preview capsule carries text plus three actions plus a timer; on a
+     phone the transcript is the part that yields */
+  .pill__text{max-width:112px}
+  .pill{gap:0}
+}
+
+/* ---- reduced motion ---------------------------------------------------- */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms !important;animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;scroll-behavior:auto !important;
+  }
+  .rise{opacity:1;transform:none}
+  .caret{animation:none}
+  .tp__track i,.own__c,.w-wire,.w-folder{transition-delay:0s !important}
+  .own__c{opacity:1}
+}

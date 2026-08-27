@@ -162,7 +162,10 @@ that matters most often.
 Code areas: `src/` (overlay, settings, rebuild lab, UI state),
 `src-tauri/src/` (native runtime core), `shared/` (data both runtimes read --
 the model catalogue and its schema), `packaging/` and `vendor/` (platform
-packaging, vendored patches). Under `docs/`: `tracks/` for live implementation
+packaging, vendored patches). `web/` is the product site at wordscript.dev and
+is its own project with its own npm scripts, stack and validation -- read
+`web/PRODUCT.md` before touching it; it is not part of the app build and the
+app's commands do not cover it. Under `docs/`: `tracks/` for live implementation
 tracks, `archive/` for closed ones and spent plans, `donors/` and `prototypes/`
 for frozen reference. No project-specific skills exist; see `.agents/README.md`
 if one is ever needed in more than one harness.

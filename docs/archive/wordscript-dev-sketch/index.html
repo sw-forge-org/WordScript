@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="icon" href="../assets/logos/wordscript-icon-128.png">
+<title>WordScript</title>
+<meta name="description" content="An open desktop dictation app. What you say lands at the cursor, stays as an object in a folder on your own disk, and can be handed to an agent that acts on it.">
+<meta property="og:title" content="WordScript">
+<meta property="og:description" content="Speak once. It lands, it stays, it acts.">
+<meta property="og:image" content="../assets/OG.png">
+<meta name="theme-color" content="#0f0f11">
+<link rel="preload" href="fonts/archivo-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/zodiak-400-italic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+
+<header class="top" id="top">
+  <div class="top__in">
+    <a class="brand" href="#top" aria-label="WordScript, back to top">
+      <img src="../assets/logos/wordscript-icon-128.png" width="121" height="128" alt="">
+      <span class="wm" role="img" aria-label="WordScript"></span>
+    </a>
+    <nav>
+      <a class="btn btn--ghost" href="#how">How it works</a>
+      <a class="btn btn--ghost" href="#numbers">Numbers</a>
+      <a class="btn" href="https://discord.com/invite/BHfApphz8h">Join on Discord</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+  <!-- ================= HERO ================= -->
+  <section class="hero">
+    <div class="wrap">
+      <div class="hero__in">
+        <h1 class="rise">
+          <span class="b">Speak <em>once</em>.</span>
+          <span class="b">It lands. It stays.</span>
+          <span class="b">It acts.</span>
+        </h1>
+        <p class="lede rise" data-d="1">
+          For people who talk more than they type. What you say lands in the window you
+          are already in, <b>stays as an object in a folder on your own disk</b>, and can
+          be handed to one agent that acts on it.
+        </p>
+        <div class="acts rise" data-d="2">
+          <a class="btn btn--primary" href="https://discord.com/invite/BHfApphz8h">
+            Join on Discord
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 12l8-8M6 4h6v6"/></svg>
+          </a>
+          <a class="btn" href="https://github.com/sw-forge-org/WordScript">
+            Read the source
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 12l8-8M6 4h6v6"/></svg>
+          </a>
+        </div>
+        <p class="hero__note rise" data-d="2">Nothing is released yet. This is the part where it gets built.</p>
+      </div>
+
+      <!-- the product, running. Not a screenshot: the same capsule the app draws,
+           floating over the window the way it floats over your apps. -->
+      <div class="stage rise" data-d="2">
+        <div class="stage__win">
+          <div class="stage__chrome">
+            <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span class="t">whatever window has focus</span>
+            <span class="stage__hint" data-hero-hint></span>
+          </div>
+          <div class="stage__body" data-hero-field><span class="caret"></span></div>
+          <div class="stage__float"><div class="ov" data-hero-pill></div></div>
+        </div>
+        <ul class="stage__facts mono">
+          <li>AGPL-3.0</li>
+          <li>macOS, Windows, Linux</li>
+          <li>local or cloud</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WHERE IT LANDS =================
+       The hero claims the text arrives in the window you already had focus
+       in, and until now the page never showed it. A logo row normally reads
+       as an integration list, which is the exact claim the schematic below
+       disproves, so the note under it says what these are instead. -->
+  <section class="focus" aria-labelledby="focus-h">
+    <div class="wrap">
+      <p class="focus__h" id="focus-h">It lands in whatever window has focus.</p>
+      <div class="focus__rail"><ul class="focus__row" data-focus-row></ul></div>
+      <p class="focus__note">Not integrations. There is no plugin to install, no extension to
+        approve and no account to connect: WordScript types where you type.</p>
+    </div>
+  </section>
+
+  <!-- ================= THE DEMO ================= -->
+  <section class="sec" id="how">
+    <div class="wrap">
+      <div class="sec__head rise">
+        <h2>Where your words go.</h2>
+        <p>Every dictation tool puts text at the cursor. That is the first of three, and it
+          is the one that is becoming a commodity.</p>
+      </div>
+
+      <div class="demo rise" data-d="1">
+        <div class="demo__tabs" role="tablist" aria-label="What a dictation becomes">
+          <button class="demo__tab" role="tab" id="tab-1" aria-controls="p1" aria-selected="true">
+            <span class="demo__tab-n mono">01</span>
+            <span class="demo__tab-t">Cursor</span>
+            <span class="demo__tab-s">seven modes, one hotkey</span>
+          </button>
+          <button class="demo__tab" role="tab" id="tab-2" aria-controls="p2" aria-selected="false">
+            <span class="demo__tab-n mono">02</span>
+            <span class="demo__tab-t">Context</span>
+            <span class="demo__tab-s">three ways in, one folder</span>
+          </button>
+          <button class="demo__tab" role="tab" id="tab-3" aria-controls="p3" aria-selected="false">
+            <span class="demo__tab-n mono">03</span>
+            <span class="demo__tab-t">Agent</span>
+            <span class="demo__tab-s">one process, asking out loud</span>
+          </button>
+        </div>
+
+        <div class="demo__stage">
+          <div class="demo__bar mono">
+            <span>WordScript</span>
+            <span class="step" data-step aria-live="polite"></span>
+          </div>
+
+          <!-- 1: cursor -->
+          <div class="panel" id="p1" role="tabpanel" aria-labelledby="tab-1" data-on="1">
+            <p class="panel__lead"><b>The cursor.</b> Hold the hotkey and speak, and the text lands
+              in whatever window has focus. The mode decides <b>which</b> text lands, and the mode is
+              the only thing the transform stage reads.</p>
+
+            <div class="strip" role="tablist" aria-label="Processing mode" data-modes></div>
+
+            <div class="d1">
+              <div class="d1__l">
+                <div class="slab">
+                  <div class="slab__k mono" data-scene-win>Your window</div>
+                  <div class="field" data-field><span class="caret"></span></div>
+                </div>
+                <div class="d1__cap"><div class="ov" data-cap-pill></div></div>
+              </div>
+              <div class="slab">
+                <div class="slab__k mono" data-rules-k>What it changed</div>
+                <div class="rules" data-rules></div>
+                <p class="slab__note" data-scene-note></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2: context -->
+          <div class="panel" id="p2" role="tabpanel" aria-labelledby="tab-2">
+            <p class="panel__lead"><b>Context.</b> A dictation, a meeting, an uploaded file and a
+              pasted link are the same kind of record. What accumulates is one living object rather
+              than a folder of loose transcripts, and it sits in a directory you own.</p>
+
+            <div class="strip" role="tablist" aria-label="How a record arrives" data-intakes></div>
+
+            <div class="d2">
+              <div class="d2__l" data-intake></div>
+              <div class="d2__r">
+                <div class="slab">
+                  <div class="slab__k mono">On your disk</div>
+                  <div class="disk" data-disk></div>
+                  <p class="slab__note">Plain files, in a directory you named. Your editor, your
+                    grep and your agent already know how to open them.</p>
+                </div>
+                <p class="d2__cap mono" data-ctx-cap></p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3: agent -->
+          <div class="panel" id="p3" role="tabpanel" aria-labelledby="tab-3">
+            <p class="panel__lead"><b>The agent.</b> One orchestrator drives your coding agents, and
+              WordScript talks to nobody else. When it reaches a decision it cannot make, it asks
+              you out loud and waits. You can start the work by speaking, too.</p>
+
+            <div class="d3">
+              <div class="desk">
+                <div class="desk__rail">
+                  <div class="desk__head">
+                    <span class="orb" data-orb aria-hidden="true"></span>
+                    <b>the desk</b>
+                    <span class="desk__sub">one process, speaking for all three</span>
+                  </div>
+                  <div class="desk__k mono">Working on</div>
+                  <div class="desk__targets" data-targets></div>
+                </div>
+                <div class="desk__main">
+                  <div class="desk__mh mono"><b>WordScript</b><span>work, thread since 09:12</span></div>
+                  <div class="thread" data-thread></div>
+                  <div class="answer" data-answer></div>
+                </div>
+              </div>
+              <div class="d3__r">
+                <div class="slab">
+                  <div class="slab__k mono">A run, headless</div>
+                  <div class="term" data-term></div>
+                </div>
+                <div class="d1__cap"><div class="ov" data-agent-pill></div></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="demo__foot mono">
+          <button class="btn btn--ghost" data-replay>Replay</button>
+          <span data-foot>Constructed example. The capsule is the app's own surface, running.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= THE TURN =================
+       This was the page's largest claim stated as a sentence and shown as
+       nothing. ADR 0046 is a claim about wiring, so it is drawn as wiring.
+       The two states differ in one readable quantity: how many connections
+       the product itself has to own. Five, or one. -->
+  <section class="turn plane" id="turn">
+    <div class="wrap">
+      <p class="turn__lead rise">
+        <span class="dim">Most dictation tools end at the cursor. The ones that keep
+        anything keep it inside their own product.</span>
+        WordScript keeps it in a directory <em>your own tools already open</em>.
+      </p>
+
+      <div class="wire lit rise" data-d="1" data-wire>
+        <div class="wire__head">
+          <div class="wire__state">
+            <span class="wire__k mono" data-wire-k>The usual shape</span>
+            <b class="wire__t" data-wire-t>A connector layer</b>
+          </div>
+          <button class="wire__sw" role="switch" aria-checked="false" data-wire-sw
+                  aria-label="Show how WordScript is wired instead">
+            <span class="wire__sw-l mono" data-wire-sw-l>Everyone else</span>
+            <span class="wire__sw-track"><span class="wire__sw-knob"></span></span>
+          </button>
+        </div>
+
+        <div class="wire__stage">
+          <svg viewBox="0 0 520 338" role="img" data-wire-svg
+               aria-label="Two wiring diagrams. With a connector layer the app maintains one connection to each destination. Without one, the app makes a single write into a directory, and the tools you already have open that directory themselves.">
+            <!-- motion rails: full-length, never painted -->
+            <g fill="none" stroke="none">
+              <path id="w-r0" d="M 260,268 L 60,66"/>
+              <path id="w-r1" d="M 260,268 L 160,66"/>
+              <path id="w-r2" d="M 260,268 L 260,66"/>
+              <path id="w-r3" d="M 260,268 L 360,66"/>
+              <path id="w-r4" d="M 260,268 L 460,66"/>
+              <path id="w-rf" d="M 260,268 L 260,196"/>
+            </g>
+
+            <!-- state A: five wires the product owns -->
+            <g class="w-own" data-wire-a>
+              <path class="w-wire w-wire--own" pathLength="1" d="M 260,240 L 74,80"/>
+              <path class="w-wire w-wire--own" pathLength="1" d="M 260,240 L 168,80"/>
+              <path class="w-wire w-wire--own" pathLength="1" d="M 260,240 L 260,82"/>
+              <path class="w-wire w-wire--own" pathLength="1" d="M 260,240 L 352,80"/>
+              <path class="w-wire w-wire--own" pathLength="1" d="M 260,240 L 446,80"/>
+            </g>
+
+            <!-- state B: one wire the product owns, and five it does not -->
+            <g class="w-borrowed" data-wire-b>
+              <path class="w-wire w-wire--theirs" pathLength="1" d="M 244,168 L 74,80"/>
+              <path class="w-wire w-wire--theirs" pathLength="1" d="M 246,164 L 168,80"/>
+              <path class="w-wire w-wire--theirs" pathLength="1" d="M 260,158 L 260,82"/>
+              <path class="w-wire w-wire--theirs" pathLength="1" d="M 274,164 L 352,80"/>
+              <path class="w-wire w-wire--theirs" pathLength="1" d="M 276,168 L 446,80"/>
+              <path class="w-wire w-wire--own" pathLength="1" d="M 260,240 L 260,198"/>
+            </g>
+
+            <!-- the dots ride only the wires the product is responsible for -->
+            <g data-wire-dots-a>
+              <circle class="w-dot" r="2.6"><animateMotion dur="2.4s" repeatCount="indefinite" begin="0s"><mpath href="#w-r0"/></animateMotion></circle>
+              <circle class="w-dot" r="2.6"><animateMotion dur="2.4s" repeatCount="indefinite" begin=".5s"><mpath href="#w-r1"/></animateMotion></circle>
+              <circle class="w-dot" r="2.6"><animateMotion dur="2.4s" repeatCount="indefinite" begin="1s"><mpath href="#w-r2"/></animateMotion></circle>
+              <circle class="w-dot" r="2.6"><animateMotion dur="2.4s" repeatCount="indefinite" begin="1.5s"><mpath href="#w-r3"/></animateMotion></circle>
+              <circle class="w-dot" r="2.6"><animateMotion dur="2.4s" repeatCount="indefinite" begin="2s"><mpath href="#w-r4"/></animateMotion></circle>
+            </g>
+            <g data-wire-dots-b>
+              <circle class="w-dot" r="2.6"><animateMotion dur="1.6s" repeatCount="indefinite" begin="0s"><mpath href="#w-rf"/></animateMotion></circle>
+            </g>
+
+            <!-- the destinations. Named by what they are, not by whose they are:
+                 this is a comparative diagram, and a real mark inside one
+                 asserts something about that vendor's integrations that we
+                 have not verified. The glyphs are generic for the same
+                 reason: they say what kind of tool without naming one. -->
+            <g class="w-nodes">
+              <g class="w-node">
+                <circle cx="60" cy="66" r="15"/>
+                <g class="w-ico" transform="translate(60,66)">
+                  <path d="M -2.5,-4 L -6,0 L -2.5,4"/><path d="M 2.5,-4 L 6,0 L 2.5,4"/>
+                </g>
+                <text x="60" y="34">your editor</text>
+              </g>
+              <g class="w-node">
+                <circle cx="160" cy="66" r="15"/>
+                <g class="w-ico" transform="translate(160,66)">
+                  <rect x="-5" y="-6" width="10" height="12" rx="1.5"/>
+                  <path d="M -2.5,-2.5 H 2.5 M -2.5,.5 H 2.5 M -2.5,3.5 H .5"/>
+                </g>
+                <text x="160" y="34">your notes</text>
+              </g>
+              <g class="w-node">
+                <circle cx="260" cy="66" r="15"/>
+                <g class="w-ico" transform="translate(260,66)">
+                  <path d="M -6,-5 H 6 V 2.5 H -1 L -4.5,6 V 2.5 H -6 Z"/><path d="M -3,-1.4 H 3"/>
+                </g>
+                <text x="260" y="34">your chat</text>
+              </g>
+              <g class="w-node">
+                <circle cx="360" cy="66" r="15"/>
+                <g class="w-ico" transform="translate(360,66)">
+                  <path d="M -6,-4 L -2,0 L -6,4"/><path d="M 0,4.5 H 6"/>
+                </g>
+                <text x="360" y="34">your agent CLI</text>
+              </g>
+              <g class="w-node">
+                <circle cx="460" cy="66" r="15"/>
+                <g class="w-ico" transform="translate(460,66)">
+                  <circle cx="-1" cy="-1" r="4.5"/><path d="M 2.4,2.4 L 6,6"/>
+                </g>
+                <text x="460" y="34">your grep</text>
+              </g>
+            </g>
+
+            <!-- the directory, which exists only in state B -->
+            <g class="w-folder" data-wire-folder>
+              <rect x="222" y="158" width="76" height="40" rx="5"/>
+              <path class="w-folder-tab" d="M 224,158 L 224,150 L 246,150 L 252,158"/>
+              <text class="w-folder-l" x="308" y="182">a folder you named</text>
+            </g>
+
+            <!-- the product -->
+            <g class="w-hub">
+              <circle cx="260" cy="268" r="26"/>
+              <g class="w-ico w-ico--hub" transform="translate(260,268)">
+                <path d="M 0,-8 a 3.4,3.4 0 0 1 3.4,3.4 v 4.6 a 3.4,3.4 0 0 1 -6.8,0 v -4.6 A 3.4,3.4 0 0 1 0,-8 Z"/>
+                <path d="M -6.2,-1 v 1.2 a 6.2,6.2 0 0 0 12.4,0 V -1"/>
+                <path d="M 0,6.4 V 9"/>
+              </g>
+              <text x="260" y="322" class="w-hub-t" data-wire-hub>a dictation app</text>
+            </g>
+          </svg>
+
+          <p class="wire__cap" data-wire-cap></p>
+          <p class="wire__count mono" data-wire-count></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= THE NUMBERS ================= -->
+  <section class="sec plane" id="numbers">
+    <div class="wrap">
+      <div class="sec__head rise">
+        <h2>It counts what it did <em>for you</em>.</h2>
+        <p>That speaking beats typing is not our finding, and for most of the time computers
+          could listen at all it was not even true. The three measurements below are other
+          people's. What is ours is the second half: the app counts what it actually did for
+          you, and reads those figures out of a file on your own disk.</p>
+      </div>
+
+      <!-- Three measurements, none of them ours, read in the order they were
+           taken. The point is not that speaking is fast: it is that speaking
+           was slower until the correction problem was solved, which is the
+           problem this product is built around. Every figure below was read
+           out of the paper it belongs to, not off a site quoting it.
+           All bars are scaled against 161.2 wpm, the fastest reading here. -->
+      <ol class="tp rise" data-d="1" data-tp>
+        <li class="tp__step">
+          <div class="tp__head">
+            <span class="tp__year mono">1999</span>
+            <b class="tp__title">Speaking lost.</b>
+          </div>
+          <div class="tp__pair">
+            <div class="tp__m" style="--f:.084">
+              <span class="tp__k mono">spoken</span>
+              <span class="tp__track"><i></i></span>
+              <b class="tp__n" data-n="13.6" data-dec="1">13.6<i>wpm</i></b>
+            </div>
+            <div class="tp__m tp__m--win" style="--f:.202">
+              <span class="tp__k mono">typed</span>
+              <span class="tp__track"><i></i></span>
+              <b class="tp__n" data-n="32.5" data-dec="1">32.5<i>wpm</i></b>
+            </div>
+          </div>
+          <p class="tp__src mono">Transcription by voice against keyboard and mouse, 24 users,
+            three commercial recognisers. Karat, Halverson, Horn and Karat, <i>Patterns of Entry
+            and Correction in Large Vocabulary Continuous Speech Recognition Systems</i>, CHI
+            1999. Figures as reported in Ruan et al. 2016.</p>
+        </li>
+
+        <li class="tp__step">
+          <div class="tp__head">
+            <span class="tp__year mono">2016</span>
+            <b class="tp__title">It turned over.</b>
+          </div>
+          <div class="tp__pair">
+            <div class="tp__m tp__m--win tp__m--hi" style="--f:1">
+              <span class="tp__k mono">spoken</span>
+              <span class="tp__track"><i></i></span>
+              <b class="tp__n" data-n="161.2" data-dec="1">161.2<i>wpm</i></b>
+            </div>
+            <div class="tp__m" style="--f:.332">
+              <span class="tp__k mono">typed</span>
+              <span class="tp__track"><i></i></span>
+              <b class="tp__n" data-n="53.5" data-dec="1">53.5<i>wpm</i></b>
+            </div>
+          </div>
+          <p class="tp__src mono">English short messages, 32 participants, with 20.4 percent
+            fewer errors than the keyboard. Measured on a phone. Ruan, Wobbrock, Liou, Ng and
+            Landay, <i>Comparing Speech and Keyboard Text Entry for Short Messages in Two
+            Languages on Touchscreen Phones</i>, 2016.</p>
+        </li>
+
+        <li class="tp__step">
+          <div class="tp__head">
+            <span class="tp__year mono">2018</span>
+            <b class="tp__title">The desk, checked.</b>
+          </div>
+          <div class="tp__pair">
+            <div class="tp__m" style="--f:.320">
+              <span class="tp__k mono">typed, physical keyboard</span>
+              <span class="tp__track"><i></i></span>
+              <b class="tp__n" data-n="51.6" data-dec="1">51.6<i>wpm</i></b>
+            </div>
+          </div>
+          <p class="tp__src mono">Mean 51.56, SD 20.2, across 168,000 participants. Dhakal,
+            Feit, Kristensson and Oulasvirta, <i>Observations on Typing from 136 Million
+            Keystrokes</i>, CHI 2018.</p>
+        </li>
+      </ol>
+
+      <p class="tp__close rise" data-d="1">The 2016 study ran on a phone, and that is the
+        objection worth answering rather than hiding: its touchscreen keyboard came out at
+        53.5 wpm, and a physical keyboard measured across 168,000 people comes out at 51.6.
+        The typing side barely moves. What moved is the other side, and what held it back in
+        1999 was <b>correction, not speed</b>. That is the half the modes do.</p>
+
+      <p class="nums__k rise" data-d="1">These five are yours, and every one of them is read
+        off your own disk.</p>
+
+      <!-- The field is a figure, not a texture, so it sits with the other four
+           rather than closing the page. What it counts is dictations per day,
+           which is the one of the five that only makes sense as a shape. -->
+      <div class="own lit rise" data-d="1">
+        <div class="own__field">
+          <div class="own__head">
+            <div>
+              <b class="own__t">Days you dictated</b>
+              <span class="own__sub">every day you spoke to it, and how much</span>
+            </div>
+            <span class="own__legend mono" data-heat-legend aria-hidden="true"></span>
+          </div>
+          <div class="own__grid" data-heat role="img"
+               aria-label="An activity field of one year. Columns are weeks, rows are weekdays, and brighter cells are days with more dictations."></div>
+          <p class="own__foot mono">One column is a week, one row is a weekday, Monday at the
+            top. Read from the same history file the four figures below come from.</p>
+        </div>
+
+        <ul class="nums">
+          <li class="tile">
+            <b data-n="142" data-delay="120">142</b>
+            <span class="tile-label">Words per minute</span>
+            <span class="tile-foot">your rate, over your timed dictations</span>
+          </li>
+          <li class="tile">
+            <b><span data-n="9" data-delay="200">9</span><i>h</i> <span data-n="40" data-delay="200">40</span><i>m</i></b>
+            <span class="tile-label">Time saved</span>
+            <span class="tile-foot">against a typing baseline you set</span>
+          </li>
+          <li class="tile">
+            <b><span data-n="1.9" data-dec="1" data-delay="280">1.9</span><i>s</i></b>
+            <span class="tile-label">Turnaround</span>
+            <span class="tile-foot">hotkey up to text in place</span>
+          </li>
+          <li class="tile">
+            <b data-n="3" data-delay="360">3</b>
+            <span class="tile-label">Languages</span>
+            <span class="tile-foot">detected without being told</span>
+          </li>
+        </ul>
+      </div>
+
+      <p class="slab__note rise" data-d="2" style="max-width:44rem">The five figures are a
+        constructed example of the surface, not an average of anybody. What is real is that
+        the app measures these five things, and that the history it measures them from is a
+        file you can open.</p>
+    </div>
+  </section>
+
+  <!-- ================= WHAT YOU GET ================= -->
+  <section class="sec" id="what">
+    <div class="wrap">
+      <div class="sec__head rise">
+        <h2>The dictation half, done properly.</h2>
+        <p>The base layer still has to be worth using every day. This is what it does.</p>
+      </div>
+
+      <ul class="gets rise" data-d="1">
+        <li>
+          <span class="k">Profiles</span>
+          <h3>A profile that actually changes the output.</h3>
+          <p>Vocabulary, style, delivery mode and model belong to the context you are working
+            in. Writing a commit message and writing to a client are not the same job.</p>
+        </li>
+        <li>
+          <span class="k">Models</span>
+          <h3>Local or cloud, per job.</h3>
+          <p>The local runtime as a real option rather than an expert configuration exercise.
+            Chosen per profile, not once for the whole app.</p>
+        </li>
+        <li>
+          <span class="k">The record</span>
+          <h3>It shows what it changed.</h3>
+          <p>Raw and delivered are stored apart. Every rule that fired is named, and audio it
+            could not hear is marked as a gap instead of guessed at.</p>
+        </li>
+        <li>
+          <span class="k">Credentials</span>
+          <h3>Your keys, your machine.</h3>
+          <p>API keys live in the operating system secret store, and the config file is
+            scrubbed on save. Nothing goes anywhere you did not pick.</p>
+        </li>
+        <li>
+          <span class="k">Sources</span>
+          <h3>Bring audio in.</h3>
+          <p>An uploaded file, or a pasted video, podcast or direct audio link, becomes the
+            same kind of record as something you said out loud.</p>
+        </li>
+        <li>
+          <span class="k">Licence</span>
+          <h3>AGPL-3.0, all of it.</h3>
+          <p>The whole app, not a core with a paid remainder. Readable before you decide
+            anything.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ================= FAQ ================= -->
+  <section class="sec" id="faq">
+    <div class="wrap">
+      <div class="sec__head rise">
+        <h2>The honest answers.</h2>
+      </div>
+
+      <div class="faq rise" data-d="1">
+        <details>
+          <summary>Can I download it yet?</summary>
+          <p>No. There is no release and no date. It runs from source on macOS, Windows and
+            Linux today, and the fastest way to follow the work is Discord or the repository.</p>
+        </details>
+        <details>
+          <summary>Is this another wrapper around Whisper?</summary>
+          <p>The recogniser is swappable and Whisper is one of the options. Speech to text is
+            becoming a commodity, so the recogniser is not the product. What is: what
+            accumulates from what you said, and what can act on it.</p>
+        </details>
+        <details>
+          <summary>Does my audio leave the machine?</summary>
+          <p>Only when you pick a cloud model for that profile. The local lane runs on your own
+            hardware and reaches nothing. The choice is per profile, and it is visible.</p>
+        </details>
+        <details>
+          <summary>How is this different from the other open dictation apps?</summary>
+          <p>They are good, and the dictation half genuinely overlaps. The difference is where
+            what you said ends up. Their context lives inside their product. WordScript writes
+            it into a directory your own tools can already open, and does not maintain a second
+            integration surface to get it back out.</p>
+        </details>
+        <details>
+          <summary>When will it be released?</summary>
+          <p>There is no date. The gates that are still open are recorded in the repository,
+            and that list is the only honest answer to this question.</p>
+        </details>
+        <details>
+          <summary>Can I help build it?</summary>
+          <p>Yes, and that is the point of this page. The repository is open and the room where
+            the work gets argued out is Discord.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CLOSE ================= -->
+  <section class="close">
+    <div class="wrap close__in">
+      <h2 class="rise">Nothing is released yet.<br>That is <em>the point</em>.</h2>
+      <p class="rise" data-d="1">There is no installer to hand you and no date to promise.
+        What there is: an open repository under AGPL-3.0, a room where the people building
+        it talk, and an address that reaches us directly.</p>
+      <div class="acts rise" data-d="2">
+        <a class="btn btn--primary" href="https://discord.com/invite/BHfApphz8h">
+          Join on Discord
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 12l8-8M6 4h6v6"/></svg>
+        </a>
+        <a class="btn" href="https://github.com/sw-forge-org/WordScript">
+          Read the source
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M4 12l8-8M6 4h6v6"/></svg>
+        </a>
+      </div>
+      <p class="close__mail rise" data-d="2">
+        Or write to <a href="mailto:forge@sw-labs.de">forge@sw-labs.de</a>.
+      </p>
+    </div>
+
+  </section>
+</main>
+
+<div class="band" aria-hidden="true"><pre data-band></pre></div>
+
+<footer class="foot">
+  <div class="wrap foot__in mono">
+    <span>AGPL-3.0</span>
+    <a href="https://github.com/sw-forge-org/WordScript">GitHub</a>
+    <a href="https://discord.com/invite/BHfApphz8h">Discord</a>
+    <a href="mailto:forge@sw-labs.de">forge@sw-labs.de</a>
+    <span class="forge"><img src="../assets/logos/sw-forge-logo-transparent.png" alt="">SW forge</span>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+</body>
+</html>

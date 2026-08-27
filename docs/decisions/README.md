@@ -38,6 +38,15 @@ Status: Proposed | Accepted | Superseded by NNNN
   had gone 40 records stale before anybody looked.
 - `spec-sync` may identify a decision that needs human review, but it does not
   create an ADR without explicit confirmation.
+- **No legal claim without its source.** Where a record states what a statute,
+  a regulation or a court requires, it names the norm or the judgment. A claim
+  that cannot be sourced is marked as unsettled and written as a reading, not
+  as a rule. The trigger was ADR 0258, whose first draft asserted a language
+  duty for German providers that neither section 5 DDG nor Article 12 GDPR
+  contains and that no supreme court decision supplies. Stated without a
+  citation it read as settled law, and the following record would have been
+  built on it. The cost of the rule is one lookup; the cost of skipping it is a
+  record that is wrong in the direction of sounding authoritative.
 
 ## Existing ADRs
 
@@ -1578,6 +1587,24 @@ that is what a record is for (ADR 0123: one list per fact).
   A stage figure carries the runs it was measured on, because a partly measured column is not a measured one.
 - [0249](0249-heard-is-the-recognisers-own-output-so-the-boundary-moves-above-the-gate-and-the-gate-records-what-it-removed.md):
   Heard is the recogniser's own output, so the boundary moves above the confidence gate and the gate records what it removed.
+- [0250](0250-a-drawn-surface-is-absent-until-a-developer-switch-asks-for-it-and-a-subtitle-earns-its-line-by-carrying-a-fact-its-heading-does-not.md):
+  A drawn surface is absent until a developer switch asks for it, and a subtitle earns its line by carrying a fact its heading does not.
+- [0251](0251-the-marketing-sketch-is-a-design-contract-so-the-astro-port-is-checked-by-computed-style-rather-than-by-eye.md):
+  The marketing sketch is a design contract, so the Astro port is checked by computed style rather than by eye.
+- [0252](0252-the-site-shows-the-whole-product-without-readiness-labels-and-every-surface-it-draws-obeys-the-runtimes-own-state-model.md):
+  The site shows the whole product without readiness labels, and every surface it draws obeys the runtime's own state model.
+- [0253](0253-the-page-performs-each-claim-once-instead-of-listing-it-and-the-hero-stops-asking-to-be-operated.md):
+  The page performs each claim once instead of listing it, and the hero stops asking to be operated.
+- [0254](0254-the-page-opens-on-a-pinned-plane-the-argument-covers-it-and-the-engines-section-becomes-a-picker-that-states-what-a-lane-costs.md):
+  The page opens on a pinned plane the argument covers, and the engines section becomes a picker that states what a lane costs.
+- [0255](0255-a-disk-figure-states-both-ends-because-the-site-cannot-predict-an-install-and-the-phone-gets-the-navigation-the-page-had-been-hiding-from-it.md):
+  A disk figure states both ends because the site cannot predict an install, and the phone gets the navigation the page had been hiding from it.
+- [0256](0256-the-pinned-plane-is-gated-on-the-width-that-gives-it-a-layout-and-the-page-answers-the-in-app-browser-bar-it-cannot-see.md):
+  The pinned plane is gated on the width that gives it a layout, and the page answers the in-app browser bar it cannot see.
+- [0257](0257-the-crawl-surface-is-generated-from-the-pages-own-facts-and-the-schema-claims-only-what-the-page-claims.md):
+  The crawl surface is generated from the page's own facts, and the schema claims only what the page claims.
+- [0258](0258-the-legal-pages-state-the-stack-the-site-really-has-and-the-fourth-footer-link-is-removed-rather-than-written.md):
+  The legal pages state the stack the site really has, and the fourth footer link is removed rather than written.
 
 ## Resolved: the number 0011 was used twice
 

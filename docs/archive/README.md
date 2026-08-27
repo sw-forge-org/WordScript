@@ -79,6 +79,17 @@ here, in three files that split by *kind of document* rather than by leg:
   measured against a window that was not an XWayland window at all before anyone
   noticed.
 
+- [`wordscript-dev-kickoff.md`](wordscript-dev-kickoff.md) — the spent
+  **kick-off page** for `web/`, the product site at wordscript.dev. It handed the
+  settled HTML/CSS/JS sketch to the session that ported it onto Astro, and that
+  port closed as [ADR 0251](../decisions/0251-the-marketing-sketch-is-a-design-contract-so-the-astro-port-is-checked-by-computed-style-rather-than-by-eye.md).
+  **Kept for the questions it answered rather than for its file list**, which is
+  stale in both directions: it describes the sketch as the site and marks
+  `PRODUCT.md` and `REFERENCES.md` as stale, and both were rewritten after it was
+  written. What travels is the design reasoning — why there is no download link,
+  why a feature grid would have been the wrong argument for a surface this large,
+  and the two divergences it recorded as deliberate.
+
 ## Closed tracks and spent plans
 
 ### Insert delivery, closed 2026-08-18
@@ -129,6 +140,12 @@ Both have their instruments in place and neither is guessed at.
 
 ### Spent plans and earlier passes
 
+- [`wordscript-dev-sketch/`](wordscript-dev-sketch/README.md) — the
+  marketing sketch for wordscript.dev: one page as plain HTML, CSS and JS, with
+  no build step on purpose so the design could be settled before one existed.
+  **Spent as code, kept as the contract** the Astro port in `web/` was measured
+  against (ADR 0251). Its fonts are deliberately absent and its `@font-face`
+  paths are dead; the directory's own README says why.
 - [`plans/settings-rework.md`](plans/settings-rework.md) — the settings surface
   rework plan. **Spent as an instruction, kept as derivation:** §2 through §11
   are why the surface is shaped the way it is, which nothing else carries. The
