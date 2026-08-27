@@ -53,6 +53,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed - wordscript.dev, the first measurement against a live site
+
+- **The analytics beacon is not arriving, and `/privacy` says it is.** The
+  first check that could only be run once the domain resolved was run:
+  `wordscript.dev` returns five script tags, all of them Astro's, and zero
+  occurrences of `cloudflareinsights`, `beacon.min.js` or `cf-beacon`. Every
+  precondition on this side is met -- the zone answers on Cloudflare addresses,
+  the HTML parses, and the `Cache-Control` carries no `no-transform`, which is
+  the documented blocker and which `public/_headers` omits on purpose. The
+  remaining variable is the dashboard and it cannot be read from here. Recorded
+  in `PRODUCT.md` under Open facts as a measured negative rather than an
+  unperformed check.
+- **What did verify on the live site**, all of it measured rather than assumed:
+  the four routes and both text endpoints return 200 and an unknown path
+  returns 404; all four typefaces serve with
+  `public, max-age=31536000, immutable`; `zodiak-400-italic.woff2` returns 404
+  and nothing asks for it; the four security headers in `public/_headers` are
+  present, so Workers static assets parses that file; and the deployed
+  stylesheet carries the same content hash as the local build and the
+  `font-size:1.19em` rule from ADR 0259, which is what proves the push-to-deploy
+  path ran end to end.
+- **The custom domain declared in `wrangler.jsonc` did not collide with the one
+  created by hand in the dashboard.** The deploy ran and the site serves the
+  newest build. Not established from the documentation, and therefore not
+  claimed: whether removing that line from the config later would detach the
+  domain. Leave it in place.
+
+
 ### Added - wordscript.dev is live
 
 - **The custom-domain route is open.** `wrangler.jsonc` carries

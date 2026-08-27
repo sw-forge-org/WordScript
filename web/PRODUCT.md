@@ -371,15 +371,32 @@ Marked open rather than guessed.
   question does not arise for any of them. The tooling gap that blocked it is
   unchanged: reading a woff2's name and glyph tables needs a Brotli decoder
   that is not installed here and that `pip` refuses to add under PEP 668.
-- **Confirmation that the analytics beacon actually arrives.** The dashboard
-  switch is set. It cannot do anything yet: automatic injection happens at the
-  edge for a hostname proxied through Cloudflare, `wordscript.dev` has no A or
-  AAAA record and the route in `wrangler.jsonc` is still commented out. So the
-  privacy notice describes something that is armed rather than running, which
-  is correct the moment the domain is live and unverifiable until then. The
-  check is one grep for the beacon in the served HTML after the first deploy,
-  and it belongs in the deploy runbook rather than in the launch gate, which
-  runs before the site exists.
+- **The analytics beacon is NOT arriving, measured 2026-08-27 on the live
+  site.** This entry used to say the switch was set and the check was merely
+  unperformable until the domain resolved. The domain resolves now and the
+  check was performed: `curl https://wordscript.dev` returns five `<script>`
+  tags, all of them Astro's, and zero occurrences of `cloudflareinsights`,
+  `beacon.min.js` or `cf-beacon`. **Cloudflare Web Analytics is not running on
+  this site.**
+
+  Every precondition on this side is met and was checked rather than assumed.
+  Automatic injection requires the hostname to be proxied, valid HTML, and no
+  `no-transform` in the HTML's `Cache-Control`. The zone answers on Cloudflare
+  addresses (`172.67.205.17`, `104.21.37.68`), the served HTML parses, and the
+  header reads `public, max-age=0, must-revalidate` -- `public/_headers` omits
+  `no-transform` deliberately and its comment says why. So the remaining
+  variable is the dashboard: either `wordscript.dev` was never added under Web
+  Analytics, or it was added with manual setup rather than automatic. It cannot
+  be resolved from here -- wrangler ships no Web Analytics command and the RUM
+  API refuses its OAuth token for want of an analytics scope (HTTP 403).
+
+  **This makes `/privacy` inaccurate on a live site**, which is the part that
+  matters. Its Reach measurement section describes what is processed and says
+  the data is available to us for six months. Nothing is processed. The
+  direction of the error is the harmless one -- the notice declares more than
+  happens, not less -- but it is still a legal page that does not describe the
+  site. Two ways out: switch it on in the dashboard, or strike the section
+  until it is on.
 - **A legal review of the three pages.** They are drafts from the
   `web-launch-gate` templates until they have had one. Two questions are worth
   putting to it by name: the English-only decision (ADR 0258), and whether the
