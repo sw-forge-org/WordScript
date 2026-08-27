@@ -13,7 +13,8 @@
     "preview": "astro preview",
     "check": "astro check",
     "launch-check": "node scripts/launch-check.mjs",
-    "deploy": "astro build && node scripts/launch-check.mjs && wrangler deploy"
+    "build:ci": "npm run build && npm run launch-check",
+    "deploy": "npm run build:ci && wrangler deploy"
   },
   "dependencies": {
     "@astrojs/react": "^6.0.4",

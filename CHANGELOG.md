@@ -86,6 +86,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   at opsz 48 and 80.75 px at opsz 144. The three places that reach `--f-em` run
   at roughly 16, 23 and 48 px, so no single pinned size is right for them.
 
+### Fixed - wordscript.dev, the launch gate would have stopped running the day it mattered
+
+- **The Workers Builds build command is `npm run build:ci`.** Workers Builds
+  runs a build command and a deploy command as two steps, and the obvious pair
+  -- `npm run build` then `npx wrangler deploy` -- calls nothing that runs
+  `scripts/launch-check.mjs`, because the gate hung off `npm run deploy`. Every
+  check it performs would have stopped running on the only path that publishes,
+  and nothing would have said so. `build:ci` is the build followed by the gate,
+  so a blocker fails the build.
+- **`npm run deploy` had never run `sync-assets.mjs`.** It read
+  `astro build && ... && wrangler deploy`, and npm matches `pre` hooks by script
+  name: `prebuild` fires for `build` and for nothing else. Both scripts now go
+  through `npm run build`. The bug was invisible because a person runs the build
+  first out of habit, and `public/assets/` is gitignored -- on a build machine
+  that directory starts empty.
+
 ### Fixed - wordscript.dev, a check that guarded a path instead of a font
 
 - **`launch-check.mjs` asks the question a clone asks.** It reads every face

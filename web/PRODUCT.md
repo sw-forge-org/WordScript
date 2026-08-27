@@ -232,13 +232,18 @@ repository's own files.
 and that is the whole deployment surface.
 
 **The deploy runs from the repository, on every push, through Cloudflare
-Workers Builds.** Root directory `web`, build command `npm run build`, deploy
-command `npx wrangler deploy`; the Worker is `wordscript-homepage`. That model
-is why all three typefaces are committed: the build starts from a clone, so
-anything the page needs and the repository does not carry is a 404 that no
-build step reports (ADR 0259). `npm run deploy` still exists and still runs
-`scripts/launch-check.mjs` between the build and wrangler; it is the local
-path, and the gate it runs is the one a push does not.
+Workers Builds.** Root directory `web`, build command **`npm run build:ci`**,
+deploy command `npx wrangler deploy`; the Worker is `wordscript-homepage`. That
+model is why all three typefaces are committed: the build starts from a clone,
+so anything the page needs and the repository does not carry is a 404 that no
+build step reports (ADR 0259).
+
+**The build command is `build:ci` and not `build`, and the difference is the
+launch gate.** `scripts/launch-check.mjs` used to hang off `npm run deploy`,
+which a Workers build never calls, so the pair a dashboard suggests would have
+published without it. `build:ci` is the build followed by the gate; a blocker
+fails the build. `npm run deploy` is the same thing plus wrangler and is the
+local path.
 
 **Two things the port settled, both recorded in ADR 0251:**
 

@@ -51,6 +51,17 @@
   //
   // "routes": [{ "pattern": "wordscript.dev", "custom_domain": true }],
 
+  // THE BUILD COMMAND IN THE DASHBOARD IS `npm run build:ci`, NOT `npm run build`.
+  //
+  // Workers Builds runs a build command and a deploy command as two steps, and
+  // the obvious pair -- `npm run build` then `npx wrangler deploy` -- drops the
+  // launch gate on the floor. `scripts/launch-check.mjs` hangs off
+  // `npm run deploy`, which neither of those two calls. Everything it guards
+  // against (an unfilled placeholder, a repealed statute, a dead
+  // dispute-resolution link, the banned punctuation) would stop being checked
+  // on the only path that publishes. `build:ci` is the build followed by the
+  // gate, so a blocker fails the build. ADR 0259.
+
   "assets": {
     "directory": "./dist",
     "not_found_handling": "404-page"

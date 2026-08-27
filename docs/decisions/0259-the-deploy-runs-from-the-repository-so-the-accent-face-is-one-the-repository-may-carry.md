@@ -135,10 +135,37 @@ a check carrying its own copy of a list passes while the list drifts.
 `src` urls against `LICENSE-*.txt` files and failed a correct tree: Plex Mono is
 declared twice, at 400 and 500, and has one licence.
 
+### 6. The gate runs in the build command, because a repo deploy never reaches `npm run deploy`
+
+Workers Builds runs a build command and a deploy command as two separate steps.
+The obvious pair is `npm run build` and `npx wrangler deploy`, and that pair
+**silently drops the launch gate**: `scripts/launch-check.mjs` lived in
+`npm run deploy`, which nothing in that pair calls. The checks for an unfilled
+placeholder, a repealed statute, a dead dispute-resolution link and the site's
+banned punctuation would have stopped running on the only path that publishes.
+
+So the build command is `npm run build:ci`, which is the build followed by the
+gate. A failing gate fails the build and nothing is deployed. It is a separate
+script rather than a change to `build`, because the gate firing during ordinary
+development is what teaches people to skip it -- the reasoning is in the
+script's own header and is not reopened here.
+
+**Both scripts had to be rewritten to call `npm run build` rather than
+`astro build`.** npm's `pre` hooks are matched by script name, so `prebuild`
+fires for `build` and for nothing else. `deploy` had read
+`astro build && ... && wrangler deploy` since it was written, which means it had
+never run `scripts/sync-assets.mjs` -- every deploy would have shipped whatever
+`public/assets/` happened to hold, and that directory is gitignored, so on a
+clone it holds nothing. The bug was invisible because a person runs
+`npm run build` first out of habit. A build machine does not.
+
 ## Consequences
 
-- **A fresh clone builds a complete page.** No font is fetched by hand, no
-  secret exists, and Workers Builds needs no step beyond `npm run build`.
+- **A fresh clone builds a complete page.** Verified rather than argued: a
+  `--depth 1` clone, `npm ci`, `npm run build`, and every one of the four
+  `/fonts/*.woff2` paths the built HTML and CSS ask for resolves inside `dist/`,
+  with the app's logos and icons copied in by `sync-assets.mjs`. No font is
+  fetched by hand and no secret exists.
 - **`/terms` states one licence for all three faces**, and that sentence is
   true rather than convenient. The comment above it carries the earlier draft
   that collapsed three licences into one while one of them was different, and
