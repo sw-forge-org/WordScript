@@ -52,6 +52,13 @@
   // in this repository: whether the reach measurement actually reports once
   // its token is set (ADR 0261), a legal review of the three pages, and
   // the manual accessibility pass. `PRODUCT.md` under Open facts is the list.
+  // THE APEX IS THE ONLY HOSTNAME THAT SERVES. `www.wordscript.dev` is not a
+  // second entry here and must not become one: it is a proxied CNAME plus a
+  // Cloudflare Single Redirect that answers 301 to the same path on the apex.
+  // Attaching it here instead would work, and would split the reach
+  // measurement into two dashboard rows counting by hostname. That rule lives
+  // in the dashboard and leaves nothing in this repository -- ADR 0263 is the
+  // only written record of it.
   "routes": [{ "pattern": "wordscript.dev", "custom_domain": true }],
 
   // THE BUILD COMMAND IN THE DASHBOARD IS `npm run build:ci`, NOT `npm run build`.

@@ -132,16 +132,24 @@ site usually is.
 
 | Row | Address | State |
 |---|---|---|
-| Website | `https://wordscript.dev` | **draws live and does not resolve** - the domain is registered and on Cloudflare nameservers with an empty zone |
+| Website | `https://wordscript.dev` | live |
 | Discord | `https://discord.com/invite/BHfApphz8h` | live |
 | GitHub | `https://github.com/sw-forge-org/WordScript` | live |
 | Documentation | `null` | drawn inert on purpose, hint reads *No address yet* |
 
-**The Website row is currently the defect the Documentation row was made inert
-to avoid.** ADR 0069's own comment states the rule - a URL that does not
-resolve yet is a link that must not be drawn yet - and one row over, a live row
-opens a hostname with no A record. Publishing this site is what closes it,
-which is the better fix than making the row inert.
+**The Website row used to be the defect the Documentation row was made inert to
+avoid.** ADR 0069's own comment states the rule - a URL that does not resolve
+yet is a link that must not be drawn yet - and for the whole build of this site
+a live row pointed at a hostname with no A record. Publishing closed it on
+2026-08-27, which was the better fix than making the row inert.
+
+**One hostname serves this site, and it is the apex** (ADR 0263).
+`www.wordscript.dev` resolves, is proxied, and answers 301 to the same path on
+`wordscript.dev` -- it never serves a page. Measured on 2026-08-30: path and
+query survive the hop, plain `http` on `www` reaches `https` on the apex in one
+redirect rather than two, and the apex itself answers 200 with no `Location`,
+so there is no loop. The redirect is a Cloudflare Single Redirect rule and has
+no artefact in this repository; the ADR is the only place it is written down.
 
 **And `/docs` later is what makes the fourth row live.** Documentation on this
 domain is not a nice-to-have for the site; it is the condition under which

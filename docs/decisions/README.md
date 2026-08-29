@@ -1617,6 +1617,9 @@ that is what a record is for (ADR 0123: one list per fact).
 
 - [0262](0262-the-social-card-is-drawn-from-the-site-s-own-tokens-and-drawing-it-is-not-a-build-step.md):
   The social card is drawn from the site's own tokens, and drawing it is not a build step.
+- [0263](0263-one-hostname-serves-the-site-and-the-second-one-redirects-to-it.md):
+  One hostname serves the site, and the second one redirects to it.
+
 
 ## Resolved: the number 0011 was used twice
 

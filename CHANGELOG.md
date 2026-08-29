@@ -53,6 +53,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - wordscript.dev answers on www, and only the apex serves
+
+- **`www.wordscript.dev` resolves and redirects.** It did not resolve at all
+  after launch, so anyone typing the address the way most people still type one
+  got a DNS failure rather than a site. A proxied `CNAME www -> wordscript.dev`
+  plus a Cloudflare Single Redirect matching `http.host eq "www.wordscript.dev"`
+  now answers 301 to the same path on the apex (ADR 0263).
+- **Attaching `www` to the Worker as a second custom domain was tried, worked,
+  and was undone.** Both hostnames served the site. The crawler half of that was
+  already handled -- `canonical`, `og:url` and the sitemap line all read `site`
+  from the Astro config rather than the request, so they name the apex even when
+  served on `www`. What decided against it was the beacon switched on the day
+  before: Web Analytics counts by hostname, so two serving hostnames means every
+  figure read off either row is a fraction of the traffic with nothing saying
+  so. The right answer changed because something else in the system changed.
+- **The rule matches exactly one host**, `eq` rather than a wildcard. Redirect
+  rules are zone-wide, so a broad match is a standing trap for every subdomain
+  this zone does not have yet.
+- **Measured rather than assumed**, on 2026-08-30: every path on `www` answers
+  301 to the same path; `?ref=test&utm_source=x` survives intact;
+  `http://www/terms/` reaches `https://wordscript.dev/terms/` in one hop rather
+  than two; the apex answers 200 with an empty `Location`, so nothing loops.
+  Cloudflare's universal certificate already carried `www` in its SAN list, so
+  TLS needed nothing.
+- **`PRODUCT.md`'s address table said the site does not resolve.** It had said
+  so since before launch and was three days stale. Corrected, with the hostname
+  fact written beside it.
+
 ### Changed - wordscript.dev, the social card is drawn by the site instead of beside it
 
 - **The card was older than the design it stood for.** `assets/OG.png` entered
