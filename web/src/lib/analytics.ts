@@ -24,10 +24,10 @@
  * It is not a secret and is deliberately not in the OS secret store or an env
  * var, both of which would imply it is one. */
 
-/** The Web Analytics site token, from the dashboard's JS snippet. `null`
- *  disables the whole feature, and that is a supported state rather than a
- *  broken one -- see BEACON below. */
-export const BEACON_TOKEN: string | null = null;
+/** The Web Analytics site token, read off the dashboard's JS snippet on
+ *  2026-08-30. `null` disables the whole feature, and that is a supported state
+ *  rather than a broken one -- see BEACON below. */
+export const BEACON_TOKEN: string | null = '54629b53832140df9bebd4cc06f4133b';
 
 /* THE ONE FACT, SO THE TWO SURFACES CANNOT DISAGREE.
  *

@@ -111,9 +111,14 @@ const og = new URL(SITE.og.path, origin);
   <link rel="preload" href="/fonts/fraunces-400-italic.woff2" as="font" type="font/woff2" crossorigin />
 )}
 {/* THE REACH MEASUREMENT, AND IT IS THE LAST THING IN THE HEAD ON PURPOSE.
-    `defer` already keeps it off the parse path; putting it after the preloads
-    keeps it off the *discovery* path too, so the browser has both faces in
-    flight before it ever looks at this line.
+    `type="module"` is deferred by definition, so it is already off the parse
+    path; putting it after the preloads keeps it off the *discovery* path too,
+    so the browser has both faces in flight before it ever looks at this line.
+
+    THE ATTRIBUTES ARE CLOUDFLARE'S OWN, not a reconstruction of them: the
+    dashboard hands out `type='module'`, and a beacon that stops reporting
+    because somebody improved its script tag is a defect nobody would look for
+    here.
 
     IT RENDERS ONLY WHEN A TOKEN IS SET, and `privacy.astro` renders its
     reach-measurement section off the same boolean. One value, two surfaces,
@@ -122,7 +127,7 @@ const og = new URL(SITE.og.path, origin);
     injection it was designed for. ADR 0261. */}
 {BEACON && (
   <script
-    defer
+    type="module"
     src="https://static.cloudflareinsights.com/beacon.min.js"
     data-cf-beacon={JSON.stringify({ token: BEACON_TOKEN })}
   />
