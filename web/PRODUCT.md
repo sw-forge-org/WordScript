@@ -304,8 +304,16 @@ required -- Web Analytics sets no cookie and reads nothing off the device, so
 TDDDG section 25 does not apply and the processing runs on legitimate interest.
 `public/_headers` still omits `no-transform` on the HTML; that was what kept the
 edge path open, and it costs nothing to leave open now that the snippet carries
-the measurement. The snippet loads from `static.cloudflareinsights.com`, so a
-later CSP needs that host in `script-src` beside `'self'`.
+the measurement. Two hosts, both Cloudflare and both read off the shipped
+`beacon.min.js` rather than assumed: the snippet loads from
+`static.cloudflareinsights.com` and reports to an absolute
+`https://cloudflareinsights.com/cdn-cgi/rum`. A later CSP therefore needs the
+first in `script-src` and the second in `connect-src`, each beside `'self'`.
+
+That absolute URL is also why `/cdn-cgi/rum` still returns 404 on this origin
+with the beacon live and correct. The same-origin path is the edge-injected
+variant's; the snippet does not use it, so that 404 is not a symptom of
+anything and is not worth re-investigating.
 
 **The crawl surface is generated, and it reads the same facts the page does**
 (ADR 0257). `src/lib/site.ts` and `src/lib/faq.ts` are the two modules; the
