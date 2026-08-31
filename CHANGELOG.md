@@ -53,6 +53,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - the imprint is one document for SW labs, and this site links to it
+
+- **`/imprint/` is gone from this site.** The document is served for the whole
+  of SW labs at `legal.sw-labs.de/imprint` and the footer links it from every
+  page. One address, one document, however many products -- an accuracy
+  argument before it is a privacy one (ADR 0265).
+- **Every address field is deleted rather than hidden.** `ENTITY` is down to
+  `name` and `holder`. The privacy notice names the controller and gives an
+  inbox, which is what Article 13 (1) (a) GDPR asks for -- identity and contact
+  details, not a postal address -- and links onward for the rest. `PHONE` goes
+  with it: its only reader was the imprint.
+- **The draft that came first answered the wrong question.** It moved the
+  provider's address fields into `astro:env` secrets, with the build failing on
+  a missing value and the gate refusing a build made against the placeholders.
+  It worked -- and the question worth asking was not how to store those fields
+  safely, but why this site was storing them at all. That draft never shipped.
+- **`/imprint/` keeps working.** `public/_redirects` sends both `/imprint` and
+  `/imprint/` to the document with a 301 -- the route was live for four days,
+  linked everywhere and in a sitemap Google has fetched. Probed against
+  `wrangler dev`: both answer 301.
+- **The footer link is the obligation now, so the gate blocks on it.**
+  `launch-check` asserts the link on every built page and the 301 in the
+  shipped `_redirects`. Four mutations were run against it -- stripped link,
+  deleted redirect, broken `href` shape, stripped `noindex` -- and one of them
+  found a real hole: the route parser read string literals only, so the day the
+  imprint's `href` became an identifier it silently checked one route fewer and
+  both imprint guards passed by having nothing to look at. The parser now
+  compares what it resolved against what the list declares.
+- **The risk is recorded, not buried.** Whether a link to another domain
+  discharges section 5 (1) no. 1 DDG for *this* telemedium is unsettled. The
+  owner was told and decided; ADR 0265 carries what reduces it and what does
+  not.
+
+### Changed - the legal routes are linked from every page and offered to no index
+
+- **`/privacy/`, `/imprint/` and `/terms/` carry `noindex, follow`.** They had
+  carried no robots directive at all -- not in the head, not in the response
+  headers -- which was never a decision: it is what a shared layout does when
+  nobody says otherwise, and the `noindex` prop `Base.astro` already had was
+  called by `404.astro` alone. The directive is set on `Legal.astro`, the shell
+  all three render through, so a fourth legal route inherits it by construction.
+  `follow` rather than `nofollow`, because these pages reference the provider
+  and the hosting vendor's own notice and a crawler on a stale link should be
+  able to take the way home (ADR 0264).
+- **The sitemap lists one URL, and drops the three by reading them.**
+  `astro.config.mjs` imports `LEGAL_ROUTES` from `src/lib/legal.ts` -- the list
+  `Foot.astro` and `/llms.txt` already read -- rather than repeating the paths.
+  A sitemap is a request to index, so a noindexed URL listed in one is the site
+  contradicting itself in two files, and Search Console reports exactly that as
+  `Submitted URL marked noindex`.
+- **The directive is stated on two layers, and the gate refuses to ship one
+  without the other.** `public/_headers` sets `X-Robots-Tag: noindex, follow`
+  on the three routes as well as the meta tag. A directive living in one file
+  only is one silent layout edit away from gone -- the page would still render,
+  the build would still pass, and the finding would arrive weeks later as a
+  search result.
+  `scripts/launch-check.mjs` reads `LEGAL_ROUTES` and asserts both copies per
+  route, plus the reverse: no path noindexed in `_headers` that is not a legal
+  route. Verified by mutation rather than by reading -- a deleted rule, a stray
+  `/pricing/` rule and a stripped meta tag were each caught, and the gate went
+  back to green.
+- **One header rule per route, because the pair was measured.** Bare path and
+  splat were both written first; probed against `wrangler dev`, `/imprint/`
+  matched both and the response carried `X-Robots-Tag` twice. The splat was
+  dropped -- nothing sits beneath these routes, and `/imprint` without the
+  slash is a 307 to `/imprint/`.
+- **`robots.txt` is unchanged on purpose.** A `Disallow` would stop the crawl
+  that has to happen for the `noindex` to be read, which is how a page ends up
+  listed as a bare URL with no snippet. Every crawler is still allowed, the AI
+  ones included, and `/llms.txt` still links all three legal pages: that is a
+  retrieval surface, not a ranking.
+- **Nothing became harder to reach.** Section 5 DDG asks for the imprint to be
+  easily recognisable and directly accessible on the site; the footer draws all
+  three routes on every page, which is the surface that provision is about.
+- **The structured data was checked and carries no address at all.** No
+  `PostalAddress`, no `streetAddress`, no `LocalBusiness`, no `Person` and no
+  microdata anywhere in `src/`; no address fragment in any `description` or
+  `og:*` tag; the footer's legal links carry no `rel`, so no `nofollow` --
+  correct, because `nofollow` on an internal link to a page that is already
+  `noindex, follow` would only stop the crawl that reads the directive.
+
 ### Added - wordscript.dev answers on www, and only the apex serves
 
 - **`www.wordscript.dev` resolves and redirects.** It did not resolve at all

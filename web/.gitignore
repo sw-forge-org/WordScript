@@ -5,6 +5,12 @@ dist/
 # Node
 node_modules/
 
+# Nothing needs one today -- ADR 0265 took the last build-time value out of
+# this project rather than hiding it -- and an .env that appears later should
+# not have to remember to add this line.
+.env
+.env.*
+
 # Wrangler
 .wrangler/
 

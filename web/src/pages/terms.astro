@@ -43,6 +43,7 @@
    at it rather than restating it. */
 import Legal from '../layouts/Legal.astro';
 import { ENTITY } from '../lib/legal';
+import { IMPRINT_URL } from '../lib/routes';
 import { LICENCE_ID, LICENCE_URL, ORG, REPO, SITE } from '../lib/site';
 ---
 <Legal
@@ -121,6 +122,6 @@ import { LICENCE_ID, LICENCE_URL, ORG, REPO, SITE } from '../lib/site';
   <h2>Contact</h2>
   <p>
     {ENTITY.name}, {ENTITY.holder}. The full details are in the{' '}
-    <a href="/imprint/">imprint</a>.
+    <a href={IMPRINT_URL}>imprint</a>.
   </p>
 </Legal>

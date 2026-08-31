@@ -16,7 +16,22 @@
    THE STAMP IS PART OF THE SHELL AND NOT OF THE PAGE. All three carry the same
    review date from ../lib/legal, which is the point: three dates that can
    diverge are three dates that will, and the one that matters is when the set
-   was last checked as a set. */
+   was last checked as a set.
+
+   NONE OF THE THREE IS A SEARCH RESULT, AND THAT IS SET HERE RATHER THAN PER
+   PAGE. A legal document ranks for nothing anybody types and is reached from
+   the footer of every page, so its place in an index is not a way in -- it is
+   a second listing of the site under a heading that answers no question, and
+   an address a scraper can lift without visiting the product at all. `follow`
+   rather than `noindex, nofollow`: the outbound references these pages carry
+   -- the provider, the hosting vendor's own notice -- stay worth following,
+   and a crawler that lands here through a stale link should still take the
+   way home.
+
+   IT DOES NOT MAKE THEM HARDER TO REACH. Section 5 DDG asks for the imprint to
+   be easily recognisable and directly reachable ON THE SITE; ./Foot draws all
+   three from every page, which is what that requirement is about. A search
+   engine's index is not part of it. ADR 0264. */
 import Base from '../layouts/Base.astro';
 import { REVIEWED } from '../lib/legal';
 import { SITE } from '../lib/site';
@@ -34,7 +49,7 @@ interface Props {
 
 const { title, lede } = Astro.props;
 ---
-<Base title={`${title} | ${SITE.name}`} description={lede} ogDescription={lede}>
+<Base title={`${title} | ${SITE.name}`} description={lede} ogDescription={lede} noindex>
   <section class="sec">
     <div class="wrap">
       {/* THE WAY BACK, AND WHY THE MARKUP SAYS `/`. A reader who took a

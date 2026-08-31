@@ -1,0 +1,17 @@
+# /imprint/ WAS A PAGE ON THIS SITE AND IS NOW A DOCUMENT SOMEWHERE ELSE.
+#
+# It was live, it was linked from the footer of every page, and it was in the
+# sitemap for three days. Removing the route without this file turns every one
+# of those into a 404 -- a bookmark, a link in a chat, a crawler holding the
+# URL. Worse, the one thing a reader looking for an imprint would be sent to is
+# a page saying there is none.
+#
+# 301 rather than 302: the move is permanent, and a permanent redirect is what
+# tells a crawler to transfer the URL rather than keep checking this one.
+#
+# BOTH FORMS, because `/imprint` without the slash was a 307 to `/imprint/` and
+# that 307 goes away with the asset. Left alone it would land on the 404 page
+# instead, which is the same defect one hop earlier.
+
+/imprint      https://legal.sw-labs.de/imprint  301
+/imprint/     https://legal.sw-labs.de/imprint  301

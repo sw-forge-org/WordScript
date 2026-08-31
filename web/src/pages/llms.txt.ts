@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { FAQ } from '../lib/faq';
-import { LEGAL_ROUTES } from '../lib/legal';
+import { LEGAL_ROUTES } from '../lib/routes';
 import { LINKS } from '../lib/linkMarks';
 import { FEATURES, LICENCE_ID, ORG, PLATFORMS, SITE } from '../lib/site';
 
@@ -73,8 +73,9 @@ ${FAQ.map((x) => `### ${x.q}\n\n${x.a}`).join('\n\n')}
 ${LINKS.map((l) => `- [${l.label}](${l.href})`).join('\n')}
 ${LEGAL_ROUTES.map((l) => `- [${l.label}](${new URL(l.href, origin).href})`).join('\n')}
 
-The imprint names the provider and the privacy notice states what the site and
-the application process. Both are written against the software as it is rather
+The imprint is served for the whole of SW labs at legal.sw-labs.de and names
+the provider; the privacy notice on this site states what the site and the
+application process, and who the controller is. Both are written against the software as it is rather
 than as a policy: there is no account, no server operated by the publisher, and
 no telemetry in the application.
 `;

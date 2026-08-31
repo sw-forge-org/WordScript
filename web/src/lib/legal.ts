@@ -26,54 +26,38 @@
    magazine or release notes written as articles, that block becomes mandatory
    and this comment is where the next reader finds out. */
 
-/** The single open field on any of the three pages.
- *
- *  Section 5 DDG asks for details that allow fast electronic contact AND
- *  immediate communication. The Court of Justice read the same wording in
- *  Article 5 (1) (c) of Directive 2000/31/EC in C-298/07 of 16 October 2008:
- *  an email address on its own does not satisfy it, and a second means giving
- *  rapid contact and direct, effective communication is required. That second
- *  means need not be a telephone number -- an electronic enquiry mask can
- *  qualify -- but the same judgment requires a further means outside the
- *  electronic network for a user who turns out to have no access to it. A form
- *  is therefore lawful and impractical here: it would be the first form, the
- *  first backend and the first interaction this site has, and it would tie the
- *  site to a response time it then has to keep.
- *
- *  It is `null` rather than a placeholder string on purpose. A string of the
- *  `+49 ...` shape reads as filled in from three metres away and would ship;
- *  a null renders no row at all, and `scripts/launch-check.mjs` refuses to
- *  deploy while it is null.
- *
- *  The assertion is load-bearing rather than decoration: with a plain
- *  annotation TypeScript narrows a `const` initialised to `null` down to
- *  `null` at every use site, so the imprint's `phone && ...` guard becomes a
- *  branch on `never` and the file that renders the row stops compiling. The
- *  value is open, and the type has to stay open with it. */
-export const PHONE = null as string | null;
+/* THIS SITE DOES NOT PUBLISH AN ADDRESS, AND THAT IS WHY THERE IS NONE HERE.
 
-/** The provider under section 5 DDG, and the controller under Article 4 (7)
- *  GDPR. The same body in both roles, which is why it is one object. */
+   The imprint is one document for the whole of SW labs, served at
+   legal.sw-labs.de and linked from the footer of every page here. Section 5
+   DDG's address requirement is met on that document. The privacy notice on
+   this site names the controller and gives an inbox, which is what Article 13
+   (1) (a) GDPR asks for -- identity and contact details, not a postal address
+   -- and links onward for the rest.
+
+   So the three address fields are gone rather than hidden. An earlier revision
+   of this file read them out of `astro:env` to keep them out of a public
+   repository; that machinery is gone with them, and with it the `.env` file,
+   the Cloudflare build secrets and the placeholder check that guarded it. Not
+   storing a value beats storing it carefully. ADR 0265.
+
+   WHAT THIS FILE STILL OWNS. The body's name and holder, which the privacy
+   notice and the terms both state; the supervisory authority, because Article
+   77 GDPR sends a reader to ours and they cannot look it up without knowing
+   where we sit; and the one processor. */
+/** The controller under Article 4 (7) GDPR, named by the privacy notice and by
+ *  the terms. It was also the provider under section 5 DDG until the imprint
+ *  moved off this site; the provider role is still the same body, it is simply
+ *  no longer this site's document to print. */
 export const ENTITY = {
   name: 'SW labs',
   holder: 'Felix Winkel',
-  /* THERE IS NO `form` FIELD, AND ITS ABSENCE IS THE OWNER'S DECISION RATHER
-     THAN AN OVERSIGHT. The imprint carried "Sole proprietorship
-     (Einzelunternehmen)" for one afternoon and it was struck without
-     replacement. Section 5 (1) no. 1 DDG asks for the legal form where the
-     provider is a legal person; a natural person trading under a business
-     name is identified by that name and their own, which the two fields above
-     already are.
-
-     Nothing else moved with it: the register and VAT blocks are still absent
-     for the reason the header of this file gives, and that reasoning stays
-     here because it is why those blocks are missing, not a statement the page
-     makes. */
-  street: 'REDACTED-STREET',
-  postcode: 'REDACTED-POSTCODE',
-  city: 'Aschaffenburg',
-  country: 'Germany',
-  phone: PHONE,
+  /* NO LEGAL FORM, NO REGISTER, NO VAT NUMBER -- and after ADR 0265 that is
+     not this file's argument to make any more. Those rubrics belong to an
+     imprint, and the imprint is served for the whole of SW labs at
+     legal.sw-labs.de. What this object still owes is the controller's identity
+     for the privacy notice and the party's name for the terms, which is the
+     two fields above. */
 } as const;
 
 /* THE SUPERVISORY AUTHORITY IS THE ONE FOR THE PROVIDER'S SEAT, NOT THE ONE
@@ -82,9 +66,9 @@ export const ENTITY = {
    notice names ours because that is the one a reader cannot look up without
    knowing where we sit.
 
-   Aschaffenburg is in Bavaria, and the private sector in Bavaria is supervised
-   by the BayLDA in Ansbach rather than by the Bavarian commissioner who
-   supervises public bodies. The two are routinely confused, and the wrong one
+   The provider's seat is in Bavaria, and the private sector in Bavaria is
+   supervised by the BayLDA in Ansbach rather than by the Bavarian commissioner
+   who supervises public bodies. The two are routinely confused, and the wrong one
    in a privacy notice is a reader sent to an office that will not take the
    complaint. Read from the authority's own site on 2026-08-27. */
 export const AUTHORITY = {
@@ -116,32 +100,3 @@ export const HOST = {
    Written out in full rather than as a numeric date, because 08/09 is two
    different days on two sides of an ocean and this page is read on both. */
 export const REVIEWED = '27 August 2026';
-
-/* THE FOOTER'S LEGAL GROUP, AND WHY IT IS THREE ROUTES AND NOT FOUR.
-
-   It was Imprint, Privacy, Terms and DPA. The fourth is gone, and it is worth
-   saying why in the place that draws the row rather than only in ADR 0258.
-
-   A data processing agreement under Article 28 GDPR is the contract between a
-   controller and somebody processing on their behalf. WordScript gives us
-   nothing to process: it runs on the reader's own machine, it has no account
-   and no server of ours, the key belongs to the reader, and where a cloud lane
-   is chosen the relationship is between the reader and that vendor. There is
-   no processing in our name to put under a contract, so a page at /dpa would
-   have had to either invent the relationship or spend a screen explaining that
-   it does not exist. Both are worse than not drawing the link.
-
-   The day WordScript grows something hosted -- a sync service, an account, a
-   managed model endpoint -- that link comes back, and it comes back with a
-   real agreement behind it rather than as a reassurance.
-
-   THE TRAILING SLASH IS THE CANONICAL FORM AND IS NOT COSMETIC. The build
-   emits `imprint/index.html`, the sitemap lists `/imprint/`, and the canonical
-   tag is built from `Astro.url.pathname`, which is `/imprint/` too. A footer
-   link to `/imprint` is the same document at a URL that redirects, so the row
-   and the crawl surface would disagree by one character in three places. */
-export const LEGAL_ROUTES = [
-  { href: '/imprint/', label: 'Imprint' },
-  { href: '/privacy/', label: 'Privacy' },
-  { href: '/terms/', label: 'Terms' },
-] as const;

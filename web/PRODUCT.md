@@ -328,9 +328,35 @@ anything and is not worth re-investigating.
 head, the JSON-LD graph, `/llms.txt` and the FAQ section are readers of them.
 `robots.txt` is a route rather than a file in `public/` so its `Sitemap:` line
 is not a second copy of `site`, `@astrojs/sitemap` keeps the sitemap correct as
-the legal routes and `/docs` land, and `404.astro` is what the already-set
+`/docs` lands, and `404.astro` is what the already-set
 `not_found_handling: "404-page"` had been pointing at. Every crawler is
 allowed, the AI ones included.
+
+**One page is offered to the index, and it is the index** (ADR 0264). The three
+legal routes carry `noindex, follow` off `src/layouts/Legal.astro` and are
+filtered out of the sitemap by the same `LEGAL_ROUTES` list the footer draws
+from, so the two files cannot disagree. They stay linked from every page, which
+is what section 5 DDG asks for, and they stay in `/llms.txt`, which is a
+retrieval surface and not an index. `robots.txt` is untouched: it still allows
+everything, because a `Disallow` there would stop the crawl that has to happen
+for the `noindex` to be read at all.
+
+The directive is stated twice on purpose -- the meta tag out of the layout and
+`X-Robots-Tag` out of `public/_headers` -- because those pages carry personal
+data of the operator and a `noindex` that lives in one file is one silent edit
+away from gone. `scripts/launch-check.mjs` asserts both per route, and refuses
+to deploy if either is missing or if a path is noindexed that is not a legal
+route. The structured data names no address anywhere: the graph has no
+`PostalAddress` and no `Person`, and `src/lib/legal.ts` is the one constant the
+two pages read.
+
+**The imprint is not served here** (ADR 0265). It is one document for the whole
+of SW labs at `legal.sw-labs.de/imprint`, linked from the footer of every page
+and 301-redirected from the old `/imprint/`. No address field exists in this
+repository any more: `ENTITY` is `name` and `holder`, the privacy notice names
+the controller and gives an inbox per Article 13 (1) (a) GDPR, and the link
+carries the rest. `launch-check` blocks on a missing footer link or a missing
+redirect, because both fail silently.
 
 **No CMS.** Content lives in the repository beside the code that renders it.
 

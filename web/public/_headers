@@ -18,6 +18,49 @@
   # product: no `getUserMedia` anywhere in `src/`, checked rather than assumed.
   Permissions-Policy: microphone=(), camera=(), geolocation=()
 
+# THE LEGAL ROUTES THIS SITE STILL SERVES, AT THE TRANSPORT LAYER AS WELL AS
+# IN THE HEAD. Two of them: the imprint moved to legal.sw-labs.de and is a link
+# from here rather than a page (ADR 0265), so `/imprint/` needs a redirect in
+# ./_redirects and no rule in this file.
+#
+# `src/layouts/Legal.astro` already emits `<meta name="robots" content="noindex,
+# follow">` on all three, and that is the authoritative copy: it is generated
+# from the layout every legal document renders through, so a fourth route
+# inherits it without anybody remembering. ADR 0264 carries why they are off
+# the index at all.
+#
+# THIS IS THE SECOND COPY AND IT IS DELIBERATE. Neither page prints an address
+# any more, so the stake is lower than it was -- but a `noindex` that lives
+# only in the markup is still one accidental layout edit away from gone, and
+# the failure is silent: the page keeps rendering, the build keeps passing, and
+# a legal document is back in a listing weeks later. The header is read from
+# the response rather than from the document, so both would have to be lost
+# together.
+#
+# THEY CANNOT DRIFT APART SILENTLY. `scripts/launch-check.mjs` reads the paths
+# out of this file, reads `LEGAL_ROUTES` out of `src/lib/legal.ts`, and refuses
+# to deploy unless the two sets are equal.
+#
+# ONE RULE PER ROUTE, THE BARE PATH, AND THAT IS A MEASUREMENT RATHER THAN A
+# STYLE CHOICE. Both forms were written first, on the reasoning that a splat
+# might not match an empty remainder and the redundant line cost nothing. It
+# cost something: probed against `wrangler dev` on 2026-08-30, `/imprint/`
+# matched BOTH rules and the response carried `X-Robots-Tag` twice. Combined
+# directives are read as combined, so the duplicate was harmless and it was
+# also noise in a response whose whole job is to be unambiguous. The splat is
+# what got dropped: these routes have nothing under them, and the bare path is
+# the exact URL that is served.
+#
+# `follow`, not `nofollow`: these pages reference the provider and the hosting
+# vendor's own notice, and a crawler arriving on a stale link should still be
+# able to take the way home.
+
+/privacy/
+  X-Robots-Tag: noindex, follow
+
+/terms/
+  X-Robots-Tag: noindex, follow
+
 # Content-addressed by the build. A year is the point of the hash.
 /_astro/*
   Cache-Control: public, max-age=31536000, immutable

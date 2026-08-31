@@ -62,34 +62,22 @@ const rel = (p) => p.slice(DIST.length);
 
 if (html.length === 0) fail('no build', 'dist/ holds no HTML. Run the build first.');
 
-/* ---- 1. the second contact channel -------------------------------------
-   Section 5 DDG wants a way to reach the provider that is as fast as email and
-   is not email, and `src/lib/legal.ts` holds it as `null`. The imprint renders
-   without a telephone row and looks complete, which is the thing that has to be
-   said out loud somewhere.
+/* ---- 1. and 2. moved, and the move is worth a line -----------------------
+   Two checks used to stand here. Both belonged to an imprint this site served,
+   and it does not serve one any more (ADR 0265).
 
-   IT IS REPORTED AND NO LONGER BLOCKS, ON THE OWNER'S DECISION OF 2026-08-27
-   (ADR 0260). The site was ready in every other respect and the number is
-   coming; holding the launch on it was the owner's call to make and he made it.
-   What the check must not do is go quiet -- an open legal item that stops being
-   printed is an open legal item nobody remembers. So it moves down to the
-   report at the end, beside the three gates that have no artefact here, and it
-   is the only one of the four this repository can actually answer for itself.
-   The `fail()` returns the day PHONE stops being null: this check then has
-   nothing to say and the notice deletes itself. */
-const legalSource = readFileSync(join(SRC, 'lib/legal.ts'), 'utf8');
-const phoneOpen = /export const PHONE = null as/.test(legalSource);
+   The second contact channel under section 5 DDG -- the notice that PHONE was
+   null and the imprint therefore gave an email address and nothing else -- is
+   now a question about the document at legal.sw-labs.de, and this repository
+   cannot answer it. It is not silently dropped: it is the SW labs imprint's
+   obligation, and it stops being checkable here rather than stopping being
+   true.
 
-/* ---- 2. the legal routes exist ----------------------------------------- */
-for (const route of legalSource.matchAll(/href: '\/([a-z-]+)\/'/g)) {
-  const page = join(DIST, route[1], 'index.html');
-  const flat = join(DIST, `${route[1]}.html`);
-  try { statSync(page); } catch {
-    try { statSync(flat); } catch {
-      fail('legal route missing', `/${route[1]} is in the footer and has no page in dist/.`);
-    }
-  }
-}
+   "The legal routes exist" is superseded rather than removed. It parsed
+   src/lib/legal.ts for internal hrefs and asserted a built page for each. The
+   pass further down does that against src/lib/routes.ts, and also asserts the
+   noindex meta tag, the X-Robots-Tag rule, and the footer link for the route
+   that is no longer a page. One check, more of the contract. */
 
 /* ---- 3. the strings that must never ship -------------------------------
    Each pattern is a defect with a history, not a style preference. */
@@ -274,6 +262,155 @@ if (beaconServed && !measurementClaimed) {
   );
 }
 
+/* ---- the legal routes are off the index, in both places that say so ------
+   Two surfaces carry the same directive and neither is a copy of a string in
+   the other: `src/layouts/Legal.astro` emits the meta tag through the shell
+   all three documents render through, and `public/_headers` sets the response
+   header. ADR 0264 carries why, and why the redundancy is wanted: these pages
+   carry personal data of the operator because sections 5 DDG and Article 13
+   GDPR require the body to be named, and a directive that lives in one file
+   only is one silent edit away from gone.
+
+   Silent is the operative word. Losing it breaks nothing a build or a test
+   would notice -- the page renders, the suite passes, and the finding arrives
+   weeks later as a search result. So it is asserted here, against `dist/` for
+   the markup and against the shipped `_headers` for the transport, with
+   `LEGAL_ROUTES` as the one list both are measured against. */
+const routesSource = readFileSync(join(SRC, 'lib/routes.ts'), 'utf8');
+
+/* An `href` is either a string literal or a `const` declared above the list --
+   the imprint is the second kind, because two pages name it in prose as well.
+   Both forms are read, and identifiers are resolved against the module's own
+   `export const NAME = '...'` declarations.
+
+   THE COUNT IS CHECKED AGAINST THE LIST, AND THAT LINE IS THERE BECAUSE THIS
+   PARSER ALREADY FAILED ONCE. An earlier version matched string literals only.
+   The day the imprint's href became an identifier it silently matched one
+   route fewer, `externalRoutes` came out empty, and the two checks that guard
+   the imprint link passed by having nothing to look at. Both mutations aimed
+   at them went green. A parser that reports less than it should is worse than
+   one that throws, so the number of entries it resolved has to equal the
+   number of entries in the list. */
+const consts = Object.fromEntries(
+  [...routesSource.matchAll(/export const (\w+) = '([^']+)'/g)].map((m) => [m[1], m[2]]),
+);
+const hrefs = [...routesSource.matchAll(/\{ href: (?:'([^']+)'|(\w+)), label:/g)];
+const legalRoutes = hrefs.map((m) => m[1] ?? consts[m[2]]).filter(Boolean);
+const declaredRoutes = (routesSource.match(/label: '/g) || []).length;
+
+if (legalRoutes.length !== declaredRoutes || !declaredRoutes) {
+  fail(
+    'legal: LEGAL_ROUTES could not be read in full',
+    `src/lib/routes.ts declares ${declaredRoutes} entries and this script resolved `
+    + `${legalRoutes.length}. Every check below is scoped to what it resolved, `
+    + 'so a short read silently narrows them instead of failing. Fix the '
+    + 'parser or the list shape before trusting anything that follows.',
+  );
+}
+
+const shippedHeaders = readFileSync(join(DIST, '_headers'), 'utf8');
+
+/* An entry whose href starts with `/` is a page this site builds; anything
+   else is absolute and points at another host. ../src/lib/routes carries why
+   the shape is the marker. The external ones are checked further down, by a
+   different rule, because a link and a page fail in different ways. */
+const internalRoutes = legalRoutes.filter((r) => r.startsWith('/'));
+const externalRoutes = legalRoutes.filter((r) => !r.startsWith('/'));
+
+for (const route of internalRoutes) {
+  const file = join(DIST, route.replace(/^\/|\/$/g, ''), 'index.html');
+  let markup = '';
+  try {
+    markup = readFileSync(file, 'utf8');
+  } catch {
+    fail(
+      `legal: ${route} is in LEGAL_ROUTES and was not built`,
+      `The footer draws this route and ${rel(file)} does not exist. A link to `
+      + 'a legal document that 404s is the launch blocker, whatever the robots '
+      + 'directive says.',
+    );
+    continue;
+  }
+  if (!/<meta name="robots" content="noindex, follow">/.test(markup)) {
+    fail(
+      `legal: ${route} carries no noindex meta tag`,
+      'src/layouts/Legal.astro passes `noindex` to Base.astro for every legal '
+      + 'document. This page rendered without it, so either it stopped using '
+      + 'that layout or the prop stopped being passed. ADR 0264.',
+    );
+  }
+  /* The bare path, which is the exact URL that is served: `/imprint` without
+     the slash is a 307 to it, and these routes have nothing underneath them.
+     public/_headers carries the measurement that settled the splat. */
+  const rule = new RegExp(`^${route}\\n  X-Robots-Tag: noindex, follow$`, 'm');
+  if (!rule.test(shippedHeaders)) {
+    fail(
+      `legal: ${route} has no X-Robots-Tag rule in _headers`,
+      'public/_headers must carry the bare path of every route in '
+      + 'LEGAL_ROUTES with `X-Robots-Tag: noindex, follow`. A '
+      + 'route added to the footer without one ships an indexable legal page, '
+      + 'and these pages carry personal data of the operator. ADR 0264.',
+    );
+  }
+}
+
+/* The other direction, and the one a reader of the diff would not think of:
+   a path noindexed in `_headers` that is no longer a legal route. Harmless on
+   the day it happens and wrong the day that path becomes something else. */
+for (const [, path] of shippedHeaders.matchAll(/^(\/[^\s*]*)\*?\n  X-Robots-Tag:/gm)) {
+  if (!internalRoutes.includes(path)) {
+    fail(
+      `_headers: ${path} is noindexed and is not a legal route`,
+      'Every X-Robots-Tag rule in public/_headers has to correspond to an '
+      + 'entry in LEGAL_ROUTES. This one does not, so either the route was '
+      + 'removed and the rule was left behind, or a page is being hidden from '
+      + 'search without a record saying why.',
+    );
+  }
+}
+
+/* ---- the imprint is a link now, so the link is the obligation -------------
+   Section 5 DDG asks for an imprint that is easily recognisable, directly
+   accessible and permanently available. This site stopped serving one when the
+   document moved to legal.sw-labs.de (ADR 0265), so what carries that duty
+   here is a link in the footer -- and the footer is on every page.
+
+   Which makes a missing link the single worst silent failure this site has.
+   It breaks nothing: the page renders, the build passes, the tests pass, and
+   the site is out of compliance on every route at once. So it is asserted on
+   the built output, per page, and it blocks the deploy. */
+for (const url of externalRoutes) {
+  const missing = html.filter((f) => !readFileSync(f, 'utf8').includes(url));
+  if (missing.length) {
+    fail(
+      `legal: ${missing.length} built page(s) do not link ${url}`,
+      `${missing.map(rel).join(', ')}. The imprint is not served by this site; `
+      + 'the footer link is what makes it reachable, and section 5 DDG asks '
+      + 'for reachable from the telemedium rather than from one page of it. '
+      + 'Check that Foot.astro still maps LEGAL_ROUTES and that every route '
+      + 'renders the footer.',
+    );
+  }
+}
+
+/* The redirect that keeps the old URL working. `/imprint/` was live, linked
+   and in the sitemap; without this file every bookmark and every crawler
+   holding it lands on a 404 page that says nothing about where the document
+   went. */
+const shippedRedirects = (() => {
+  try { return readFileSync(join(DIST, '_redirects'), 'utf8'); } catch { return ''; }
+})();
+for (const url of externalRoutes) {
+  if (!new RegExp(`^/imprint/?\\s+${url.replace(/[.*+?^$()|[\\]\\\\]/g, '\\\\$&')}\\s+301$`, 'm').test(shippedRedirects)) {
+    fail(
+      'legal: /imprint/ has no 301 to the document it moved to',
+      `public/_redirects must send both /imprint and /imprint/ to ${url} with `
+      + '301. The route was public for three days and is in caches, bookmarks '
+      + 'and at least one sitemap Google has already fetched.',
+    );
+  }
+}
+
 /* ---- the report -------------------------------------------------------- */
 if (failures.length) {
   console.error(`\nlaunch-check: ${failures.length} blocker(s)\n`);
@@ -284,21 +421,6 @@ if (failures.length) {
 
 console.log('launch-check: no blockers in dist/.');
 
-if (phoneOpen) {
-  console.log(`
-  ACCEPTED AND OPEN: the imprint has no second contact channel.
-
-  PHONE in src/lib/legal.ts is null, so the imprint gives an email address and
-  nothing else. Section 5 DDG asks for a further means of contact permitting
-  rapid and direct communication. The Court of Justice read the same wording in
-  C-298/07 of 16 October 2008: the address alone does not satisfy it, and the
-  second channel need not be a telephone number.
-
-  Shipping without one is the owner's decision of 2026-08-27, taken knowingly
-  and meant to be short-lived (ADR 0260). Set PHONE and this notice goes away
-  on its own.
-`);
-}
 
 console.log(`
   Three gates have no artefact here and are not covered by the above:

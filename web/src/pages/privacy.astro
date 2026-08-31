@@ -32,6 +32,7 @@
    same class of defect as an imprint that cites the TMG. */
 import Legal from '../layouts/Legal.astro';
 import { AUTHORITY, ENTITY, HOST } from '../lib/legal';
+import { IMPRINT_URL } from '../lib/routes';
 import { LINKS } from '../lib/linkMarks';
 import { LICENCE_URL, SITE } from '../lib/site';
 import { BEACON } from '../lib/analytics';
@@ -46,14 +47,22 @@ const OUTBOUND = LINKS.map((l) => l.label).join(', ');
 >
   <h2>Controller</h2>
   <p>The controller for the processing described here is:</p>
+  {/* THE CONTROLLER IS IDENTIFIED AND CONTACTABLE, WHICH IS WHAT THE ARTICLE
+      ASKS FOR. Article 13 (1) (a) GDPR requires the identity and the contact
+      details of the controller; it does not name a postal address. The body is
+      named, an inbox is given, and the full provider details -- the postal
+      address among them -- are one link away in the imprint, which is served
+      for all of SW labs at one address rather than restated per product.
+      ADR 0265. */}
   <address>
     {ENTITY.name}<br />
     {ENTITY.holder}<br />
-    {ENTITY.street}<br />
-    {ENTITY.postcode} {ENTITY.city}<br />
-    {ENTITY.country}<br />
     Email: <a href={`mailto:${SITE.email}`}>{SITE.email}</a>
   </address>
+  <p>
+    The full provider details, including the postal address, are in the{' '}
+    <a href={IMPRINT_URL}>imprint</a>.
+  </p>
 
   <h2>What this notice covers</h2>
   <p>
