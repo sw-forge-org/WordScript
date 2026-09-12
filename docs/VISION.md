@@ -133,6 +133,17 @@ Concretely, and all of it planning direction rather than built:
   with its own MCP client. WordScript reads what makes a context object exist
   and builds the door into that directory; it does not maintain a second
   integration surface.
+- **The desk is configured on three axes, and only one of them is the voice**
+  (ADR 0268). The voice loop is one per desk; the brain and the place belong to
+  each target. **The brain is the vendor's own CLI**, started as a subprocess and
+  paid by the plan the user already holds (ADR 0269) — which is the same sentence
+  as the bullet above, now with a reason: a harness the user installed and
+  authenticated themselves is cheaper at the margin than a hosted agent session
+  and hands this product no credential it would have to be trusted with. **And
+  the place is a real question rather than an assumption** (ADR 0271): work
+  happens on several machines at once, so a target names a host — this one, or an
+  alias out of the user's own SSH configuration — and WordScript stores none of
+  the keys that reach it.
 
 **What this does not change.** V1 is unchanged and this direction does not pull
 any of it forward: transcription reliability outside `General Writing` is still

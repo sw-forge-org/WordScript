@@ -433,6 +433,17 @@ a profile contains and what stays global.
 
 **Status:** planned. Decided in ADR 0030; nothing is implemented.
 
+**Revised 2026-09-11 by ADR 0268-0271, and the revision is structural.** This
+scope was written as one design because, when it was written, it was one: a voice
+loop WordScript builds, one harness WordScript starts, both on the machine the
+user is sitting at. Two vendor releases on 2026-09-10 -- GPT-Live 1 and the
+Agents API, surveyed in [PROVIDERS.md](PROVIDERS.md) -- separated the first two,
+and the reported working day falsified the third. **The desk is now configured on
+three independent axes**: the voice loop (one per desk), the brain (per target)
+and the place (per target). ADR 0030's rules survive the split untouched -- one
+orchestrator, one voice, WordScript owning the thread -- and the bullets below
+carry the axis they belong to.
+
 **Goal:** Work with coding agents by voice instead of by reading terminals. One
 configured orchestrator asks the user out loud when it genuinely needs a
 decision, and the user starts work by speaking without opening a repository.
@@ -467,6 +478,20 @@ decision, and the user starts work by speaking without opening a repository.
   with its own command template and permission profile. Configuration hangs on
   the target, never on the utterance. Runs are headless; a discussion is a
   sequence of runs with resume, not an open connection.
+- **A target also names its brain and its place** (ADR 0268). **Brain**
+  (ADR 0269): the default is a locally installed, officially distributed harness
+  CLI -- Claude Code, Codex CLI -- started as a subprocess and paid by the plan
+  the user already holds, with WordScript touching no token, no credential store
+  and no vendor endpoint of theirs; the Agents API is a second row, billed per
+  token, for the case where nothing is installed anywhere. ADR 0102's
+  subscription proxy is explicitly **not** this path and cannot be: it serves no
+  agent endpoint. **Place** (ADR 0271): `this machine`, or a host alias out of
+  the user's own OpenSSH configuration, invoked through their `ssh` with their
+  agent and their keys -- the product stores none of it. Losing the link during a
+  run is its own outcome, never a silent retry, because the far process may still
+  be running; a writing role on a remote place therefore requires a harness with
+  resume. Attaching to a terminal an editor already owns is out of scope, with
+  the reason recorded.
 - A target is a thread; WordScript owns the thread and supplies it compacted on
   each run, using harness resume where it exists without depending on it.
 - Immediate local acknowledgement on start (cue plus thread entry); the start
@@ -491,9 +516,23 @@ decision, and the user starts work by speaking without opening a repository.
   voice is now one of two rows** (ADR 0119) — this bullet is about the desk;
   the conversation's voice has different languages and a different tempo and
   answers on its own row.
-- Cascaded barge-in implemented natively in Rust -- Silero VAD plus Smart Turn
+- **The voice loop is one seam with three implementations behind it**
+  (ADR 0270), and the local one is what ships. **Tier 1**, the default:
+  cascaded barge-in implemented natively in Rust -- Silero VAD plus Smart Turn
   v3, cancelling playback and generation on detected speech, recording with
-  pre-roll. The answer window after a question is the default and needs no mode;
+  pre-roll. **Tier 2**: a streaming recogniser and a separate voice row, with the
+  barge-in still ours. **Tier 3**: one full-duplex vendor session -- `gpt-live-1`
+  on `v1/live/sessions`, $0.05 per minute billed per second, in **client
+  delegation only**, so the vendor is paid for hearing and speaking and the
+  thinking stays on the brain the target names. Responses delegation is refused:
+  it would put the reasoning inside the voice vendor and bill tokens for work a
+  plan already pays for. Two properties of tier 3 are stated before it is chosen
+  and while it runs -- it streams the microphone continuously for as long as the
+  session is open, the first capability in this product that does, and its meter
+  is open-session time rather than usefulness, so it carries a budget and an idle
+  close from the first version. There is no free tier, which is why tier 1 is the
+  default rather than the fallback. Cascaded barge-in is unchanged for tiers 1
+  and 2. The answer window after a question is the default and needs no mode;
   continuous listening stays an option and requires a visible microphone-active
   indicator.
 - **The surface is the shipped overlay plus a tab, and a window the tab opens.**
@@ -536,7 +575,11 @@ through MCP unprompted -- the 2026-07-28 revision abolished server-initiated
 requests, so delivery happens at boundaries. Harness-specific channels beside MCP
 can do more but are not portable and are not part of this design. A headless run
 that ends after eight minutes with an open decision has spent eight minutes; that
-is the price of having no back channel. And aider neither supports MCP nor calls
+is the price of having no back channel. **Tier 3 makes those eight minutes
+audible without removing the limit** (ADR 0270): a live session can say that the
+run is still going, through `session.thinking.append`, while it is still going.
+Nothing reaches into the run; the user simply stops having to guess. Eight
+minutes of open session is $0.40. And aider neither supports MCP nor calls
 tools autonomously, so "works with every agent CLI" is false as written and must
 not be claimed.
 
@@ -670,7 +713,7 @@ finding was that most of it was never homeless.
 | --- | --- | --- |
 | **Streaming recognition** | **Phase 4** (cloud lanes that stream) and **Phase 5** (local) — ADR 0095 | live subtitles' echo, the translation window's `Conversation` tab |
 | **Utterance segmentation** | the same, and it is a *separate* requirement — ADR 0095 | the translation window's turns |
-| Text-to-speech | **Phase 8**, already scoped; the candidates are surveyed in [PROVIDERS.md](PROVIDERS.md) | the translation window's spoken output |
+| Text-to-speech | **Phase 8**, already scoped; the candidates are surveyed in [PROVIDERS.md](PROVIDERS.md). **From 2026-09-11 the preset list has a row that is not a voice vendor at all** -- a full-duplex session renders the speech as part of hearing and answering, and is priced per minute of session rather than per character (ADR 0270) | the translation window's spoken output |
 | Not speaking over the open microphone | **Phase 8**, already scoped and better than the alternative: cascaded barge-in in Rust (Silero VAD plus Smart Turn v3), cancelling playback on detected speech with pre-roll. A hard mute is the first implementation behind the same seam — ADR 0098 | the translation window, which asks for a plain mute of the recogniser |
 | Per-language output-device routing | **Phase 4**, with the voice — ADR 0097 | the translation window |
 | A second window class | **Phase 4**, stage E2 — ADR 0100 | all four drawn windows |

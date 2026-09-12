@@ -13,6 +13,13 @@ build-out look more expensive than it is. The corrections stand where the claims
 did, with the reasoning, rather than being edited away -- and each grew a
 disagreement (10 and 11) because the drawing repeats them.
 
+**Third pass, 2026-09-11, OpenAI only.** Two vendor releases on 2026-09-10 --
+GPT-Live 1 and the Agents API -- and one deprecation notice of 2026-08-26 moved
+three things on this vendor's rows. They are recorded in *OpenAI*, in the new
+*OpenAI, full duplex*, and in *OpenAI, by subscription*, each dated at the point
+of the claim. **No other vendor was re-read on that date**, so every row outside
+those three sections still carries 2026-08-11 and should be read as that old.
+
 **If you read one section, read *Adapter shapes*.** It is the one that answers
 *can this vendor be implemented*, and the answer is per protocol shape rather
 than per vendor or per model.
@@ -183,10 +190,11 @@ serves all three roles alone.
 
 | Job | Model | Notes |
 | --- | --- | --- |
-| speech, batch + stream | `gpt-transcribe`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe` | `stream=true` emits `transcript.text.delta`, then `transcript.text.done` |
+| speech, batch + stream | `gpt-transcribe` | `stream=true` emits `transcript.text.delta`, then `transcript.text.done`. $0.0045/min; also serves `v1/realtime/transcription_sessions` |
+| speech, batch + stream | `gpt-4o-transcribe`, `gpt-4o-mini-transcribe` | same shape. **Deprecated 2026-08-26, shut down 2027-02-26** |
 | speech, batch + stream | `gpt-4o-transcribe-diarize` | adds speaker attribution |
 | speech, realtime | `gpt-live-transcribe` | Realtime endpoint, interim results on a live stream |
-| speech, batch only | `whisper-1` | explicitly does not stream |
+| speech, batch only | `whisper-1` | explicitly does not stream. **Deprecated 2026-08-26, shut down 2027-02-26** |
 | voice | `gpt-4o-mini-tts` | newest, steerable delivery |
 | voice | `tts-1`, `tts-1-hd` | lower latency / higher quality |
 
@@ -208,6 +216,18 @@ serves all three roles alone.
   the container, and a ceiling the file does not carry cannot be checked when
   the vendor moves it. Read the source page and fill both in rather than
   assuming this lane mirrors Groq's list.
+- **Two of these rows have a shutdown date, and one of them is a default here.**
+  Source: `developers.openai.com/api/docs/changelog`, read 2026-09-11. The entry
+  of 2026-08-26 deprecates `whisper-1`, `gpt-4o-transcribe` and the models
+  around them, shutting them down on **2027-02-26**, and names `gpt-transcribe`
+  and `gpt-live-transcribe` as the migration targets. **The entry says *and
+  related models* without enumerating them**, so `gpt-4o-transcribe-diarize` is
+  unmarked above rather than cleared: read the deprecations page itself before
+  relying on that row. `shared/model_catalogue.json`
+  still defaults the Cloud `upload` job to `openai-speech-whisper-1` and offers
+  `openai-speech-gpt-4o-transcribe` beside it, so this is a dated obligation on
+  the catalogue rather than a note. The same entry records the Assistants API as
+  shut down on 2026-08-26; this product never used it.
 - Voice: `POST /v1/audio/speech`, 13 built-in voices (`alloy`, `ash`, `ballad`,
   `coral`, `echo`, `fable`, `nova`, `onyx`, `sage`, `shimmer`, `verse`, `marin`,
   `cedar`); `marin` and `cedar` are the vendor's quality recommendation.
@@ -215,6 +235,69 @@ serves all three roles alone.
   WAV, PCM -- **`wav` or `pcm` for the fastest response**. Chunked transfer
   encoding means audio can play before the file finishes. Language coverage
   follows Whisper's 99+, but **the voices are optimized for English**.
+
+### OpenAI, full duplex
+
+Source: `developers.openai.com/api/docs/models/gpt-live-1`,
+`/api/docs/guides/live`, `/api/docs/guides/live-delegation` and
+`/api/docs/guides/live-conversations`, all read 2026-09-11. Generally available
+2026-09-10.
+
+**This is not a fourth model row on the section above. It is a different shape
+of thing**, which is why it has its own heading: a session that hears, takes
+turns, handles interruption and speaks, rather than a model that answers a
+request.
+
+| What | Detail |
+| --- | --- |
+| Model | `gpt-live-1`, knowledge cutoff 2025-07-31 |
+| Endpoint | `v1/live/sessions`, and **only** that one -- not Chat Completions, not Realtime, not Batch |
+| Transports | WebRTC, WebSockets, SIP |
+| Price | $0.05 per minute, billed per second; backend model usage billed separately |
+| Rate limit | concurrent sessions: 25 on Tier 1, 500 on Tier 5. **No free tier** |
+
+- **Two delegation modes, and the difference is who owns the thinking.**
+  `delegation.type: "responses"` configures a backend model in the session
+  (`delegation.responses.model`, `.instructions`, `.tools`, `.tool_choice`,
+  `.service_tier`) and the vendor runs both the reasoning and the tools.
+  `delegation.type: "client"` configures **no backend model at all**: the session
+  emits `session.delegation.created`, and the application answers on the same
+  connection with `session.commentary.append`, `session.thinking.append` or
+  `session.instructions.append`. Tools, in that mode, run entirely on the
+  application's side.
+- **Both sides of the conversation arrive as text.**
+  `session.input_transcript.delta` carries the user's speech and
+  `session.output_transcript.delta` the assistant's, each fragment with its
+  interval on the session timeline. `session.started` opens, `session.close` and
+  `session.closed` end it, and `session.usage.updated` reports cumulative voice
+  seconds as snapshots rather than increments.
+- **What that means for the price of a conversation.** In client delegation the
+  $0.05 per minute is the whole bill this vendor sends, because the backend is
+  not theirs. In Responses delegation it is the floor. ADR 0270 takes the first
+  and refuses the second, and ADR 0269 says what sits behind it instead.
+- **What it is not: a dictation path.** The transcript events would serve one.
+  The per-minute price against a batch upload is the reason they do not.
+
+### The Agents API
+
+Source: `openai.com/index/introducing-the-agents-api/` and
+`developers.openai.com/api/docs/changelog`, read 2026-09-11. Public beta
+2026-09-10.
+
+The Codex harness behind an API: four primitives -- an **agent** (model,
+instructions, tools, MCP servers), an **environment** (an optional sandbox for
+file access and command execution), a **session** that persists state across
+turns, and **events/items**. The vendor keeps the session alive, compacts the
+context when it fills, and recovers after failures. Compute runs in an
+OpenAI-managed sandbox, on the caller's own infrastructure, or at a partner. No
+additional fee beyond usage.
+
+**Recorded here because it is the hosted answer to a question this product
+answers locally.** It is a candidate for the desk's brain and it is not the
+default one (ADR 0269): a harness the user has already installed and already
+pays for is cheaper at the margin and presents no credential this product had to
+be trusted with. What the hosted row buys is the case where nothing is installed
+anywhere, which is the reason it is kept rather than refused.
 
 ### OpenAI, by subscription
 
@@ -261,8 +344,22 @@ here because the absence is a finding, not a gap somebody should fill.
 | **Google Gemini** | **forbidden** | accounts suspended February 2026 for routing Gemini CLI / Antigravity OAuth into third-party products, paying Ultra subscribers included |
 | Groq, Mistral, xAI, Deepgram | not applicable | no consumer subscription exists, so a bearer token is the only shape rather than the chosen one |
 
+**Re-read 2026-09-11, and nothing moved.** The proxy exposes the same five
+endpoints it exposed on 2026-08-11 -- `/v1/responses`, `/v1/chat/completions`,
+`/v1/models`, `/v1/images/generations`, `/v1/images/edits`. **It reaches neither
+of the two capabilities that arrived on 2026-09-10**: there is no `/v1/live` and
+nothing resembling the Agents API, just as there is still no
+`/v1/audio/transcriptions`. The two releases widen what an API key buys and
+leave this credential exactly where ADR 0102 found it. OpenAI has also still not
+restricted Codex OAuth in third-party clients the way Anthropic did on
+2026-04-04 and Google in February 2026 -- it has not extended it either, and
+*"Sign in with ChatGPT"* remains a preview with an interest form rather than a
+written grant.
+
 ADR 0102 carries the decision and the reasoning; this table is the capability
-half of it.
+half of it. **ADR 0269 adds the consequence for the desk**: the way to spend a
+subscription on agent work is not to proxy it but to start the vendor's own
+client, which is the interactive use the plan is licensed for.
 
 ### Anthropic
 

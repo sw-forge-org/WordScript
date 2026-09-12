@@ -53,6 +53,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed - the desk is three axes, and two vendor releases moved two of them
+
+- **Phase 8 was one design carrying three independent facts.** The voice loop,
+  the brain and the place are now separate axes: one voice loop per desk, a brain
+  and a place per target (ADR 0268). ADR 0030's rules survive untouched -- one
+  orchestrator, one voice, WordScript owning the thread.
+- **The brain is the vendor's own CLI, started as a subprocess** and paid by the
+  plan the user already holds -- Claude Code, Codex CLI -- with WordScript
+  touching no token, no credential store and no vendor endpoint of theirs. The
+  Agents API (public beta 2026-09-10) is a second row for the case where nothing
+  is installed anywhere, billed per token. ADR 0102's subscription proxy is not
+  this path and cannot be: re-read 2026-09-11, it still serves no agent endpoint
+  and no audio endpoint (ADR 0269).
+- **A full-duplex vendor session is the third implementation behind the mute
+  seam**, and the local cascade stays the default. `gpt-live-1` on
+  `v1/live/sessions` (generally available 2026-09-10), in client delegation only,
+  so the vendor is paid $0.05 a minute for hearing and speaking while the
+  thinking stays on the target's brain. It streams the microphone continuously
+  for as long as the session is open -- the first capability in this product that
+  does -- and the surface says so before it opens. It is not a dictation path
+  (ADR 0270).
+- **A target names where it runs** (ADR 0271). `this machine`, or a host alias
+  out of the user's own OpenSSH configuration, invoked through their `ssh` with
+  their agent and their keys; the product stores none of it. Losing the link
+  mid-run is its own outcome and is never retried silently, because the far
+  process may still be running.
+- **Two OpenAI speech rows now have a shutdown date.** `whisper-1` and
+  `gpt-4o-transcribe` were deprecated 2026-08-26 and shut down 2027-02-26, with
+  `gpt-transcribe` and `gpt-live-transcribe` as the migration targets. The
+  catalogue still defaults the Cloud `upload` job to the first of them; the move
+  is filed as speech-track step B28 rather than made here, because the catalogue
+  is compiled into the binary and the change wants `cargo test` behind it.
+- **Documentation only.** No file under `src/`, `src-tauri/` or `shared/` was
+  touched and no test moved.
+
+
 ### Changed - the imprint is one document for SW labs, and this site links to it
 
 - **`/imprint/` is gone from this site.** The document is served for the whole

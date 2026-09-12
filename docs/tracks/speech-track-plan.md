@@ -1985,6 +1985,42 @@ own screen or behind a *This machine* tab relocates the scope mismatch instead o
 removing it — and cuts the one relationship the screen exists to show. The third,
 correcting the note's wording, answers none of the report.
 
+### B28. The catalogue's two shutdown dates, and the role a full-duplex session has no value for — **added 2026-09-11**
+
+- **Requires** — B3 (the catalogue and its schema).
+- **Touches** — `shared/model_catalogue.json`, `shared/model_catalogue.schema.json`,
+  `core::providers::ProviderRole`, `core::model_catalogue`,
+  `src/lib/modelCatalogue.ts`, and whatever reads `runtime_defaults.speech` and
+  the Cloud `upload` lane.
+- **Why it exists.** Two facts arrived on the vendor's schedule and one of them
+  has a date. `whisper-1` and `gpt-4o-transcribe` were deprecated on 2026-08-26
+  and shut down on **2027-02-26**
+  (`developers.openai.com/api/docs/changelog`, read 2026-09-11), with
+  `gpt-transcribe` and `gpt-live-transcribe` named as the migration targets. The
+  catalogue still defaults the Cloud `upload` job to `openai-speech-whisper-1`
+  and offers `openai-speech-gpt-4o-transcribe` beside it. `gpt-transcribe` is
+  already a row, so the move is a default and an offered list, not a new
+  integration.
+- **And a second half that is not a rename.** ADR 0270 wants a row for
+  `gpt-live-1`, and the schema's `role` takes `speech`, `chat` or `voice` — the
+  vocabulary of `ProviderRole` (ADR 0105), deliberately not a second one. **A
+  full-duplex session is all three and none of them.** The row needs a fourth
+  role in Rust first, and the schema `version` bumps with it, for the reason
+  version 3 bumped: a reader that ignores the new value does not merely lose a
+  column, it mis-answers a question about what a row can serve.
+- **Validates** — `cargo test`, `npm test`, `npm run build`. A case that the
+  deprecated rows are still *readable* (a stored profile may name one until the
+  shutdown date) while no default and no offered list reaches them, and a case
+  that the fourth role cannot be resolved for a job no adapter serves
+  (`ModelSupport::Unknown`, ADR 0106).
+- **Done when** — no default in the file points at a model with a shutdown date,
+  each deprecated row says the date in its `note`, and `gpt-live-1` is a
+  catalogued row whose role is its own.
+- **Deliberately not done on 2026-09-11.** The records landed as documentation
+  and the catalogue was left untouched: it is compiled into the binary through
+  `include_str!`, a dev host was running, and the two halves above want `cargo
+  test` behind them rather than a note.
+
 ## Stage C — capture
 
 **Independent of A, B and D.** It can run concurrently with the whole provider
@@ -2596,6 +2632,16 @@ and a socket resolving after the deadline is closed, not leaked.
   for chat at the same time, and choosing the subscription makes the speech jobs
   say what they now need.
 
+**Re-read 2026-09-11, and the step is unchanged and demoted.** The proxy still
+exposes the same five endpoints, so neither of the 2026-09-10 releases is
+reachable through it — no `/v1/live`, nothing resembling the Agents API, and
+still no `/v1/audio/transcriptions`. What changed is what this credential is
+*for*: ADR 0269 settles that the desk's brain is the vendor's own CLI, started as
+a subprocess and paid by the plan the user already holds, so this step no longer
+has a second customer waiting on it. It pays for the five chat jobs, which is
+what ADR 0102 said, and nothing downstream should be sequenced as though it also
+unlocked agent work.
+
 ### D4. The upload is FLAC, so the ceiling belongs to the format rather than to the recording (ADR 0246's open consequence)
 
 - **Requires** — nothing, and **explicitly not the runtime-ownership gate**.
@@ -2785,6 +2831,15 @@ pages, which is the failure `docs/PROVIDERS.md` exists one layer up to prevent.
 5000, defaulting to 3000, and shipped unchanged it puts three seconds in front
 of every spoken reply.
 
+**Added 2026-09-11: a candidate this gate cannot rank, and that is the finding.**
+A full-duplex session (ADR 0270, F6) does not have a time to first byte in the
+sense the other fourteen do — it is not handed a finished sentence to render, it
+is already in the conversation, and its meter is a minute of open session rather
+than a character of text. It therefore does not join this measurement's table;
+it is measured on its own terms in F6, and the two results are not averaged into
+one ranking. Recording that here so a later session does not try to put it in a
+column it does not fit.
+
 ### F5. The four modules OpenRouter does not cover (ADR 0118)
 
 - **Requires** — F4 (which orders them), B2 and B3, and the two rows drawn.
@@ -2820,6 +2875,31 @@ not suspended.** ADR 0116's test still applies: a module needs a reason
 OpenRouter cannot already answer.
 
 ---
+
+### F6. The full-duplex tier (ADR 0270) — **added 2026-09-11**
+
+- **Requires** — F4's measurement to have been taken, because this row is not
+  comparable to the others on the unit F4 measures; and C2, the runtime mute,
+  which every tier below this one still needs.
+- **Touches** — a third implementation behind the same seam: a session against
+  `v1/live/sessions` over WebSocket, `delegation.type: "client"`, the
+  `session.delegation.created` / `session.commentary.append` /
+  `session.thinking.append` exchange, `session.input_transcript.delta` and
+  `session.output_transcript.delta` into the thread, and
+  `session.usage.updated` into a budget. Plus the two sentences the surface owes
+  before the session opens and while it runs.
+- **What it does not touch** — dictation. The transcript events would serve one;
+  the per-minute price is why they do not. ADR 0018 and ADR 0019 are unaffected.
+- **Validates** — `cargo test` for the session state machine against recorded
+  event sequences, including a close that arrives while a delegation is
+  outstanding; `npm run build`; and a real session measured for what it costs per
+  minute of open time rather than per minute of speech, because those are
+  different numbers and only one of them is billed.
+- **Done when** — a conversation runs with the hearing and the speaking on the
+  vendor and the thinking on the target's brain, the budget closes an idle
+  session by itself, and the surface said both sentences before any of it
+  started.
+- **Blocked on B28** for the catalogue row, and on nothing else.
 
 ## Stage G — the conversation
 
@@ -3069,11 +3149,13 @@ Speaking row, so it is flagged rather than assumed.
 | B25 | **done** 2026-08-18 — ADR 0223, added and closed the same day from the owner reading the shipped screen. **ADR 0208 made an account an object and the surface kept it in four pieces**: its vendor in a chip row at the top that `onChange={undefined}` had made inert, its name in a list, its key and plan in `Row`s BESIDE that list — so the key read as one key for the machine — and who bills to it in another `SectionHeader`. Every account is one card now, carrying its own key, plan, URL and token, with a radio header that writes `providers.default`; the lane segment and the chip row are gone and the chips moved to `AddAccountPanel`, which is the one place a vendor is chosen. **It reverses half of ADR 0220 and half of ADR 0222 and says so in both directions.** `CloudCredentialRows` and `SelfHostedRows` moved rather than being rewritten, because ADR 0209 had already given both the account they configure. **`port:diff` moved on purpose** — `models` `65 \| 281 \| 33` → `178 \| 276 \| 33`, the second deliberate divergence after ADR 0216's. 33 cases moved and 3 retired by name; frontend 876 → 875, Rust untouched at 962. **The copy sweep over *What runs what* is owed** and is the half of the report this step did not finish |
 | F4 | **not started** — added 2026-08-11 (ADR 0118); a measurement gate, no product code |
 | F5 | **not started** — added 2026-08-11 (ADR 0118); the four modules OpenRouter does not cover |
+| F6 | **not started** — added 2026-09-11 (ADR 0270); the full-duplex tier, in client delegation, blocked on B28 for its catalogue row |
 | C3 | **done** 2026-08-12 — the soak night ran 8.00 h and the number is **zero**: 96 segments, every one `Intact`, against a rate that predicted about eight events. The gate asked for a measurement, not a cause, so it is satisfied and Stage G is unblocked. Route B — the real app, silent — is the next measurement |
 | B1 | **done** 2026-08-12 — `registered_providers()` answers for the whole table in one call, `src/lib/providerSeam.ts` is the third thing ADR 0106 named, five states rather than three, the two tests that record required both exist and both were made to fail before they were trusted (ADR 0124). +3 Rust tests, +25 frontend across 2 new files, `port:diff` unmoved at `structural 6 \| style 213 \| text 12` |
 | D1 | **done** 2026-08-12 — `core/providers/openai.rs` plus one registry line, on a transport and a credential store extracted from `groq.rs` in the same commit (ADR 0113, ADR 0126). `verbose_json` turned out to be `whisper-1`-only on this vendor, so the response format is per model and `ModelCapabilities` is non-vacuous for the first time. **The connection became writable** (ADR 0127) — the chip row, the credential row and every job row read one stored answer, so *a second lane can be operated* is a fact rather than a registry entry. +17 Rust tests, +3 frontend, `port:diff` **unmoved** at `structural 6 \| style 213 \| text 12`, no dependency moved |
 | B6 | **done** 2026-08-12 — added the same day on the owner's instruction. The override reads the config in the product and the drawn literal in the gallery, so `port:diff` is unmoved at `structural 6 \| style 213 \| text 12` for that half; the `stt` correction moves it to `structural 9 \| style 217 \| text 12` and that movement **is** the correction. The literal `Set` badge is gone, an unbuilt vendor is offered and disabled with its reason, and the provider select escapes its own inert reason. +6 frontend cases in `Models.test.tsx`, +3 in `providerSeam.test.ts`, all nine made to fail first. `PROVIDERS.md` disagreements 10, 11 and 13 closed |
 | B7 | **done** 2026-08-15 — the picker at the point of use, on both surfaces that exist. `src/components/jobProvider.tsx` is the ladder extracted out of `Models.tsx` (ADR 0055's one-implementation rule, not a second copy), and **the extraction moved `port:diff` by zero**, proven by putting the removed override back and re-measuring. `resolve_upload_capacity` answers which `(provider, model, tier)` accepts N bytes; `capture_limits_if_known` keeps *this lane is unbounded* apart from *this build cannot answer*, which is ADR 0106's missing-field rule one axis over; and the sixth `InertReason` kind **outranks a missing credential and yields to every other reason** — a key can be added and a file will not get smaller (ADR 0157). `DropZone` gained `onFile` because a size constraint with no file is a guard nobody can ever watch work. **+6 Rust, +14 frontend across 3 files**, every one made to fail before it was trusted. `port:diff`: `models` 9\|217\|12 → 26\|242\|19 (the override alone), `translate` 0\|0\|9 → 63\|0\|9 (its own 63 nodes and nothing shifted), `contextintake` unmoved — the picker sits behind the `Import` way. Disagreements 6 and 12 closed. **ADR 0135's form for surfaces that run longer than one request is owed by the surfaces that do not exist yet**; the upload intake is the degenerate case it names — one request, so no next turn |
+| B28 | **not started** — added 2026-09-11 (ADR 0270); two deprecated rows with a 2027-02-26 shutdown, a default that points at one of them, and the fourth role a full-duplex session needs |
 | C4 | **not started** — added 2026-08-13 (ADR 0130), corrected the same day (ADR 0131), extended 2026-08-14 (ADR 0135). The capture half is C1. What is real: the default lane cannot stream, nothing records a context window, and diarization is a third requirement. Two of its "open questions" were withdrawn — the prototype had already answered them. **The fourth `InertReason` kind now has two callers** (`Live transcript`, and `Never` retention), and the copilot is **two** consumers — an embedding per turn plus a model call on a hit — of which the first has no axis |
 | D3 | **not started, and not blocked** — its `Requires` line reads D1 and A3, both done. The graph below draws a `B2` line into its column that no `Requires` line supports; the line is decorative and the `Requires` is the contract |
 | C1–C2 | **not started, and deliberately not next** — no dependency blocks C1, but `core::capture` is under measurement until runtime-ownership step 6 has read one natural `Short` capture. The reason and its cost are on C1 itself; C2 requires C1 and inherits the wait |

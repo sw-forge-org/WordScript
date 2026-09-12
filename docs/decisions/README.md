@@ -1619,6 +1619,24 @@ that is what a record is for (ADR 0123: one list per fact).
   The social card is drawn from the site's own tokens, and drawing it is not a build step.
 - [0263](0263-one-hostname-serves-the-site-and-the-second-one-redirects-to-it.md):
   One hostname serves the site, and the second one redirects to it.
+- [0264](0264-the-legal-routes-are-linked-from-every-page-and-offered-to-no-index.md):
+  The legal routes are linked from every page, and offered to no index.
+- [0265](0265-the-imprint-is-one-document-for-sw-labs-and-this-site-links-to-it.md):
+  The imprint is one document for SW labs, and this site links to it.
+
+**0266 and 0267 are not missing files.** Both numbers were claimed and then
+removed from the repository entirely, so the highest number in the tree plus one
+collides with a number that was once in use. Filing resumes at 0268; nothing is
+lost and neither number is reused.
+
+- [0268](0268-the-desk-has-three-axes-and-a-target-names-only-one-of-them.md):
+  The desk has three axes, and a target names only one of them.
+- [0269](0269-the-desk-s-brain-is-the-vendor-s-own-cli-started-as-a-subprocess.md):
+  The desk's brain is the vendor's own CLI, started as a subprocess and paid by a plan the user already has.
+- [0270](0270-full-duplex-is-the-third-implementation-behind-the-mute-seam.md):
+  Full duplex is the third implementation behind the mute seam, and it is the first feature that streams the microphone continuously.
+- [0271](0271-a-target-names-where-it-runs-and-a-remote-place-can-die-mid-run.md):
+  A target names where it runs, and a remote place can die mid-run.
 
 
 ## Resolved: the number 0011 was used twice
